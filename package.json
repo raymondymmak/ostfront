@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 4179 -H 0.0.0.0",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
-    "start": "next start -p 4179 -H 0.0.0.0",
+    "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
     "map": "tsx scripts/map-graph.ts"

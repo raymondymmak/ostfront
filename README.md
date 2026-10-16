@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-Open [http://127.0.0.1:4179](http://127.0.0.1:4179).
+Open [http://localhost:3000](http://localhost:3000) (Next.js default port).
 
 Other scripts:
 
@@ -81,6 +81,23 @@ components      map, orders, province, chronicle
 `Province`, `Unit`, `Proposal`, and `GMTurn` live in `lib/types.ts`. Geometry is not stored in the save. The client joins each province to the catalog polygon. The server rebinds neighbors and rails from the catalog before resolving a turn, so a tampered save cannot invent borders.
 
 The map is MapLibre, with a blank style and no remote tiles. Its worker is served from `public/maplibre-gl-worker.mjs`. Each painted frame is copied onto a normal canvas so the front is still visible in browsers that will not composite a WebGL canvas. If WebGL cannot paint at all, the same polygons are drawn as SVG.
+
+On the map, the bottom-left legend explains faction colors, depots, and **strength counters**: the numbered pills on each province are the combined strength of all units there (blue text for Central Powers, rust for Russia). Hover a province for “Total unit strength” in the tooltip.
+
+## Deploy to Vercel
+
+No `vercel.json` is required. Vercel detects Next.js and runs `npm run build` with the default `next start` (it sets `PORT` for you).
+
+1. Push this repository to GitHub (for example `raymondymmak/ostfront`).
+2. In [Vercel](https://vercel.com/new), import the repo and deploy with the default framework preset.
+3. Optional environment variables (Project → Settings → Environment Variables):
+   - `LLM_API_KEY` — OpenAI-compatible API key for a live Russian game master.
+   - `LLM_BASE_URL` — defaults to `https://api.openai.com/v1` if unset.
+   - `LLM_MODEL` — defaults to `gpt-4o-mini` if unset.
+4. If `LLM_API_KEY` is unset, the **mock staff** runs Russian turns on the server route; the game stays fully playable.
+5. Campaign state lives in the browser (`localStorage` only). The turn API does not write files on the server.
+
+After deploy, open the production URL and play a fortnight with no env vars to confirm mock mode.
 
 ## Add a province
 
