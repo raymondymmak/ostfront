@@ -212,7 +212,7 @@ export function GameApp() {
         </p>
       )}
       <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem] lg:grid-rows-[minmax(0,1fr)_16.5rem]">
-        <div className="relative h-[58vh] min-h-[320px] lg:h-full lg:min-h-0">
+        <div className="relative isolate z-0 h-[58vh] min-h-[320px] overflow-hidden lg:h-full lg:min-h-0">
           <WarMap
             provinces={provinces}
             selectedId={selectedId}
@@ -266,7 +266,7 @@ export function GameApp() {
             </TabsContent>
           </Tabs>
         </aside>
-        <section className="hidden min-h-0 border-t border-border lg:block">
+        <section className="relative z-10 hidden min-h-0 border-t border-border bg-background lg:block">
           <TimelinePanel
             log={game.log}
             active={game.log.length ? activeLog : 0}

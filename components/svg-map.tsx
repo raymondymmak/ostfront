@@ -88,7 +88,7 @@ export function SvgMap({
     <svg
       ref={svgRef}
       viewBox={view.box}
-      className="absolute inset-0 h-full w-full bg-[#6e8ea3]"
+      className="absolute inset-0 h-full w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="svg-map"
       onMouseMove={(event) => {
         if (!originId) return
@@ -188,6 +188,10 @@ export function SvgMap({
                 fontSize={view.label * 0.85}
                 fontFamily="Georgia, serif"
               >
+                <title>
+                  Total unit strength: {strength} (
+                  {province.controller === "central" ? "Central Powers" : "Russia"})
+                </title>
                 {strength}
               </text>
             )}

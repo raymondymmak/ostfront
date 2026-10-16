@@ -42,7 +42,9 @@ export function WarMap({
   const blitRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const blitFrameRef = useRef<number | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
+  const [hoverTip, setHoverTip] = useState<string | null>(null)
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
   const propsRef = useRef<Snapshot>({
@@ -111,7 +113,6 @@ export function WarMap({
       map.addSource("orders", { type: "geojson", data: emptyCollection() })
       map.addSource("order-ends", { type: "geojson", data: emptyCollection() })
       map.addSource("preview", { type: "geojson", data: emptyCollection() })
-
       map.addLayer({
         id: "provinces",
         type: "fill",
@@ -187,11 +188,23 @@ export function WarMap({
           "line-dasharray": [1.2, 0.8],
         },
       })
-
       let hovered: string | number | null = null
       map.on("mousemove", "provinces", (event: maplibregl.MapLayerMouseEvent) => {
         map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : "pointer"
-        const id = event.features?.[0]?.id
+        const feature = event.features?.[0]
+        const id = feature?.id
+        if (feature?.properties) {
+          const strength = Number(feature.properties.strength ?? 0)
+          const controller =
+            feature.properties.controller === "central" ? "Central Powers" : "Russia"
+          const lines = [
+            String(feature.properties.name ?? ""),
+            strength > 0
+              ? `Total unit strength: ${strength} (${controller})`
+              : "No formations present",
+          ]
+          setHoverTip(lines.join("\n"))
+        }
         if (hovered !== null && hovered !== id) {
           map.setFeatureState({ source: "provinces", id: hovered }, { hover: false })
         }
@@ -202,11 +215,21 @@ export function WarMap({
       })
       map.on("mouseleave", "provinces", () => {
         map.getCanvas().style.cursor = ""
+        setHoverTip(null)
         if (hovered !== null) {
           map.setFeatureState({ source: "provinces", id: hovered }, { hover: false })
           hovered = null
         }
       })
+
+      const scheduleBlit = () => {
+        if (blitFrameRef.current !== null) return
+        blitFrameRef.current = requestAnimationFrame(() => {
+          blitFrameRef.current = null
+          blitMap(map, blitRef.current)
+        })
+      }
+      map.on("render", scheduleBlit)
 
       let startId: string | null = null
       const preview = () => map.getSource("preview") as maplibregl.GeoJSONSource
@@ -280,6 +303,7 @@ export function WarMap({
     const markers = markersRef.current
     return () => {
       observer.disconnect()
+      if (blitFrameRef.current !== null) cancelAnimationFrame(blitFrameRef.current)
       loadedRef.current = false
       fittedRef.current = false
       markers.forEach((marker) => marker.remove())
@@ -342,7 +366,7 @@ export function WarMap({
   }, [flashIds])
 
   return (
-    <div className="relative h-full min-h-[280px] w-full bg-[#6e8ea3]" data-testid="war-map">
+    <div className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]" data-testid="war-map">
       {failed ? (
         <SvgMap
           provinces={provinces}
@@ -356,11 +380,19 @@ export function WarMap({
         />
       ) : (
         <>
-          <canvas ref={blitRef} className="pointer-events-none absolute inset-0 h-full w-full" />
-          <div ref={containerRef} className="absolute inset-0" />
+          <canvas ref={blitRef} className="pointer-events-none absolute inset-0 z-0 h-full w-full" />
+          <div ref={containerRef} className="map-viewport absolute inset-0 z-10 overflow-hidden" />
         </>
       )}
-      <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-[#f6f1e4]/92 px-2.5 py-2 text-[11px] text-[#241c14] shadow-sm">
+      {hoverTip && !failed && (
+        <div
+          className="pointer-events-none absolute top-3 right-14 z-20 max-w-[14rem] rounded-md bg-[#241c14]/92 px-2.5 py-2 text-xs whitespace-pre-line text-[#f3e2a8] shadow-sm"
+          role="tooltip"
+        >
+          {hoverTip}
+        </div>
+      )}
+      <div className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-md bg-[#f6f1e4]/92 px-2.5 py-2 text-[11px] text-[#241c14] shadow-sm">
         <div className="flex items-center gap-2">
           <span className="inline-block size-2.5 bg-[#4a6d90]" /> Central Powers
         </div>
@@ -370,7 +402,22 @@ export function WarMap({
         <div className="mt-1 flex items-center gap-2">
           <span className="inline-block size-2 rotate-45 bg-[#8a6a32]" /> Depot
         </div>
-        <p className="mt-1 text-[#5c5144]">Numbers are strength. Baltic lies north.</p>
+        <div className="mt-1.5 border-t border-[#3d342b]/25 pt-1.5">
+          <p className="font-semibold text-[#3d342b]">Strength counters</p>
+          <p className="mt-0.5 flex items-center gap-2">
+            <span className="inline-flex min-w-[1.1rem] justify-center rounded-full border border-[#1c3348]/45 bg-[#f6f1e4] px-1 text-[9px] font-bold text-[#1c3348]">
+              82
+            </span>
+            Central Powers total in a province
+          </p>
+          <p className="mt-0.5 flex items-center gap-2">
+            <span className="inline-flex min-w-[1.1rem] justify-center rounded-full border border-[#6a2a22]/45 bg-[#f6f1e4] px-1 text-[9px] font-bold text-[#6a2a22]">
+              52
+            </span>
+            Russia total in a province
+          </p>
+        </div>
+        <p className="mt-1 text-[#5c5144]">Hover a province for the exact total. Baltic lies north.</p>
       </div>
       {orderMode && (
         <div className="pointer-events-none absolute top-3 left-3 rounded-md bg-[#241c14]/90 px-2.5 py-1.5 text-xs text-[#f3e2a8]">
@@ -398,15 +445,18 @@ function syncMap(
   for (const province of snapshot.provinces) {
     if (province.polygon.length < 4) continue
     hasGeometry = true
+    const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
     for (const coord of province.polygon) bounds.extend(coord)
     features.push({
       type: "Feature",
       id: province.id,
       properties: {
         id: province.id,
+        name: province.name,
         controller: province.controller,
         supply: province.supply,
         unrest: province.unrest,
+        strength,
       },
       geometry: { type: "Polygon", coordinates: [province.polygon] },
     })
@@ -486,11 +536,19 @@ function markerElement(province: MapProvince, selectedId: string | null): HTMLDi
     .join(" ")
   element.style.pointerEvents = "none"
   const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
+  const faction = province.controller === "central" ? "Central Powers" : "Russia"
   const badge = strength
-    ? `<div class="map-badge ${province.controller}">${strength}</div>`
+    ? `<div class="map-badge ${province.controller}" title="Total unit strength: ${strength} (${faction})">${strength}</div>`
     : ""
   element.innerHTML = `<div class="map-tag-name">${escapeHtml(province.name)}</div>${badge}`
   return element
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
 }
 
 function blitMap(map: maplibregl.Map, target: HTMLCanvasElement | null) {
@@ -570,9 +628,3 @@ function heatColor(field: "supply" | "unrest"): maplibregl.ExpressionSpecificati
   ]
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-}

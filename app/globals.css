@@ -182,6 +182,12 @@
   color: #6a2a22;
 }
 
+.map-viewport .maplibregl-map,
+.map-viewport .maplibregl-canvas-container,
+.map-viewport .maplibregl-marker-container {
+  overflow: hidden !important;
+}
+
 .maplibregl-canvas {
   opacity: 0 !important;
 }
