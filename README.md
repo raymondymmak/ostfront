@@ -13,7 +13,7 @@ Open [http://localhost:3000](http://localhost:3000) (Next.js default port).
 
 Other scripts:
 
-- `npm test` — rules-engine tests (move legality, supply pathing, combat, clamping, the opening scenario).
+- `npm test` — rules engine, game-master routing, and turn API guard tests.
 - `npm run lint` — ESLint.
 - `npm run map` — print the neighbor graph and any rail pairs that do not share a border.
 - `npm run build` — production build.
@@ -26,9 +26,18 @@ Copy `.env.example` to `.env.local` if you want a live model:
 LLM_API_KEY=sk-...
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
+LLM_MODEL_STRONG=          # optional; used for important turns and one retry
 ```
 
-`LLM_BASE_URL` is any OpenAI-compatible chat-completions endpoint. The request asks for JSON Schema output, then falls back to `json_object`. The reply is parsed with Zod. With no `LLM_API_KEY`, or if the call fails, a staff simulation writes the Russian proposals so the game stays playable offline.
+`LLM_BASE_URL` is any OpenAI-compatible chat-completions endpoint (including [OpenRouter](https://openrouter.ai/) when pointed at their `/api/v1` base). Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` headers are sent when set (some providers expect them).
+
+The game master prompt puts static rules and the JSON schema in the **system** message and the live map digest plus player orders in the **user** message so providers can cache the prefix.
+
+**Model routing:** each turn is classified (`routine`, `important`, or `critical`) from player orders—depots, fortresses, attack count, and order volume (`lib/gm/tier.ts`, tunable weights). With `LLM_MODEL_STRONG` set, important and critical turns call the strong model first; routine turns start on `LLM_MODEL`. Otherwise everything uses the cheap model as before. After a cheap reply, the server may retry **once** on the strong model if Zod validation fails or more than 30% of merged proposals would be rejected by the rules engine. There is no further loop; failures fall back to the mock staff. A ~28s wall clock caps both calls so serverless timeouts stay predictable (each call uses at most ~14s).
+
+Each model call logs one JSON line to stdout (`ostfront.gm.call`: tier, model, latency, outcome, escalation, rejection stats). No API keys or full prompts are logged.
+
+With no `LLM_API_KEY`, or if all model attempts fail, a staff simulation writes the Russian proposals so the game stays playable offline.
 
 The model may narrate and propose Russian moves, attacks, fortifications, unrest or supply modifiers, and province events. It is not allowed to order Central Powers units. Those come from you. The engine drops any proposal that tries.
 
@@ -94,6 +103,13 @@ No `vercel.json` is required. Vercel detects Next.js and runs `npm run build` wi
    - `LLM_API_KEY` — OpenAI-compatible API key for a live Russian game master.
    - `LLM_BASE_URL` — defaults to `https://api.openai.com/v1` if unset.
    - `LLM_MODEL` — defaults to `gpt-4o-mini` if unset.
+   - `LLM_MODEL_STRONG` — optional stronger model for important turns and one escalation retry.
+   - `LLM_HTTP_REFERER`, `LLM_HTTP_TITLE` — optional provider headers (e.g. OpenRouter).
+   - **Turn API guard** (recommended before sharing a deployment that has `LLM_API_KEY`):
+     - `TURN_MAX_BODY_BYTES` — default `512000`.
+     - `TURN_RATE_LIMIT_MAX` / `TURN_RATE_LIMIT_WINDOW_MS` — per-IP limit per warm instance (default 24 requests / 60s).
+     - `TURN_ALLOWED_ORIGINS` — comma-separated origins (e.g. `https://ostfront-two.vercel.app,http://localhost:3000`). When set, browser requests must send a matching `Origin` or `Referer` unless they present a token.
+     - `TURN_API_TOKEN` — optional shared secret; send `X-Ostfront-Turn-Token` or `Authorization: Bearer …`. Required when the token is set and the origin is not on the allow list.
 4. If `LLM_API_KEY` is unset, the **mock staff** runs Russian turns on the server route; the game stays fully playable.
 5. Campaign state lives in the browser (`localStorage` only). The turn API does not write files on the server.
 
