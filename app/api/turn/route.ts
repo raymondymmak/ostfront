@@ -1,10 +1,26 @@
-import { TurnRequestSchema } from "@/lib/schema"
+import {
+  enforceTurnGuards,
+  readBodyWithLimit,
+  turnGuardConfig,
+} from "@/lib/api/turn-guard"
 import { playTurn } from "@/lib/gm"
+import { TurnRequestSchema } from "@/lib/schema"
 
 export async function POST(request: Request) {
+  const { maxBody } = turnGuardConfig()
+  const raw = await readBodyWithLimit(request, maxBody)
+  if (!raw.ok) {
+    return Response.json({ error: raw.error }, { status: raw.status })
+  }
+
+  const guard = enforceTurnGuards(request, new TextEncoder().encode(raw.text).byteLength)
+  if (!guard.ok) {
+    return Response.json({ error: guard.error }, { status: guard.status })
+  }
+
   let body: unknown
   try {
-    body = await request.json()
+    body = JSON.parse(raw.text)
   } catch {
     return Response.json({ error: "The turn request was not valid JSON." }, { status: 400 })
   }
