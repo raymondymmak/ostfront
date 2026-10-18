@@ -4,6 +4,8 @@ A map-first weekend prototype of the Eastern Front in June 1915. You command the
 
 ## Run
 
+Requires **Node.js 22+** (see `engines` in `package.json` and `.nvmrc`).
+
 ```bash
 npm install
 npm run dev
