@@ -1,10 +1,12 @@
 import { chromium } from "playwright"
-import { mkdirSync } from "node:fs"
+import { mkdirSync, readFileSync } from "node:fs"
+
+const theater = JSON.parse(readFileSync(new URL("../lib/data/theater-geometry.json", import.meta.url), "utf8"))
 
 const base = process.env.MAP_URL ?? "http://127.0.0.1:3000"
 const outDir = "/opt/cursor/artifacts/screenshots"
 const THEATER_BBOX = [15.8, 48.35, 28.8, 56.35]
-const TARNOW = [21.0, 50.01]
+const TARNOW = theater.centroids.tarnow
 mkdirSync(outDir, { recursive: true })
 
 function lngLatToCanvasPoint(lon, lat, box, padding = 32) {
