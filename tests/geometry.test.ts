@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { CATALOG, PROVINCE_COUNT } from "@/lib/data/catalog"
-import { BACKDROP_REGIONS, buildTheater, neighborsFromPolygons } from "@/lib/data/geometry"
+import {
+  BACKDROP_REGIONS,
+  LAND_POLYGONS,
+  buildTheater,
+  neighborsFromPolygons,
+} from "@/lib/data/geometry"
 import theaterData from "@/lib/data/theater-geometry.json"
 import { createInitialState } from "@/lib/data/scenario"
 import * as turf from "@turf/turf"
@@ -67,6 +72,15 @@ describe("theater geometry", () => {
         expect(turf.area(overlap)).toBeLessThan(1e-6)
       }
     }
+  })
+
+  it("includes extended land backdrop for the viewport", () => {
+    expect(LAND_POLYGONS.length).toBeGreaterThan(0)
+    let minLon = Infinity
+    for (const ring of LAND_POLYGONS) {
+      for (const [lon] of ring) minLon = Math.min(minLon, lon)
+    }
+    expect(minLon).toBeLessThan(14)
   })
 
   it("does not put backdrop regions in the playable adjacency graph", () => {

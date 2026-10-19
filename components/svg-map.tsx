@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
-import { BACKDROP_REGIONS, RIVER_LINES } from "@/lib/data/geometry"
+import { BACKDROP_REGIONS, LAND_POLYGONS, RIVER_LINES } from "@/lib/data/geometry"
 import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 
 type SvgMapProps = {
@@ -107,6 +107,20 @@ export function SvgMap({
         setPreview(null)
       }}
     >
+      {LAND_POLYGONS.map((ring, index) => {
+        if (ring.length < 4) return null
+        const points = ring.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
+        return (
+          <polygon
+            key={`land-${index}`}
+            points={points}
+            fill="#8f9699"
+            fillOpacity={0.96}
+            stroke="none"
+            pointerEvents="none"
+          />
+        )
+      })}
       {BACKDROP_REGIONS.map((region) => {
         if (region.polygon.length < 4) return null
         const points = region.polygon.map(([lon, lat]) => `${lon},${-lat}`).join(" ")

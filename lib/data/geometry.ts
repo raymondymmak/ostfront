@@ -21,6 +21,14 @@ export type RiverLine = {
 }
 
 export const THEATER_BBOX = theaterData.bbox as [number, number, number, number]
+const theaterMeta = theaterData as unknown as {
+  viewBbox?: [number, number, number, number]
+  landPolygons?: [number, number][][]
+  seaPolygons?: [number, number][][]
+}
+export const VIEW_BBOX = theaterMeta.viewBbox ?? THEATER_BBOX
+export const LAND_POLYGONS = theaterMeta.landPolygons ?? []
+export const SEA_POLYGONS = theaterMeta.seaPolygons ?? []
 export const GEOMETRY_SOURCE = theaterData.source as string
 export const BACKDROP_REGIONS = theaterData.backdrop as BackdropRegion[]
 export const RIVER_LINES = theaterData.rivers as RiverLine[]
