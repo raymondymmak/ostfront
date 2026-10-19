@@ -52,9 +52,12 @@ TAG_TO_OWNER = {
     "AFG": "afghanistan",
     "EGY": "egypt",
     "LBA": "libya",
-    "MOR": "morocco",
-    "MRS": "spanish_morocco",
-    "KUW": "kuwait",
+    # French protectorate from the Treaty of Fez, 30 March 1912. Not a separate sovereign.
+    "MOR": "france",
+    # Spanish protectorate in the north, from 1912.
+    "MRS": "spain",
+    # British protected state from the 1899 agreement.
+    "KUW": "united_kingdom",
     "AST": "australia",
     "CAN": "canada",
     "NZL": "new_zealand",
@@ -86,8 +89,8 @@ TAG_TO_OWNER = {
     "HUN": "austro_hungarian_empire",
     "KUK": "austro_hungarian_empire",
     "AHU": "austro_hungarian_empire",
-    # The mod keeps the Bosnian tag with no 1908 annexation date. WorldOS folds it into Austria-Hungary.
-    "BOS": "bosnia",
+    # Annexed in 1908. The mod keeps the Bosnian tag and never dates the annexation.
+    "BOS": "austro_hungarian_empire",
     "CRE": "greece",
     "LUX": "luxembourg",
     "PAN": "panama",
@@ -238,17 +241,19 @@ TAG_TO_OWNER = {
     "IRQ": "ottoman_empire",
     "PAL": "ottoman_empire",
     "ISR": "ottoman_empire",
-    "KUW": "kuwait",
     "JOR": "ottoman_empire",
     "IND": "france",
     "TUN": "france",
     "CER": "chinese_eastern_railway",
     "RWL": "ruwalla",
-    "ARB": "arabistan",
+    # Khuzestan stayed under Persian sovereignty. The local Arabistan sheikh was not a separate state.
+    "ARB": "persia",
     "AFA": "afar",
-    "SKK": "sikkim",
+    # British protectorate. Foreign affairs were conducted by Britain.
+    "SKK": "united_kingdom",
     "LIE": "liechtenstein",
-    "BRN": "brunei",
+    # British protectorate since 1888.
+    "BRN": "united_kingdom",
     "ZAN": "zanzibar",
     "SMR": "san_marino",
     "NAJ": "najran",
@@ -257,14 +262,16 @@ TAG_TO_OWNER = {
     "AMR": "amarat",
     "TON": "tonga",
     "MAL": "united_kingdom",
-    "KEL": "kelantan",
-    "JOH": "johor",
-    "PLS": "perlis",
-    "TRG": "terengganu",
-    "KED": "kedah",
+    # Unfederated Malay States. British protectorates, not separate sovereigns.
+    "KEL": "united_kingdom",
+    "JOH": "united_kingdom",
+    "PLS": "united_kingdom",
+    "TRG": "united_kingdom",
+    "KED": "united_kingdom",
     "BID": "baidah",
     "MCO": "monaco",
-    "MLD": "maldives",
+    # British protectorate since 1887.
+    "MLD": "united_kingdom",
 }
 
 # Spelling variants only. Each one is the same state, not a neighbour with a similar name.

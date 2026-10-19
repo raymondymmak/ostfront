@@ -11,6 +11,7 @@ import {
   RIVER_LINES,
   SEA_GEOMETRY,
   THEATER_BBOX,
+  VIEW_BBOX,
   WORLD_BBOX,
   eachCoord,
   geometryValid,
@@ -125,8 +126,6 @@ export function WarMap({
       }
     })
 
-    map.on("zoom", () => syncMarkerZoom(map, markersRef.current))
-
     map.on("load", () => {
       map.addSource("land", { type: "geojson", data: emptyCollection() })
       map.addSource("sea", { type: "geojson", data: emptyCollection() })
@@ -164,7 +163,7 @@ export function WarMap({
             "match",
             ["get", "owner"],
             ...Object.entries(BACKDROP_OWNER_COLOR).flat(),
-            "#a8ada8",
+            "#b4b2ae",
           ] as unknown as maplibregl.ExpressionSpecification,
           "fill-opacity": 0.96,
         },
@@ -174,16 +173,15 @@ export function WarMap({
         type: "line",
         source: "backdrop",
         paint: {
-          "line-color": "#5c6468",
-          "line-width": 1.1,
-          "line-opacity": 0.85,
+          "line-color": "#3e4448",
+          "line-width": 0.8,
+          "line-opacity": 0.9,
         },
       })
       map.addLayer({
         id: "backdrop-labels",
         type: "symbol",
         source: "backdrop-label-points",
-        minzoom: 5,
         layout: {
           "text-field": ["get", "name"],
           "text-size": ["interpolate", ["linear"], ["zoom"], 5, 10, 7.5, 13],
@@ -650,8 +648,6 @@ function syncMap(
     map.setFilter("selected", ["==", ["get", "id"], snapshot.selectedId ?? ""])
   }
 
-  syncMarkerZoom(map, markers)
-
   if (hasGeometry && !fitted.current) {
     map.resize()
     const urlView = readMapViewFromUrl()
@@ -663,17 +659,24 @@ function syncMap(
         zoom: urlView.zoom ?? 6.5,
       })
     } else {
+      // Fit the playable frame, then apply the same maxBounds clamp main uses
+      // so the opening center and zoom match. World bounds go back afterwards
+      // so the player can still pan out to the rest of the map.
       map.fitBounds(bounds, { padding: 28, animate: false, maxZoom: 8.2 })
+      map.setMaxBounds([
+        [VIEW_BBOX[0], VIEW_BBOX[1]],
+        [VIEW_BBOX[2], VIEW_BBOX[3]],
+      ])
+      const center = map.getCenter()
+      const zoom = map.getZoom()
+      map.setMaxBounds([
+        [WORLD_BBOX[0], WORLD_BBOX[1]],
+        [WORLD_BBOX[2], WORLD_BBOX[3]],
+      ])
+      map.jumpTo({ center, zoom })
     }
     fitted.current = true
     map.resize()
-  }
-}
-
-function syncMarkerZoom(map: maplibregl.Map, markers: Map<string, maplibregl.Marker>) {
-  const hide = map.getZoom() < 5.2
-  for (const marker of markers.values()) {
-    marker.getElement().style.visibility = hide ? "hidden" : "visible"
   }
 }
 

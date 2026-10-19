@@ -135,6 +135,42 @@ OWNER_OVERRIDES = {
     "Bucovina": "austro_hungarian_empire",
 }
 
+# De jure sovereign on 28 July 1914, after the name match. Occupation does not
+# change the owner. A protectorate is painted as the protecting power unless
+# the polity was actually sovereign (Egypt, Albania, Nepal, Bhutan, Oman).
+DE_JURE_OVERRIDES = {
+    "Bosnia": (
+        "austro_hungarian_empire",
+        "Annexed in 1908. The mod keeps a Bosnian tag and never dates the annexation.",
+    ),
+    "Thrace": (
+        "bulgaria",
+        "MapChart Thrace is Western Thrace (about 25.4E, 42.0N), west of Edirne. The Treaty of Bucharest, 10 August 1913, left it to Bulgaria. Greece received southern Macedonia, including Kavala.",
+    ),
+    "Nicaragua": (
+        "nicaragua",
+        "The United States occupied Nicaragua from 1912. It did not annex it.",
+    ),
+    "Casablanca": (
+        "france",
+        "French protectorate from the Treaty of Fez, 30 March 1912.",
+    ),
+    "Labrador": (
+        "newfoundland",
+        "Labrador belonged to the Dominion of Newfoundland, not Canada.",
+    ),
+    "Johor": ("united_kingdom", "British protectorate, one of the Unfederated Malay States."),
+    "Kelantan": ("united_kingdom", "British protectorate, transferred from Siam in 1909."),
+    "Brunei": ("united_kingdom", "British protectorate since 1888."),
+    "Kuwait": ("united_kingdom", "British protected state under the 1899 agreement."),
+    "Sikkim": ("united_kingdom", "British protectorate. Foreign affairs were conducted by Britain."),
+    "Khuzestan": (
+        "persia",
+        "Persian sovereignty. The Arabistan sheikh was not a separate state.",
+    ),
+    "Maldives": ("united_kingdom", "British protectorate since 1887."),
+}
+
 # Name did not match a mod file, and the area vote is on the wrong side of a border.
 FALLBACK_JUDGMENTS = {
     "Troms": ("norway", "Norwegian county. The sample landed in Sweden."),
@@ -158,6 +194,30 @@ FALLBACK_JUDGMENTS = {
     "Atacama": (
         "chile",
         "Chilean Atacama, south of Antofagasta. The vote split with Argentina along the Andes.",
+    ),
+    "East_Timor": (
+        "portugal",
+        "Portuguese Timor. The sample landed on Dutch West Timor.",
+    ),
+    "Portuguese_Guinea": (
+        "portugal",
+        "Portuguese Guinea (Guinea-Bissau). The sample spilled into French Guinea.",
+    ),
+    "Equatorial_Guinea": (
+        "spain",
+        "Spanish Guinea (Rio Muni and Fernando Po). The sample spilled into Gabon.",
+    ),
+    "Gilbert_Islands": (
+        "united_kingdom",
+        "British protectorate from 1892. The sample hit the German Marshalls. Those islands are a separate state.",
+    ),
+    "Leeward_Islands": (
+        "united_kingdom",
+        "The British Leeward Islands colony. The sample hit the Danish Virgin Islands.",
+    ),
+    "North_Darfur": (
+        "darfur",
+        "The Darfur sultanate, independent until 1916. The sample spilled east into Anglo-Egyptian Sudan.",
     ),
 }
 
@@ -557,13 +617,15 @@ def owner_label(owner: str) -> str:
 
 
 def muted_color(owner: str) -> str:
-    """Stable low-saturation tint. European colors in the client override these."""
+    """Neutral grey stored beside the geometry. The client paints from the same rule."""
     hue_hash = 2166136261
     for ch in owner:
         hue_hash ^= ord(ch)
         hue_hash = (hue_hash * 16777619) & 0xFFFFFFFF
-    hue = (hue_hash % 360) / 360
-    red, green, blue = colorsys.hls_to_rgb(hue, 0.70, 0.13)
+    lightness = 0.60 + (hue_hash % 18) / 100
+    hue = 36 if ((hue_hash >> 8) % 2) == 0 else 210
+    saturation = 0.015 + ((hue_hash >> 16) % 16) / 1000
+    red, green, blue = colorsys.hls_to_rgb(hue / 360, lightness, saturation)
     return f"#{int(red * 255):02x}{int(green * 255):02x}{int(blue * 255):02x}"
 
 
@@ -571,17 +633,48 @@ def from_deg(lon, lat):
     return (lon / SCALE + ORIGIN_X, lat / SCALE + ORIGIN_Y)
 
 
+def largest_polygon(geom):
+    if geom.is_empty:
+        return None
+    if geom.geom_type == "Polygon":
+        return geom
+    if geom.geom_type == "MultiPolygon":
+        return max(geom.geoms, key=lambda part: part.area)
+    if geom.geom_type == "GeometryCollection":
+        pieces = [
+            part
+            for part in geom.geoms
+            if part.geom_type in ("Polygon", "MultiPolygon") and not part.is_empty
+        ]
+        if not pieces:
+            return None
+        return largest_polygon(max(pieces, key=lambda part: part.area))
+    return None
+
+
 def backdrop_label_points(geom, frame):
-    """A label on the part inside the Eastern Front frame, plus the largest far part."""
+    """A label on the land inside the Eastern Front frame, plus the largest far part.
+
+    The piece that merely intersects the frame can be a whole empire. Label the
+    clipped piece, which is where main put the country name.
+    """
     parts = polygon_parts(geom)
     if not parts:
         return []
     largest = max(parts, key=lambda part: part.area)
-    in_frame = [part for part in parts if part.intersects(frame)]
     points = []
-    if in_frame:
-        part = max(in_frame, key=lambda item: item.intersection(frame).area)
-        points.append(part.representative_point())
+    visible = []
+    for part in parts:
+        if not part.intersects(frame):
+            continue
+        clipped = part.intersection(frame)
+        if clipped.is_empty or clipped.area < 1:
+            continue
+        visible.append(clipped)
+    if visible:
+        piece = largest_polygon(max(visible, key=lambda item: item.area))
+        if piece is not None:
+            points.append(piece.representative_point())
     far = largest.representative_point()
     if not points or far.distance(points[0]) > 80:
         points.append(far)
@@ -787,8 +880,23 @@ def main():
         )
         info["final"] = forced
         state_owners[state_id] = forced
-    # The four recorded 1914 calls stay on the playable provinces. Refresh a disagreement
-    # row if the override changed the owner that will be stored.
+    de_jure_report = []
+    for state_id, (forced, reason) in DE_JURE_OVERRIDES.items():
+        if state_id not in votes:
+            raise SystemExit(f"De jure override names a missing state: {state_id}")
+        info = votes[state_id]
+        de_jure_report.append(
+            {
+                "id": state_id,
+                "owner": forced,
+                "resolvedOwner": info["final"],
+                "method": info["method"],
+                "reason": reason,
+            }
+        )
+        info["final"] = forced
+        state_owners[state_id] = forced
+    # Refresh a disagreement row if an override changed the owner that will be stored.
     for row in disagreements:
         row["finalOwner"] = state_owners[row["id"]]
     print(
@@ -1007,6 +1115,7 @@ def main():
         "nameRedirected": redirected,
         "rejectedNames": rejected_names,
         "judgments": judgments,
+        "deJure": de_jure_report,
         "disagreements": disagreements,
         "fallbackStates": fallback_states,
         "unsure": unsure,

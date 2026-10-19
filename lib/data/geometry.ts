@@ -51,31 +51,45 @@ export const RIVER_LINES = theaterData.rivers as RiverLine[]
 export const STATE_OWNERS = theaterMeta.stateOwners ?? {}
 export const OWNER_AUDIT = theaterMeta.ownerAudit
 
-/** Muted 1914-owner tints. The named European colors stay as they were; generated tints fill the rest of the world. */
-const EUROPEAN_OWNER_COLOR: Record<string, string> = {
-  german_empire: "#9aa3ad",
-  austro_hungarian_empire: "#c4b49a",
-  russia: "#8fa08a",
-  romania: "#a898a8",
-  sweden: "#aeb8c0",
-  norway: "#b7c0c4",
-  bulgaria: "#9a94a6",
-  italy: "#a8b09a",
-  denmark: "#b0a0a4",
-  serbia: "#a8ada8",
-  montenegro: "#a8ada8",
-  greece: "#b0ae9a",
-  albania: "#a8ada8",
-  ottoman_empire: "#b0a090",
-  bosnia: "#c2b6a2",
-}
-export const BACKDROP_OWNER_COLOR: Record<string, string> = {
-  ...(theaterMeta.ownerColors ?? {}),
-  ...EUROPEAN_OWNER_COLOR,
+/** Neutral grey. Lightness tells owners apart. The cast is only a hint of warm or cool. */
+export function backdropColor(owner: string): string {
+  let hash = 2166136261
+  for (let i = 0; i < owner.length; i++) {
+    hash ^= owner.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  hash >>>= 0
+  const lightness = 0.6 + (hash % 18) / 100
+  const hue = (hash >>> 8) % 2 === 0 ? 36 : 210
+  const saturation = 0.015 + ((hash >>> 16) % 16) / 1000
+  return hslToHex(hue, saturation, lightness)
 }
 
-export function backdropColor(owner: string): string {
-  return BACKDROP_OWNER_COLOR[owner] ?? "#a8ada8"
+function hslToHex(hue: number, saturation: number, lightness: number): string {
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
+  const channel = chroma * (1 - Math.abs(((hue / 60) % 2) - 1))
+  const step = hue / 60
+  let red = 0
+  let green = 0
+  let blue = 0
+  if (step < 1) [red, green, blue] = [chroma, channel, 0]
+  else if (step < 2) [red, green, blue] = [channel, chroma, 0]
+  else if (step < 3) [red, green, blue] = [0, chroma, channel]
+  else if (step < 4) [red, green, blue] = [0, channel, chroma]
+  else if (step < 5) [red, green, blue] = [channel, 0, chroma]
+  else [red, green, blue] = [chroma, 0, channel]
+  const match = lightness - chroma / 2
+  const byte = (value: number) => Math.round((value + match) * 255).toString(16).padStart(2, "0")
+  return `#${byte(red)}${byte(green)}${byte(blue)}`
+}
+
+const backdropOwners = new Set<string>([
+  ...BACKDROP_REGIONS.map((region) => region.owner),
+  ...Object.values(STATE_OWNERS),
+])
+export const BACKDROP_OWNER_COLOR: Record<string, string> = {}
+for (const owner of backdropOwners) {
+  if (owner) BACKDROP_OWNER_COLOR[owner] = backdropColor(owner)
 }
 
 export function geometryPolygons(geometry: ProvinceGeometry): number[][][][] {

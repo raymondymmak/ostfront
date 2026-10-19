@@ -10,6 +10,7 @@ const views = [
   { name: "ostfront-full-theater", query: "" },
   { name: "world-1914", query: "mapBounds=-39.2,-19.8,31.2,6.3&mapPadding=8" },
   { name: "world-europe", query: "mapBounds=-8.2,-4.2,7.2,5.4&mapPadding=12" },
+  { name: "balkans-1914", query: "mapBounds=-1.6,-4.6,3.2,-1.0&mapPadding=16" },
   { name: "world-africa", query: "mapBounds=-8.5,-19.2,8.5,-3.6&mapPadding=12" },
   { name: "world-middle-east", query: "mapBounds=1.2,-10.4,12.2,-1.2&mapPadding=12" },
   { name: "world-east-asia", query: "mapBounds=12.8,-9.4,29.6,5.6&mapPadding=12" },
