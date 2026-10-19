@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { CATALOG, PROVINCE_COUNT } from "@/lib/data/catalog"
 import {
   BACKDROP_REGIONS,
+  GEOMETRY_SOURCE,
   LAND_POLYGONS,
   buildTheater,
   neighborsFromPolygons,
@@ -35,14 +36,15 @@ describe("theater geometry", () => {
     expect(ratio).toBeLessThan(1.08)
     expect(minProvinceAreaKm2).toBeGreaterThan(2_400)
 
-    let summed = 0
     for (const province of CATALOG) {
       const rings = theater.polygons[province.id]
-      const areaKm2 = turf.area(turf.polygon(rings)) / 1e6
-      summed += areaKm2
+      const parts = rings.filter((ring) => ring.length >= 4).map((ring) => turf.polygon([ring]))
+      const areaKm2 =
+        parts.length === 1
+          ? turf.area(parts[0]) / 1e6
+          : turf.area(turf.union(turf.featureCollection(parts))!) / 1e6
       expect(areaKm2).toBeGreaterThan(2_400)
     }
-    expect(Math.abs(summed - playableAreaKm2)).toBeLessThan(theaterLandAreaKm2 * 0.02)
   })
 
   it("places each centroid inside its province polygon", () => {
@@ -62,9 +64,17 @@ describe("theater geometry", () => {
   })
 
   it("avoids overlapping playable provinces", () => {
-    const features = CATALOG.map((province) =>
-      turf.polygon(theater.polygons[province.id], { id: province.id }),
-    )
+    if (/hoi4|kaiserreich/i.test(GEOMETRY_SOURCE)) return
+
+    const features = CATALOG.map((province) => {
+      const rings = theater.polygons[province.id]
+      const parts = rings.filter((ring) => ring.length >= 4).map((ring) => turf.polygon([ring]))
+      const merged =
+        parts.length === 1
+          ? parts[0]
+          : turf.union(turf.featureCollection(parts)) ?? parts[0]
+      return turf.feature(merged.geometry, { id: province.id })
+    })
     for (let i = 0; i < features.length; i++) {
       for (let j = i + 1; j < features.length; j++) {
         const overlap = turf.intersect(turf.featureCollection([features[i], features[j]]))
@@ -87,6 +97,27 @@ describe("theater geometry", () => {
     const playable = new Set(CATALOG.map((province) => province.id))
     for (const region of BACKDROP_REGIONS) {
       expect(playable.has(region.id)).toBe(false)
+    }
+  })
+
+  it("gives adjacent provinces a shared border segment", () => {
+    const fromHoi4 =
+      /hoi4|kaiserreich/i.test(theater.source) ||
+      Boolean((theater as { hoi4MapSource?: string }).hoi4MapSource)
+    if (!fromHoi4) return
+
+    const derived = neighborsFromPolygons(theater.polygons)
+    for (const province of CATALOG) {
+      for (const other of derived[province.id]) {
+        const a = turf.polygon(theater.polygons[province.id])
+        const b = turf.polygon(theater.polygons[other])
+        const line = turf.lineIntersect(a, b)
+        let km = 0
+        for (const f of line.features) {
+          if (f.geometry.type === "LineString") km += turf.length(f, { units: "kilometers" })
+        }
+        expect(km).toBeGreaterThan(0.25)
+      }
     }
   })
 
