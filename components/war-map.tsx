@@ -18,6 +18,7 @@ import {
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
 import { shortProvinceName } from "@/lib/map/labels"
+import { applyMarkerFace, type MarkerFace } from "@/lib/map/marker-face"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
 
@@ -596,13 +597,14 @@ function syncMap(
   for (const province of snapshot.provinces) {
     if (!geometryValid(province.polygon)) continue
     seen.add(province.id)
-    const element = markerElement(province, snapshot.selectedId)
+    const face = markerFace(province, snapshot.selectedId)
     const existing = markers.get(province.id)
     if (existing) {
-      existing.getElement().className = element.className
-      existing.getElement().innerHTML = element.innerHTML
+      applyMarkerFace(existing.getElement(), face)
       existing.setLngLat(province.centroid)
     } else {
+      const element = document.createElement("div")
+      applyMarkerFace(element, face)
       markers.set(
         province.id,
         new maplibregl.Marker({ element, anchor: "center" }).setLngLat(province.centroid).addTo(map),
@@ -710,23 +712,21 @@ function readMapViewFromUrl(): {
   return {}
 }
 
-function markerElement(province: MapProvince, selectedId: string | null): HTMLDivElement {
-  const element = document.createElement("div")
-  element.className = [
-    "map-tag",
-    province.id === selectedId ? "is-selected" : "",
-    province.depot ? "is-depot" : "",
-  ]
-    .filter(Boolean)
-    .join(" ")
-  element.style.pointerEvents = "none"
+function markerFace(province: MapProvince, selectedId: string | null): MarkerFace {
   const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
   const faction = province.controller === "central" ? "Central Powers" : "Russia"
   const badge = strength
     ? `<div class="map-badge ${province.controller}" title="Total unit strength: ${strength} (${faction})">${strength}</div>`
     : ""
-  element.innerHTML = `<div class="map-tag-name">${escapeHtml(shortProvinceName(province.name))}</div>${badge}`
-  return element
+  return {
+    className: ["map-tag", province.id === selectedId ? "is-selected" : "", province.depot ? "is-depot" : ""]
+      .filter(Boolean)
+      .join(" "),
+    innerHTML: `<div class="map-tag-name">${escapeHtml(shortProvinceName(province.name))}</div>${badge}`,
+    provinceId: province.id,
+    lng: province.centroid[0],
+    lat: province.centroid[1],
+  }
 }
 
 function escapeHtml(value: string): string {
