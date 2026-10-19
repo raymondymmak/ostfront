@@ -8,10 +8,11 @@ mkdirSync(outDir, { recursive: true })
 // Pseudo-degrees of the HOI4 pixel map, not geographic longitude.
 const views = [
   { name: "ostfront-full-theater", query: "" },
-  { name: "ostfront-galicia", query: "mapBounds=-0.85,-1.25,1.35,-0.22&mapPadding=20" },
-  { name: "ostfront-east-prussia", query: "mapBounds=-0.9,0.15,0.7,1.2&mapPadding=24" },
-  { name: "ostfront-baltic", query: "mapBounds=-0.7,0.55,1.35,2.15&mapPadding=20" },
-  { name: "ostfront-romania-black-sea", query: "mapBounds=0.15,-2.65,2.15,-0.85&mapPadding=20" },
+  { name: "world-1914", query: "mapBounds=-39.2,-19.8,31.2,6.3&mapPadding=8" },
+  { name: "world-europe", query: "mapBounds=-8.2,-4.2,7.2,5.4&mapPadding=12" },
+  { name: "world-africa", query: "mapBounds=-8.5,-19.2,8.5,-3.6&mapPadding=12" },
+  { name: "world-middle-east", query: "mapBounds=1.2,-10.4,12.2,-1.2&mapPadding=12" },
+  { name: "world-east-asia", query: "mapBounds=12.8,-9.4,29.6,5.6&mapPadding=12" },
 ]
 
 const browser = await chromium.launch({

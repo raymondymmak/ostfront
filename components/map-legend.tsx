@@ -33,7 +33,7 @@ export function MapLegend() {
             <span className="inline-block size-2.5 bg-[#a85b49]" /> Russia
           </div>
           <div className="mt-1 flex items-center gap-2">
-            <span className="inline-block size-2.5 bg-[#c4b49a]" /> Surrounding states, tinted by 1914 owner
+            <span className="inline-block size-2.5 bg-[#c4b49a]" /> The rest of the world in 1914, tinted by owner
           </div>
           <div className="mt-1 flex items-center gap-2">
             <span className="inline-block size-2.5 rotate-45 bg-[#8a6a32]" /> Depot

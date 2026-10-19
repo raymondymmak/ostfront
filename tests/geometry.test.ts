@@ -3,6 +3,8 @@ import { CATALOG, PROVINCE_COUNT } from "@/lib/data/catalog"
 import {
   BACKDROP_REGIONS,
   GEOMETRY_SOURCE,
+  OWNER_AUDIT,
+  STATE_OWNERS,
   VIEW_BBOX,
   buildTheater,
   geometryValid,
@@ -90,13 +92,25 @@ describe("theater geometry", () => {
   })
 
   it("frames the theater from the Baltic to the Black Sea", () => {
-    expect(VIEW_BBOX[3] - VIEW_BBOX[1]).toBeGreaterThan(4)
+    expect(VIEW_BBOX).toEqual([-3.0286, -3.248, 3.5801, 3.105])
     const owners = new Set(BACKDROP_REGIONS.map((region) => region.owner))
     expect(owners.has("romania")).toBe(true)
     expect(owners.has("sweden") || owners.has("russia")).toBe(true)
     for (const region of BACKDROP_REGIONS) {
       expect(CATALOG.some((province) => province.id === region.id)).toBe(false)
+      expect(region.owner.length).toBeGreaterThan(0)
       expect(geometryValid(region.geometry)).toBe(true)
+    }
+  })
+
+  it("gives every backdrop state an owner", () => {
+    expect(OWNER_AUDIT).toBeTruthy()
+    expect(OWNER_AUDIT!.nameMatched + OWNER_AUDIT!.fallback).toBe(OWNER_AUDIT!.states)
+    expect(OWNER_AUDIT!.nameMatched).toBeGreaterThan(400)
+    expect(OWNER_AUDIT!.states).toBe(Object.keys(STATE_OWNERS).length)
+    for (const [id, owner] of Object.entries(STATE_OWNERS)) {
+      expect(owner, id).toBeTruthy()
+      expect(owner).not.toBe("unclaimed")
     }
   })
 })

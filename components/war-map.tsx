@@ -11,7 +11,7 @@ import {
   RIVER_LINES,
   SEA_GEOMETRY,
   THEATER_BBOX,
-  VIEW_BBOX,
+  WORLD_BBOX,
   eachCoord,
   geometryValid,
   type ProvinceGeometry,
@@ -90,8 +90,8 @@ export function WarMap({
         dragRotate: false,
         pitchWithRotate: false,
         maxBounds: [
-          [VIEW_BBOX[0], VIEW_BBOX[1]],
-          [VIEW_BBOX[2], VIEW_BBOX[3]],
+          [WORLD_BBOX[0], WORLD_BBOX[1]],
+          [WORLD_BBOX[2], WORLD_BBOX[3]],
         ],
         canvasContextAttributes: {
           preserveDrawingBuffer: true,
@@ -124,6 +124,8 @@ export function WarMap({
         setFailed(message || "The map context failed.")
       }
     })
+
+    map.on("zoom", () => syncMarkerZoom(map, markersRef.current))
 
     map.on("load", () => {
       map.addSource("land", { type: "geojson", data: emptyCollection() })
@@ -181,6 +183,7 @@ export function WarMap({
         id: "backdrop-labels",
         type: "symbol",
         source: "backdrop-label-points",
+        minzoom: 5,
         layout: {
           "text-field": ["get", "name"],
           "text-size": ["interpolate", ["linear"], ["zoom"], 5, 10, 7.5, 13],
@@ -546,11 +549,14 @@ function syncMap(
 
   const labelPoints: GeoJSON.Feature[] = BACKDROP_REGIONS.filter((region) =>
     geometryValid(region.geometry),
-  ).map((region) => ({
-    type: "Feature",
-    properties: { name: region.name },
-    geometry: { type: "Point", coordinates: region.label },
-  }))
+  ).flatMap((region) => {
+    const spots = region.labels?.length ? region.labels : [region.label]
+    return spots.map((coordinates) => ({
+      type: "Feature" as const,
+      properties: { name: region.name },
+      geometry: { type: "Point" as const, coordinates },
+    }))
+  })
   backdropLabels.setData({ type: "FeatureCollection", features: labelPoints })
 
   rivers.setData({
@@ -644,6 +650,8 @@ function syncMap(
     map.setFilter("selected", ["==", ["get", "id"], snapshot.selectedId ?? ""])
   }
 
+  syncMarkerZoom(map, markers)
+
   if (hasGeometry && !fitted.current) {
     map.resize()
     const urlView = readMapViewFromUrl()
@@ -659,6 +667,13 @@ function syncMap(
     }
     fitted.current = true
     map.resize()
+  }
+}
+
+function syncMarkerZoom(map: maplibregl.Map, markers: Map<string, maplibregl.Marker>) {
+  const hide = map.getZoom() < 5.2
+  for (const marker of markers.values()) {
+    marker.getElement().style.visibility = hide ? "hidden" : "visible"
   }
 }
 

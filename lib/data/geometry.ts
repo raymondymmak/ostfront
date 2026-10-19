@@ -17,6 +17,7 @@ export type BackdropRegion = {
   name: string
   owner: string
   label: [number, number]
+  labels?: [number, number][]
   geometry: ProvinceGeometry
 }
 
@@ -29,16 +30,29 @@ export type RiverLine = {
 export const THEATER_BBOX = theaterData.bbox as [number, number, number, number]
 const theaterMeta = theaterData as unknown as {
   viewBbox?: [number, number, number, number]
+  worldBbox?: [number, number, number, number]
   sea?: ProvinceGeometry
+  stateOwners?: Record<string, string>
+  ownerColors?: Record<string, string>
+  ownerAudit?: {
+    states: number
+    nameMatched: number
+    fallback: number
+    disagreements: unknown[]
+    unsure: unknown[]
+  }
 }
 export const VIEW_BBOX = theaterMeta.viewBbox ?? THEATER_BBOX
+export const WORLD_BBOX = theaterMeta.worldBbox ?? VIEW_BBOX
 export const SEA_GEOMETRY = theaterMeta.sea
 export const GEOMETRY_SOURCE = theaterData.source as string
 export const BACKDROP_REGIONS = theaterData.backdrop as BackdropRegion[]
 export const RIVER_LINES = theaterData.rivers as RiverLine[]
+export const STATE_OWNERS = theaterMeta.stateOwners ?? {}
+export const OWNER_AUDIT = theaterMeta.ownerAudit
 
-/** Muted 1914-owner tints for non-playable states. Playable land keeps faction colors. */
-export const BACKDROP_OWNER_COLOR: Record<string, string> = {
+/** Muted 1914-owner tints. The named European colors stay as they were; generated tints fill the rest of the world. */
+const EUROPEAN_OWNER_COLOR: Record<string, string> = {
   german_empire: "#9aa3ad",
   austro_hungarian_empire: "#c4b49a",
   russia: "#8fa08a",
@@ -53,6 +67,11 @@ export const BACKDROP_OWNER_COLOR: Record<string, string> = {
   greece: "#b0ae9a",
   albania: "#a8ada8",
   ottoman_empire: "#b0a090",
+  bosnia: "#c2b6a2",
+}
+export const BACKDROP_OWNER_COLOR: Record<string, string> = {
+  ...(theaterMeta.ownerColors ?? {}),
+  ...EUROPEAN_OWNER_COLOR,
 }
 
 export function backdropColor(owner: string): string {
