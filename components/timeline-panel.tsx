@@ -1,7 +1,9 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { chronicleFollowsLatest } from "@/lib/chronicle-scroll"
 import { BRIEFING } from "@/lib/data/scenario"
 import { FACTION_LABEL } from "@/lib/format"
 import type { TurnRecord } from "@/lib/types"
@@ -14,9 +16,33 @@ type TimelinePanelProps = {
 
 export function TimelinePanel({ log, active, onActive }: TimelinePanelProps) {
   const record = log[active]
+  const datesRef = useRef<HTMLDivElement>(null)
+  const entryRef = useRef<HTMLDivElement>(null)
+  const followDates = useRef(true)
+
+  useEffect(() => {
+    const dates = datesRef.current
+    if (!dates) return
+    const onScroll = () => {
+      followDates.current = chronicleFollowsLatest(dates.scrollTop, dates.scrollHeight, dates.clientHeight)
+    }
+    dates.addEventListener("scroll", onScroll, { passive: true })
+    return () => dates.removeEventListener("scroll", onScroll)
+  }, [log.length])
+
+  useEffect(() => {
+    if (!followDates.current) return
+    const dates = datesRef.current
+    if (dates) dates.scrollTop = dates.scrollHeight
+    if (entryRef.current) entryRef.current.scrollTop = 0
+  }, [log.length])
+
+  useEffect(() => {
+    if (entryRef.current) entryRef.current.scrollTop = 0
+  }, [active])
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-testid="chronicle">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <h2 className="font-display text-lg leading-none">Chronicle</h2>
         {record && (
@@ -26,15 +52,23 @@ export function TimelinePanel({ log, active, onActive }: TimelinePanelProps) {
         )}
       </div>
       {log.length === 0 ? (
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea
+          className="min-h-0 flex-1 overflow-hidden"
+          viewportClassName="overscroll-contain"
+          viewportRef={entryRef}
+        >
           <div className="p-4">
             <p className="font-display text-lg">4 June 1915, two days after Przemyśl</p>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{BRIEFING}</p>
           </div>
         </ScrollArea>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[9.5rem_minmax(0,1fr)]">
-          <ScrollArea className="h-full border-r border-border">
+        <div className="grid min-h-0 flex-1 grid-cols-[9.5rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden">
+          <ScrollArea
+            className="h-full min-h-0 overflow-hidden border-r border-border"
+            viewportClassName="overscroll-contain"
+            viewportRef={datesRef}
+          >
             <ul className="flex flex-col p-1">
               {log.map((entry, index) => (
                 <li key={`${entry.turn}-${entry.date}`}>
@@ -52,7 +86,11 @@ export function TimelinePanel({ log, active, onActive }: TimelinePanelProps) {
             </ul>
           </ScrollArea>
           {record && (
-            <ScrollArea className="h-full">
+            <ScrollArea
+              className="h-full min-h-0 overflow-hidden"
+              viewportClassName="overscroll-contain"
+              viewportRef={entryRef}
+            >
               <article className="flex flex-col gap-3 p-3 text-sm">
                 {record.warning && (
                   <p className="rounded-md border border-destructive/40 px-2.5 py-2 text-destructive">

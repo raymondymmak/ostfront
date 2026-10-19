@@ -266,12 +266,14 @@ export function GameApp() {
             </TabsContent>
           </Tabs>
         </aside>
-        <section className="relative z-10 hidden min-h-0 border-t border-border bg-background lg:block">
-          <TimelinePanel
-            log={game.log}
-            active={game.log.length ? activeLog : 0}
-            onActive={setLogIndex}
-          />
+        <section className="relative z-10 hidden min-h-0 overflow-hidden border-t border-border bg-background lg:block">
+          <div className="absolute inset-0 flex min-h-0 flex-col">
+            <TimelinePanel
+              log={game.log}
+              active={game.log.length ? activeLog : 0}
+              onActive={setLogIndex}
+            />
+          </div>
         </section>
       </div>
     </div>
