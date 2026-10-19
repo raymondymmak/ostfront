@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import * as maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 import { SvgMap } from "@/components/svg-map"
+import { BACKDROP_REGIONS, RIVER_LINES, THEATER_BBOX } from "@/lib/data/geometry"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
 
@@ -109,10 +110,59 @@ export function WarMap({
     })
 
     map.on("load", () => {
+      map.addSource("backdrop", { type: "geojson", data: emptyCollection() })
+      map.addSource("rivers", { type: "geojson", data: emptyCollection() })
       map.addSource("provinces", { type: "geojson", data: emptyCollection() })
       map.addSource("orders", { type: "geojson", data: emptyCollection() })
       map.addSource("order-ends", { type: "geojson", data: emptyCollection() })
       map.addSource("preview", { type: "geojson", data: emptyCollection() })
+      map.addLayer({
+        id: "backdrop",
+        type: "fill",
+        source: "backdrop",
+        paint: {
+          "fill-color": "#8a9399",
+          "fill-opacity": 0.55,
+        },
+      })
+      map.addLayer({
+        id: "backdrop-border",
+        type: "line",
+        source: "backdrop",
+        paint: {
+          "line-color": "#5c6468",
+          "line-width": 0.8,
+          "line-opacity": 0.65,
+        },
+      })
+      map.addLayer({
+        id: "backdrop-labels",
+        type: "symbol",
+        source: "backdrop",
+        layout: {
+          "text-field": ["get", "name"],
+          "text-size": 11,
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-letter-spacing": 0.04,
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": "#4a5258",
+          "text-halo-color": "#d8dee2",
+          "text-halo-width": 1.2,
+          "text-opacity": 0.55,
+        },
+      })
+      map.addLayer({
+        id: "rivers",
+        type: "line",
+        source: "rivers",
+        paint: {
+          "line-color": "#4a7a9a",
+          "line-width": 1.6,
+          "line-opacity": 0.75,
+        },
+      })
       map.addLayer({
         id: "provinces",
         type: "fill",
@@ -297,8 +347,13 @@ export function WarMap({
       map.once("idle", () => blitMap(map, blitRef.current))
     })
 
-    const observer = new ResizeObserver(() => map.resize())
-    observer.observe(container)
+    const observer = new ResizeObserver(() => {
+      map.resize()
+      if (loadedRef.current) {
+        syncMap(map, propsRef.current, markersRef.current, fittedRef)
+      }
+    })
+    observer.observe(container.parentElement ?? container)
 
     const markers = markersRef.current
     return () => {
@@ -379,10 +434,12 @@ export function WarMap({
           onDraw={onDraw}
         />
       ) : (
-        <>
+        <div className="map-stage absolute inset-0">
           <canvas ref={blitRef} className="pointer-events-none absolute inset-0 z-0 h-full w-full" />
-          <div ref={containerRef} className="map-viewport absolute inset-0 z-10 overflow-hidden" />
-        </>
+          <div className="absolute inset-0 z-10 h-full w-full overflow-hidden">
+            <div ref={containerRef} className="h-full w-full" />
+          </div>
+        </div>
       )}
       {hoverTip && !failed && (
         <div
@@ -434,13 +491,38 @@ function syncMap(
   markers: Map<string, maplibregl.Marker>,
   fitted: { current: boolean },
 ) {
+  const backdrop = map.getSource("backdrop") as maplibregl.GeoJSONSource | undefined
+  const rivers = map.getSource("rivers") as maplibregl.GeoJSONSource | undefined
   const provinces = map.getSource("provinces") as maplibregl.GeoJSONSource | undefined
   const orders = map.getSource("orders") as maplibregl.GeoJSONSource | undefined
   const ends = map.getSource("order-ends") as maplibregl.GeoJSONSource | undefined
-  if (!provinces || !orders || !ends) return
+  if (!backdrop || !rivers || !provinces || !orders || !ends) return
+
+  const backdropFeatures: GeoJSON.Feature[] = BACKDROP_REGIONS.map((region) => {
+    if (region.polygon.length < 4) return null
+    const ring = region.polygon
+    return {
+      type: "Feature",
+      properties: { id: region.id, name: region.name },
+      geometry: { type: "Polygon", coordinates: [ring] },
+      id: region.id,
+    }
+  }).filter(Boolean) as GeoJSON.Feature[]
+  backdrop.setData({ type: "FeatureCollection", features: backdropFeatures })
+
+  rivers.setData({
+    type: "FeatureCollection",
+    features: RIVER_LINES.map((river) => ({
+      type: "Feature",
+      properties: { id: river.id, name: river.name },
+      geometry: { type: "LineString", coordinates: river.coordinates },
+    })),
+  })
 
   const features: GeoJSON.Feature[] = []
   const bounds = new maplibregl.LngLatBounds()
+  bounds.extend([THEATER_BBOX[0], THEATER_BBOX[1]])
+  bounds.extend([THEATER_BBOX[2], THEATER_BBOX[3]])
   let hasGeometry = false
   for (const province of snapshot.provinces) {
     if (province.polygon.length < 4) continue
@@ -520,8 +602,10 @@ function syncMap(
   }
 
   if (hasGeometry && !fitted.current) {
+    map.resize()
     map.fitBounds(bounds, { padding: 32, animate: false, maxZoom: 7.2 })
     fitted.current = true
+    map.resize()
   }
 }
 

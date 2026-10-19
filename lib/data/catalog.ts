@@ -19,6 +19,8 @@ export type CatalogProvince = {
   polygon: [number, number][]
 }
 
+export const PROVINCE_COUNT = PROVINCE_DEFS.length
+
 const theater = buildTheater(PROVINCE_DEFS)
 const { rails, missing } = railsFromNeighbors(theater.neighbors)
 

@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
+import { BACKDROP_REGIONS, RIVER_LINES } from "@/lib/data/geometry"
 
 type SvgMapProps = {
   provinces: MapProvince[]
@@ -34,8 +35,12 @@ export function SvgMap({
     let maxLon = -Infinity
     let minLat = Infinity
     let maxLat = -Infinity
-    for (const province of provinces) {
-      for (const [lon, lat] of province.polygon) {
+    const rings = [
+      ...provinces.map((province) => province.polygon),
+      ...BACKDROP_REGIONS.map((region) => region.polygon),
+    ]
+    for (const polygon of rings) {
+      for (const [lon, lat] of polygon) {
         minLon = Math.min(minLon, lon)
         maxLon = Math.max(maxLon, lon)
         minLat = Math.min(minLat, lat)
@@ -101,6 +106,50 @@ export function SvgMap({
         setPreview(null)
       }}
     >
+      {BACKDROP_REGIONS.map((region) => {
+        if (region.polygon.length < 4) return null
+        const points = region.polygon.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
+        const cx =
+          region.polygon.reduce((sum, coord) => sum + coord[0], 0) / region.polygon.length
+        const cy =
+          region.polygon.reduce((sum, coord) => sum + coord[1], 0) / region.polygon.length
+        return (
+          <g key={region.id} pointerEvents="none">
+            <polygon
+              points={points}
+              fill="#8a9399"
+              fillOpacity={0.55}
+              stroke="#5c6468"
+              strokeWidth={view.label * 0.05}
+              strokeOpacity={0.65}
+            />
+            {region.name !== "Baltic Sea" && (
+              <text
+                x={cx}
+                y={-cy}
+                textAnchor="middle"
+                fill="#4a5258"
+                fillOpacity={0.55}
+                fontSize={view.label * 0.85}
+                fontFamily="Georgia, serif"
+              >
+                {region.name}
+              </text>
+            )}
+          </g>
+        )
+      })}
+      {RIVER_LINES.map((river) => (
+        <polyline
+          key={river.id}
+          points={river.coordinates.map(([lon, lat]) => `${lon},${-lat}`).join(" ")}
+          fill="none"
+          stroke="#4a7a9a"
+          strokeWidth={view.label * 0.09}
+          strokeOpacity={0.75}
+          pointerEvents="none"
+        />
+      ))}
       {provinces.map((province) => {
         if (province.polygon.length < 4) return null
         const points = province.polygon.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
@@ -164,11 +213,12 @@ export function SvgMap({
         const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
         const x = province.centroid[0]
         const y = -province.centroid[1]
+        const offset = labelOffset(province.id)
         return (
           <g key={`${province.id}-label`} pointerEvents="none">
             <text
-              x={x}
-              y={y}
+              x={x + offset[0]}
+              y={y + offset[1]}
               textAnchor="middle"
               fill={province.id === selectedId ? "#6a4b16" : "#241c14"}
               fontSize={view.label}
@@ -181,8 +231,8 @@ export function SvgMap({
             </text>
             {strength > 0 && (
               <text
-                x={x}
-                y={y + view.label * 1.15}
+                x={x + offset[0]}
+                y={y + offset[1] + view.label * 1.15}
                 textAnchor="middle"
                 fill={province.controller === "central" ? "#1c3348" : "#6a2a22"}
                 fontSize={view.label * 0.85}
@@ -200,6 +250,15 @@ export function SvgMap({
       })}
     </svg>
   )
+}
+
+/** Tiny deterministic nudge so dense labels separate without leaving the province. */
+function labelOffset(id: string): [number, number] {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  const angle = (hash % 360) * (Math.PI / 180)
+  const radius = 0.04 + (hash % 7) * 0.01
+  return [Math.cos(angle) * radius, Math.sin(angle) * radius]
 }
 
 function provinceFill(province: MapProvince, overlay: SvgMapProps["overlay"]): string {

@@ -182,14 +182,26 @@
   color: #6a2a22;
 }
 
-.map-viewport .maplibregl-map,
-.map-viewport .maplibregl-canvas-container,
-.map-viewport .maplibregl-marker-container {
+.map-stage .maplibregl-map {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.map-stage .maplibregl-canvas-container,
+.map-stage .maplibregl-marker-container {
   overflow: hidden !important;
 }
 
-.maplibregl-canvas {
+.map-stage .maplibregl-canvas {
   opacity: 0 !important;
+}
+
+.map-stage .maplibregl-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .maplibregl-ctrl-group {

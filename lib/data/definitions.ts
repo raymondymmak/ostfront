@@ -16,7 +16,7 @@ export type ProvinceDef = {
 
 /**
  * Hand-placed centers for a June 1915 Eastern Front.
- * Polygons and neighbors are the Voronoi diagram of these points.
+ * Polygons and neighbors come from `lib/data/theater-geometry.json` (Natural Earth–clipped mesh).
  */
 export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "memel", name: "Memel", lon: 21.15, lat: 55.58, terrain: "plains", owner: "central", controller: "central", fort: 0 },
