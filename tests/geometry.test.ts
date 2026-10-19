@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { CATALOG, PROVINCE_COUNT } from "@/lib/data/catalog"
 import {
+  ALL_NEIGHBORS,
   BACKDROP_REGIONS,
   GEOMETRY_SOURCE,
   OWNER_AUDIT,
   STATE_OWNERS,
   VIEW_BBOX,
+  WORLD_STATES,
   backdropColor,
   buildTheater,
   geometryValid,
@@ -165,6 +167,59 @@ describe("theater geometry", () => {
     expect(STATE_OWNERS.Bhutan).toBe("bhutan")
     expect(STATE_OWNERS.Nepal).toBe("nepal")
     expect(STATE_OWNERS.Oman).toBe("oman")
+  })
+
+  it("keeps every source state, including the tiny ones, at full detail", () => {
+    expect(WORLD_STATES).toHaveLength(OWNER_AUDIT!.states)
+    expect(WORLD_STATES).toHaveLength(1081)
+    const playable = WORLD_STATES.filter((state) => state.playable).map((state) => state.id).sort()
+    expect(playable).toEqual(CATALOG.map((province) => province.id).sort())
+    const byId = new Map(WORLD_STATES.map((state) => [state.id, state]))
+    const tiny = [
+      "hong_kong",
+      "macau",
+      "gibraltar",
+      "singapore",
+      "luxembourg",
+      "malta",
+      "bahrain",
+      "danzig",
+    ]
+    for (const id of tiny) {
+      const state = byId.get(id)
+      expect(state, id).toBeTruthy()
+      expect(geometryValid(state!.geometry), id).toBe(true)
+      expect(turf.area(featureOf(state!.geometry)), id).toBeGreaterThan(0)
+    }
+    for (const state of WORLD_STATES) {
+      expect(geometryValid(state.geometry), state.id).toBe(true)
+      expect(turf.area(featureOf(state.geometry)), state.id).toBeGreaterThan(0)
+      expect(["name", "fallback", "override"], state.id).toContain(state.source)
+      expect(state.owner.length, state.id).toBeGreaterThan(0)
+      expect(STATE_OWNERS[state.stateId], state.stateId).toBe(state.owner)
+    }
+    expect(byId.get("hong_kong")!.owner).toBe("united_kingdom")
+    expect(byId.get("macau")!.owner).toBe("portugal")
+    expect(byId.get("danzig")!.playable).toBe(true)
+  })
+
+  it("stores adjacency for every state and only plays the playable subgraph", () => {
+    expect(Object.keys(ALL_NEIGHBORS)).toHaveLength(WORLD_STATES.length)
+    const playable = new Set(CATALOG.map((province) => province.id))
+    for (const [id, list] of Object.entries(ALL_NEIGHBORS)) {
+      for (const other of list) {
+        expect(ALL_NEIGHBORS[other], `${id}-${other}`).toContain(id)
+        expect(other).not.toBe(id)
+      }
+    }
+    for (const province of CATALOG) {
+      expect(theater.neighbors[province.id].length).toBeGreaterThan(0)
+      for (const other of theater.neighbors[province.id]) {
+        expect(playable.has(other), other).toBe(true)
+        expect(ALL_NEIGHBORS[province.id]).toContain(other)
+      }
+    }
+    expect(BACKDROP_REGIONS.every((region) => !playable.has(region.id))).toBe(true)
   })
 })
 
