@@ -24,13 +24,13 @@ describe("cascade planning", () => {
   it("starts on the strong model for important turns when configured", () => {
     process.env.LLM_MODEL_STRONG = "strong-model"
     const state = createInitialState()
-    const radom = state.provinces.find((province) => province.id === "radom")!
+    const kielce = state.provinces.find((province) => province.id === "kielce")!
     const orders: PlayerOrder[] = [
       {
         type: "attack",
-        from: "radom",
-        target: "warsaw",
-        unitIds: radom.units.map((unit) => unit.id),
+        from: "kielce",
+        target: "warszawa",
+        unitIds: kielce.units.map((unit) => unit.id),
       },
     ]
     const plan = planCascade(state, orders, resolveLlmModels())

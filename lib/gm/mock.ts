@@ -11,21 +11,21 @@ import type {
 } from "@/lib/types"
 
 const FORTRESS = new Set([
-  "warsaw",
-  "brest",
-  "lemberg",
-  "kovno",
-  "krakow",
-  "konigsberg",
+  "warszawa",
+  "lublin",
+  "wolyn",
+  "proskuriv",
+  "suduva",
+  "wilno",
 ])
 
 const DIPLOMACY = [
-  "Berlin tells Vienna that the Kraków—Przemyśl railway is the campaign. Lemberg before everything.",
-  "Stavka warns the Warsaw depot that Galicia can be thinned if the Narew starts to bend.",
-  "Conrad wants another push east of Przemyśl before the Russians dig in front of Lemberg.",
+  "Berlin tells Vienna that Galicia is already in hand. Lemberg is the depot; Lublin and Volhynia are the next states.",
+  "Stavka has the 8th Army on the Podolia side of the Lemberg border and the 3rd Army in Lublin. Galicia will not be walked back this fortnight.",
+  "Conrad wants the Lemberg group kept up to strength before anyone crosses into Volhynia.",
   "Falkenhayn will send no fresh corps from the west. This fortnight is fought with the rails already in hand.",
-  "Bucharest stays noncommittal. The Bukovina is watched, not entered.",
-  "The heavy artillery asks for ammunition trains through Tarnów before the next assault.",
+  "Bucharest stays noncommittal. Bukovina is Austrian and quiet. Romania is still neutral.",
+  "Mackensen's heavy artillery is in Lemberg. Ammunition, not another march, is the constraint.",
 ]
 
 export function mockAiTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
@@ -114,7 +114,7 @@ export function mockAiTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
   }
 
   if (state.turn % 2 === 0) {
-    for (const id of ["warsaw", "brest", "lemberg"]) {
+    for (const id of ["warszawa", "lublin", "wolyn"]) {
       const province = findProvince(state, id)
       if (
         province &&
@@ -170,7 +170,7 @@ function pickEvents(state: GameState): GameEvent[] {
     }
   }
   if (state.turn % 5 === 4) {
-    const hub = findProvince(state, "warsaw")
+    const hub = findProvince(state, "warszawa")
     if (hub) {
       events.push({
         type: "strike",

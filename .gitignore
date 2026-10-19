@@ -20,6 +20,11 @@
 # production
 /build
 
+# map build caches. MapChart's HOI4 SVG and the full state geojson stay
+# outside the repo (HOI4_DIR / WORLDOS_REGIONS); only the cleaned theater is committed.
+/scripts/cache/
+/uploads/
+
 # misc
 .DS_Store
 *.pem

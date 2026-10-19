@@ -3,6 +3,16 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
+import {
+  BACKDROP_REGIONS,
+  RIVER_LINES,
+  backdropColor,
+  eachCoord,
+  geometryPolygons,
+  geometryValid,
+  type ProvinceGeometry,
+} from "@/lib/data/geometry"
+import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 
 type SvgMapProps = {
   provinces: MapProvince[]
@@ -35,12 +45,22 @@ export function SvgMap({
     let minLat = Infinity
     let maxLat = -Infinity
     for (const province of provinces) {
-      for (const [lon, lat] of province.polygon) {
+      if (!geometryValid(province.polygon)) continue
+      eachCoord(province.polygon, ([lon, lat]) => {
         minLon = Math.min(minLon, lon)
         maxLon = Math.max(maxLon, lon)
         minLat = Math.min(minLat, lat)
         maxLat = Math.max(maxLat, lat)
-      }
+      })
+    }
+    for (const region of BACKDROP_REGIONS) {
+      if (!geometryValid(region.geometry)) continue
+      eachCoord(region.geometry, ([lon, lat]) => {
+        minLon = Math.min(minLon, lon)
+        maxLon = Math.max(maxLon, lon)
+        minLat = Math.min(minLat, lat)
+        maxLat = Math.max(maxLat, lat)
+      })
     }
     if (!Number.isFinite(minLon)) {
       minLon = 16
@@ -88,7 +108,7 @@ export function SvgMap({
     <svg
       ref={svgRef}
       viewBox={view.box}
-      className="absolute inset-0 h-full w-full overflow-hidden bg-[#6e8ea3]"
+      className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
       data-testid="svg-map"
       onMouseMove={(event) => {
         if (!originId) return
@@ -101,17 +121,57 @@ export function SvgMap({
         setPreview(null)
       }}
     >
+      {BACKDROP_REGIONS.map((region) => {
+        if (!geometryValid(region.geometry)) return null
+        return (
+          <g key={region.id} pointerEvents="none">
+            <path
+              d={geometryPath(region.geometry)}
+              fill={backdropColor(region.owner)}
+              fillOpacity={0.96}
+              fillRule="evenodd"
+              stroke="#5c6468"
+              strokeWidth={view.label * 0.06}
+              strokeOpacity={0.85}
+            />
+            <text
+              x={region.label[0]}
+              y={-region.label[1]}
+              textAnchor="middle"
+              fill="#4a5258"
+              fillOpacity={0.72}
+              fontSize={view.label * 0.85}
+              fontFamily="Georgia, serif"
+            >
+              {region.name}
+            </text>
+          </g>
+        )
+      })}
+      {RIVER_LINES.map((river) => (
+        <polyline
+          key={river.id}
+          points={river.coordinates.map(([lon, lat]) => `${lon},${-lat}`).join(" ")}
+          fill="none"
+          stroke="#4a7a9a"
+          strokeWidth={view.label * 0.09}
+          strokeOpacity={0.75}
+          pointerEvents="none"
+        />
+      ))}
       {provinces.map((province) => {
-        if (province.polygon.length < 4) return null
-        const points = province.polygon.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
+        if (!geometryValid(province.polygon)) return null
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
+        const stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
+        const fill = provinceFill(province, overlay)
         return (
-          <polygon
+          <path
             key={province.id}
-            points={points}
-            fill={provinceFill(province, overlay)}
-            stroke={selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"}
+            d={geometryPath(province.polygon)}
+            fill={fill}
+            fillRule="evenodd"
+            stroke={stroke}
             strokeWidth={selected ? view.label * 0.22 : view.label * 0.08}
             className={flashing ? "animate-pulse" : undefined}
             style={{ cursor: orderMode ? "crosshair" : "pointer" }}
@@ -159,16 +219,19 @@ export function SvgMap({
           pointerEvents="none"
         />
       )}
-      {provinces.map((province) => {
-        if (province.polygon.length < 4) return null
+      {provinces
+        .filter((province) => geometryValid(province.polygon))
+        .map((province) => {
         const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
         const x = province.centroid[0]
         const y = -province.centroid[1]
+        const offset = labelOffset(province.id)
+        const [sx, sy] = strengthLabelOffset(province.id)
         return (
           <g key={`${province.id}-label`} pointerEvents="none">
             <text
-              x={x}
-              y={y}
+              x={x + offset[0]}
+              y={y + offset[1]}
               textAnchor="middle"
               fill={province.id === selectedId ? "#6a4b16" : "#241c14"}
               fontSize={view.label}
@@ -177,12 +240,12 @@ export function SvgMap({
               style={{ textShadow: "0 1px 0 rgba(255,248,230,0.75)" }}
             >
               {province.depot ? "◆ " : ""}
-              {province.name}
+              {shortProvinceName(province.name)}
             </text>
             {strength > 0 && (
               <text
-                x={x}
-                y={y + view.label * 1.15}
+                x={x + offset[0] + sx * view.label * 0.35}
+                y={y + offset[1] + view.label * (1.15 + sy * 0.15)}
                 textAnchor="middle"
                 fill={province.controller === "central" ? "#1c3348" : "#6a2a22"}
                 fontSize={view.label * 0.85}
@@ -200,6 +263,26 @@ export function SvgMap({
       })}
     </svg>
   )
+}
+
+/** Tiny deterministic nudge so dense labels separate without leaving the province. */
+function labelOffset(id: string): [number, number] {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  const angle = (hash % 360) * (Math.PI / 180)
+  const radius = 0.04 + (hash % 7) * 0.01
+  return [Math.cos(angle) * radius, Math.sin(angle) * radius]
+}
+
+function geometryPath(geometry: ProvinceGeometry): string {
+  const parts: string[] = []
+  for (const rings of geometryPolygons(geometry)) {
+    for (const ring of rings) {
+      const cmds = ring.map(([lon, lat], index) => `${index === 0 ? "M" : "L"}${lon},${-lat}`)
+      parts.push(`${cmds.join(" ")} Z`)
+    }
+  }
+  return parts.join(" ")
 }
 
 function provinceFill(province: MapProvince, overlay: SvgMapProps["overlay"]): string {

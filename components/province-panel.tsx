@@ -26,7 +26,7 @@ export function ProvincePanel({
   if (!province) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        Select a province. The Tarnów group is the hammer; Lemberg is the hinge.
+        Select a province. Lemberg is the Austrian depot. The Russian line is Lublin and Volhynia.
       </div>
     )
   }
@@ -153,7 +153,7 @@ export function ProvincePanel({
             <li>Supply under 30 cannot advance. Rails cost 1; roads cost the ground you enter.</li>
             <li>Attacks are strength × morale × supply against defense × terrain × fort, then a d6.</li>
             <li>The game master may ask for unrest or supply shifts of at most 20.</li>
-            <li>Depots feed only their own side: Königsberg and Kraków; Warsaw and Rovno.</li>
+            <li>Depots feed only their own side: Königsberg and Kraków; Warsaw and Volhynia (Rovno).</li>
           </ul>
         </details>
       </div>

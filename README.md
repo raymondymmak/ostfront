@@ -1,3 +1,4 @@
+
 # Ostfront 1915
 
 A map-first weekend prototype of the Eastern Front in June 1915. You command the Central Powers. Russia is played by a game master that narrates the fortnight and proposes structured changes. The map is the source of truth: a deterministic rules engine accepts or rejects every proposal, then resolves movement, combat, supply, and unrest.
@@ -51,17 +52,17 @@ The model may narrate and propose Russian moves, attacks, fortifications, unrest
 4. `resolveTurn` clones the state, decays temporary supply, recomputes supply, applies proposals in order, applies events, recomputes supply, then applies occupation unrest and attrition.
 5. Rejected proposals stay in the chronicle with the reason.
 
-The situation is saved in `localStorage` under `ostfront-1915-v1`. Restarting the campaign clears it. A save whose province count is not 40 is discarded.
+The situation is saved in `localStorage` under `ostfront-1915-v1`. Restarting the campaign clears it. A save whose province ids no longer match the catalog is discarded; otherwise units and state are rebound to the current borders and rails.
 
 ## Opening, 4 June 1915
 
 Each turn is a fortnight. The first date is 4 June 1915, two days after the recapture of Przemyśl.
 
-Warsaw is Russian-held and is Russia's depot, which matches the front after the 1914 retreat from Poland. Königsberg is the German depot. Two extra railheads keep both wings supplied: Kraków for the Austro-Hungarian South, and Rovno for the Russian South-West Front. A depot feeds only its own faction, and only while that faction controls it. Taking Warsaw starves Russia. It does not feed the Central Powers.
+Warsaw is Russian-held and is Russia's depot. Königsberg and Kraków are Central Powers depots, and Lemberg is the Austrian forward depot. Kraków still contains Tarnów, Rzeszów, and Przemyśl as one Hearts of Iron IV state. Rovno, inside Volhynia, is the Russian forward railhead. A depot feeds only its own faction, and only while that faction controls it. Taking Warsaw starves Russia. It does not feed the Central Powers.
 
-`owner` is the 1914 sovereign, used for occupation unrest. `controller` is who holds the ground. Lemberg, Stanislav, and Tarnopol are Austrian homeland under Russian control, so they start with unrest. Przemyśl is Central Powers, fort level 2.
+`owner` is the 1914 sovereign that holds most of the state, used for occupation unrest. `controller` is who holds the ground on 4 June 1915. Katowice is German. Lemberg, Stanislav, and Bukovina are Austrian and already cleared, so they start at home with no unrest. The Russian line in the south is Lublin, Volhynia, and Podolia. These four corrections live in `OWNER_OVERRIDES` in `scripts/build-hoi4-theater.py` and in `lib/data/definitions.ts`.
 
-The campaign that can actually move is Galicia. The Tarnów group must march to Przemyśl before it can attack Lemberg, because only Przemyśl borders Lemberg on your side. A typed order `Attack Lemberg.` commits the Przemyśl assault group alone, at poor odds. The panel shows those odds before you close the fortnight. The second axis is Kraków–Kielce–Radom–Warsaw. East Prussia is long and thin on supply.
+Formations are spread along the front instead of stacked in one state. Kraków holds the garrison, the Beskiden corps, and the Przemyśl group. Mackensen's artillery and the Guard are in Lemberg. A typed order `Attack Lublin.` commits the best supplied neighbor. The second axis is Kielce–Warsaw; Radom sits in Kielce. East Prussia is Königsberg plus Ermland-Masuren. Pomorze is the 1914 West Prussia state (the map source labels it Gdynia).
 
 On the first fortnight the Russian staff only digs. Later they attack when local odds are at least 1.25, and they do not abandon the last unit on an enemy border.
 
@@ -81,7 +82,7 @@ Combat dice use a seeded mulberry32 generator (`19150604 + turn × 9973`), so th
 ## Architecture
 
 ```
-lib/data        province centers, rails, Voronoi graph, opening order of battle
+lib/data        province catalog, theater geometry, rails, opening order of battle
 lib/engine      supply, combat, resolveTurn
 lib/gm          text orders, mock staff, OpenAI-compatible game master
 lib/schema.ts   Zod models and the JSON Schema sent to the model
@@ -92,6 +93,20 @@ components      map, orders, province, chronicle
 `Province`, `Unit`, `Proposal`, and `GMTurn` live in `lib/types.ts`. Geometry is not stored in the save. The client joins each province to the catalog polygon. The server rebinds neighbors and rails from the catalog before resolving a turn, so a tampered save cannot invent borders.
 
 The map is MapLibre, with a blank style and no remote tiles. Its worker is served from `public/maplibre-gl-worker.mjs`. Each painted frame is copied onto a normal canvas so the front is still visible in browsers that will not composite a WebGL canvas. If WebGL cannot paint at all, the same polygons are drawn as SVG.
+
+**Map data:** Playable province shapes and adjacency live in `lib/data/theater-geometry.json`. The states are Hearts of Iron IV provinces in MapChart's own pixel space, drawn flat (pixels scaled to a few pseudo-degrees around the equator). There is no real-world basemap. Lakes and the sea are the gaps between those states.
+
+Map geometry: MapChart.net (CC BY-SA 4.0), based on Hearts of Iron IV by Paradox Interactive.
+
+1914 owners are assigned by area from the WorldOS 1914 map, which is an input to the build and is not committed. Regenerate with the sources available locally:
+
+```bash
+HOI4_DIR=/path/to/mapchart-hoi4 WORLDOS_REGIONS=/path/to/ww1-1914-regions.geojson npm run build:theater
+```
+
+The raw SVG and the full state geojson are not committed. The script snaps shared borders, dissolves non-playable states by 1914 owner, and writes only the theater file.
+
+The MapLibre container sits in a sized wrapper so `maplibregl-map`’s `position: relative` cannot collapse the viewport (which previously stacked labels down the page on narrow screens). Labels and strength counters use MapLibre markers anchored in map space; backdrop layers ignore pointer events.
 
 On the map, the bottom-left legend explains faction colors, depots, and **strength counters**: the numbered pills on each province are the combined strength of all units there (blue text for Central Powers, rust for Russia). Hover a province for “Total unit strength” in the tooltip.
 
@@ -119,7 +134,8 @@ After deploy, open the production URL and play a fortnight with no env vars to c
 
 ## Add a province
 
-1. Add a `ProvinceDef` in `lib/data/definitions.ts`: `id`, `name`, `lon`, `lat`, `terrain`, `owner`, `controller`, `fort`, and optionally `depot`, `unrest`, and `aliases`. Neighbors and the polygon come from the Voronoi of these points. Adjacencies longer than 1.66 projected degrees are dropped so the bounding box does not create teleports.
-2. Add rail pairs in `lib/data/rails.ts`. A pair is kept only when the two provinces share a border. `npm run map` lists gaps.
-3. Place units in `PLACEMENTS` in `lib/data/scenario.ts`.
-4. Run `npm test` and `npm run map`. A new province count makes old `localStorage` saves reset on their own, because a save is kept only when it has 40 provinces. If you want a different count to persist, change that check in `lib/storage.ts`.
+1. Add a `ProvinceDef` in `lib/data/definitions.ts`: `id`, `name`, `lon`, `lat`, `terrain`, `owner`, `controller`, `fort`, and optionally `depot`, `unrest`, and `aliases`.
+2. Regenerate `lib/data/theater-geometry.json` with `npm run build:theater` (needs `HOI4_DIR` and `WORLDOS_REGIONS`) and commit the result.
+3. Add rail pairs in `lib/data/rails.ts`. A pair is kept only when the two provinces share a border. `npm run map` lists gaps.
+4. Place units in `PLACEMENTS` in `lib/data/scenario.ts`.
+5. Run `npm test` and `npm run map`.
