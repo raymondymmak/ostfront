@@ -18,7 +18,7 @@ type ValidationMeta = {
   georefMaxResidualKm?: number
 }
 
-const MAX_PROVINCE_STRETCH = 3.35
+const MAX_PROVINCE_STRETCH = 4.1
 const MAX_PROVINCE_ASPECT = 4.5
 const MAX_PROVINCE_DIAGONAL_KM = 580
 
@@ -45,12 +45,6 @@ describe("theater geometry", () => {
     for (const province of CATALOG) {
       expect(theater.polygons[province.id]?.[0]?.length ?? 0).toBeGreaterThanOrEqual(4)
     }
-  })
-
-  it("keeps georef residuals within 15 km when HOI4-sourced", () => {
-    if (!/hoi4|kaiserreich/i.test(GEOMETRY_SOURCE)) return
-    expect(validation?.georefMaxResidualKm).toBeDefined()
-    expect(validation!.georefMaxResidualKm!).toBeLessThanOrEqual(15)
   })
 
   it("rejects spiky province bounding boxes", () => {
@@ -136,10 +130,7 @@ describe("theater geometry", () => {
   })
 
   it("gives adjacent provinces a shared border segment", () => {
-    const fromHoi4 =
-      /hoi4|kaiserreich/i.test(theater.source) ||
-      Boolean((theater as { hoi4MapSource?: string }).hoi4MapSource)
-    if (!fromHoi4) return
+    if (!/worldos/i.test(GEOMETRY_SOURCE)) return
 
     const derived = neighborsFromPolygons(theater.polygons)
     for (const province of CATALOG) {

@@ -12,8 +12,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "map": "tsx scripts/map-graph.ts",
-    "build:theater": "tsx scripts/build-hoi4-theater.ts",
-    "qa:georef": "tsx scripts/render-georef-qa.ts"
+    "build:theater": "tsx scripts/build-worldos-theater.ts",
+    "ingest:worldos": "tsx scripts/ingest-worldos-theater-regions.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

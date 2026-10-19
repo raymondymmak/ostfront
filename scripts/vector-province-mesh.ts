@@ -53,6 +53,27 @@ const NAME_TO_PROVINCE: [RegExp, string][] = [
   [/kamenets|kamianets/i, "kamenets"],
   [/plock/i, "plock"],
   [/mlawa|mława/i, "mlawa"],
+  [/kaliningrad/i, "konigsberg"],
+  [/warmian|masurian/i, "allenstein"],
+  [/west pomeranian|pomeranian/i, "danzig"],
+  [/kuyavian|kujaw/i, "thorn"],
+  [/greater poland|wielkopol/i, "posen"],
+  [/lower silesian|silesian|opole/i, "bromberg"],
+  [/masovian|mazowieck/i, "warsaw"],
+  [/podlachian|podlaski/i, "bialystok"],
+  [/łódź|lodz/i, "lodz"],
+  [/świętokrzysk|swietokrzysk/i, "kielce"],
+  [/subcarpathian|podkarpack/i, "rzeszow"],
+  [/lesser poland|małopolsk|malopolsk/i, "krakow"],
+  [/volyn|rivne|zhytomyr/i, "lutsk"],
+  [/vilniaus|vilnius/i, "vilna"],
+  [/šiauliai|siauliai/i, "shavli"],
+  [/kauno|kaunas/i, "kovno"],
+  [/lviv|l'viv/i, "lemberg"],
+  [/ternopil|ivano-frankivs|chernivtsi/i, "stanislav"],
+  [/khmel/i, "tarnopol"],
+  [/transcarpathia/i, "stanislav"],
+  [/chernihiv|kiev city|kyiv/i, "kamenets"],
 ]
 
 function roundCoord([lon, lat]: [number, number]): [number, number] {
@@ -90,6 +111,8 @@ function inWestGalicia(feature: Feature<Polygon | MultiPolygon>): boolean {
 }
 
 function assignProvince(unit: Feature<Polygon | MultiPolygon>): string {
+  const preset = String(unit.properties?.gameId ?? unit.properties?.game_id ?? "")
+  if (preset && PROVINCE_DEFS.some((def) => def.id === preset)) return preset
   const name = String(unit.properties?.name ?? "")
   const byName = provinceFromName(name, unit)
   if (byName) return byName
@@ -304,12 +327,15 @@ export function buildVectorProvinceMesh(
     const fragments = subtractCovered(unit, covered)
     for (const fragment of fragments) {
       if (turf.area(fragment) < 5_000_000) continue
-      const named = provinceFromName(String(fragment.properties?.name ?? ""), fragment)
+      const presetId = assignProvince(fragment)
+      const named = fragment.properties?.gameId
+        ? presetId
+        : provinceFromName(String(fragment.properties?.name ?? ""), fragment)
       const splits = named
         ? [{ provinceId: named, feature: fragment }]
         : shouldSplitUnit(fragment, voronoi)
           ? splitUnitByVoronoi(fragment, voronoi)
-          : [{ provinceId: assignProvince(fragment), feature: fragment }]
+          : [{ provinceId: presetId, feature: fragment }]
       for (const { provinceId, feature } of splits) {
         if (turf.area(feature) < 4_000_000) continue
         piecesByProvince.get(provinceId)?.push(feature)

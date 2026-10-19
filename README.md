@@ -1,3 +1,4 @@
+
 # Ostfront 1915
 
 A map-first weekend prototype of the Eastern Front in June 1915. You command the Central Powers. Russia is played by a game master that narrates the fortnight and proposes structured changes. The map is the source of truth: a deterministic rules engine accepts or rejects every proposal, then resolves movement, combat, supply, and unrest.
@@ -96,13 +97,16 @@ The map is MapLibre, with a blank style and no remote tiles. Its worker is serve
 **Map data:** Playable province shapes and adjacency live in `lib/data/theater-geometry.json`. Regenerate with:
 
 ```bash
-npx tsx scripts/fetch-hoi4-map.ts          # once: downloads map assets into scripts/cache/hoi4/ (gitignored)
-npx tsx scripts/generate-theater-geometry.ts
+# Place Raymond's WorldOS theater extract (or run bootstrap once):
+#   uploads/ww1-1914-theater-regions.geojson
+npx tsx scripts/fetch-theater-sources.ts   # Natural Earth 10m land + rivers (public domain)
+npm run ingest:worldos                     # → lib/data/worldos-theater-regions.geojson
+npm run build:theater                      # → lib/data/theater-geometry.json
 ```
 
-The generator traces **Kaiserreich** (`map/provinces.bmp` + `map/definition.csv`) from [Kaiserreich/Kaiserreich-HOI4](https://github.com/Kaiserreich/Kaiserreich-HOI4/tree/master/map): raster HOI4 province IDs → `gdal_polygonize` → [mapshaper](https://github.com/mbloch/mapshaper) (dissolve, clean, simplify in pixel space) → hybrid TPS/affine georef on vectors (~46 city GCPs). Whole HOI4 provinces are merged into Ostfront’s ~40 game ids (seed anchors + balanced growth). Grey **1914 nations** come from dissolving CShapes 2.0 (June 1915) assignments on HOI4 provinces — not as a separate line overlay. Rivers: Natural Earth 50m (public domain).
+Region geometry from [worldos.cc](https://worldos.cc/worlds/ww1-1914) World War I Game (World101), itself built from Natural Earth (public domain) and [aourednik/historical-basemaps](https://github.com/aourednik/historical-basemaps) owners (CC-BY-SA). This Ostfront repo is a **non-commercial learning project**. The committed `lib/data/worldos-theater-regions.geojson` is a simplified derivative; replace `uploads/ww1-1914-theater-regions.geojson` with the full WorldOS export when available, then re-run ingest and build.
 
-**Credits:** HOI4 map traced for non-commercial learning use only; Paradox files stay in `scripts/cache/hoi4/` (gitignored). CShapes 2.0 is [CC BY-NC-SA](https://creativecommons.org/licenses/by-nc-sa/4.0/) when used for nation assignment. Legacy admin builder: `scripts/build-historical-theater.ts`.
+Grey **1914 backdrop** regions are dissolved from non-playable WorldOS regions by `owner_1914`. Baltic and Black Sea come from Natural Earth 10m land clipped to the viewport.
 
 The MapLibre container sits in a sized wrapper so `maplibregl-map`’s `position: relative` cannot collapse the viewport (which previously stacked labels down the page on narrow screens). Labels and strength counters use MapLibre markers anchored in map space; backdrop layers ignore pointer events.
 
