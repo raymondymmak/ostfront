@@ -3,7 +3,10 @@ import { CATALOG, PROVINCE_COUNT } from "@/lib/data/catalog"
 import {
   BACKDROP_REGIONS,
   GEOMETRY_SOURCE,
+  OWNER_AUDIT,
+  STATE_OWNERS,
   VIEW_BBOX,
+  backdropColor,
   buildTheater,
   geometryValid,
   neighborsFromPolygons,
@@ -90,16 +93,91 @@ describe("theater geometry", () => {
   })
 
   it("frames the theater from the Baltic to the Black Sea", () => {
-    expect(VIEW_BBOX[3] - VIEW_BBOX[1]).toBeGreaterThan(4)
+    expect(VIEW_BBOX).toEqual([-3.0286, -3.248, 3.5801, 3.105])
     const owners = new Set(BACKDROP_REGIONS.map((region) => region.owner))
     expect(owners.has("romania")).toBe(true)
     expect(owners.has("sweden") || owners.has("russia")).toBe(true)
     for (const region of BACKDROP_REGIONS) {
       expect(CATALOG.some((province) => province.id === region.id)).toBe(false)
+      expect(region.owner.length).toBeGreaterThan(0)
       expect(geometryValid(region.geometry)).toBe(true)
     }
   })
+
+  it("gives every backdrop state an owner", () => {
+    expect(OWNER_AUDIT).toBeTruthy()
+    expect(OWNER_AUDIT!.nameMatched + OWNER_AUDIT!.fallback).toBe(OWNER_AUDIT!.states)
+    expect(OWNER_AUDIT!.nameMatched).toBeGreaterThan(400)
+    expect(OWNER_AUDIT!.states).toBe(Object.keys(STATE_OWNERS).length)
+    for (const [id, owner] of Object.entries(STATE_OWNERS)) {
+      expect(owner, id).toBeTruthy()
+      expect(owner).not.toBe("unclaimed")
+    }
+  })
+
+  it("paints the backdrop in neutral greys", () => {
+    const owners = new Set<string>([
+      ...BACKDROP_REGIONS.map((region) => region.owner),
+      ...Object.values(STATE_OWNERS),
+    ])
+    for (const owner of owners) {
+      const color = backdropColor(owner)
+      expect(color, owner).toMatch(/^#[0-9a-f]{6}$/)
+      expect(hsvSaturation(color), owner).toBeLessThan(0.08)
+    }
+    expect(backdropColor("german_empire")).not.toBe("#9aa3ad")
+    expect(backdropColor("german_empire")).not.toBe("#4a6d90")
+  })
+
+  it("keeps the July 1914 de jure owners", () => {
+    expect(STATE_OWNERS.Bosnia).toBe("austro_hungarian_empire")
+    expect(STATE_OWNERS.Thrace).toBe("bulgaria")
+    expect(STATE_OWNERS.Central_Macedonia).toBe("greece")
+    expect(STATE_OWNERS.Nicaragua).toBe("nicaragua")
+    expect(STATE_OWNERS.Casablanca).toBe("france")
+    expect(STATE_OWNERS.Marrakech).toBe("france")
+    expect(STATE_OWNERS.Spanish_Africa).toBe("spain")
+    expect(STATE_OWNERS.Labrador).toBe("newfoundland")
+    expect(STATE_OWNERS.Newfoundland).toBe("newfoundland")
+    expect(STATE_OWNERS.Johor).toBe("united_kingdom")
+    expect(STATE_OWNERS.Kelantan).toBe("united_kingdom")
+    expect(STATE_OWNERS.Brunei).toBe("united_kingdom")
+    expect(STATE_OWNERS.Kuwait).toBe("united_kingdom")
+    expect(STATE_OWNERS.Sikkim).toBe("united_kingdom")
+    expect(STATE_OWNERS.Khuzestan).toBe("persia")
+    expect(STATE_OWNERS.Maldives).toBe("united_kingdom")
+    expect(STATE_OWNERS.Cairo).toBe("egypt")
+    expect(STATE_OWNERS.Tunisia).toBe("france")
+    expect(STATE_OWNERS.Albania).toBe("albania")
+    expect(STATE_OWNERS.Northern_Epirus).toBe("albania")
+    expect(STATE_OWNERS.Tehran).toBe("persia")
+    expect(STATE_OWNERS.Isfahan).toBe("persia")
+    expect(STATE_OWNERS.Gangwon).toBe("empire_of_japan")
+    expect(STATE_OWNERS.Hulunbuir).toBe("mongolia")
+    expect(STATE_OWNERS.Ulaanbaatar).toBe("mongolia")
+    expect(STATE_OWNERS.East_Timor).toBe("portugal")
+    expect(STATE_OWNERS.Portuguese_Guinea).toBe("portugal")
+    expect(STATE_OWNERS.Equatorial_Guinea).toBe("spain")
+    expect(STATE_OWNERS.Gilbert_Islands).toBe("united_kingdom")
+    expect(STATE_OWNERS.Leeward_Islands).toBe("united_kingdom")
+    expect(STATE_OWNERS.North_Darfur).toBe("darfur")
+    expect(STATE_OWNERS.South_Darfur).toBe("darfur")
+    expect(STATE_OWNERS.Bhutan).toBe("bhutan")
+    expect(STATE_OWNERS.Nepal).toBe("nepal")
+    expect(STATE_OWNERS.Oman).toBe("oman")
+  })
 })
+
+function hsvSaturation(hex: string): number {
+  const value = Number.parseInt(hex.slice(1), 16)
+  const red = ((value >> 16) & 255) / 255
+  const green = ((value >> 8) & 255) / 255
+  const blue = (value & 255) / 255
+  const max = Math.max(red, green, blue)
+  const min = Math.min(red, green, blue)
+  if (max === 0) return 0
+  return (max - min) / max
+}
 
 describe("opening map counters", () => {
   it("places every unit and every depot in a valid province", () => {

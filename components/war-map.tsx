@@ -12,6 +12,7 @@ import {
   SEA_GEOMETRY,
   THEATER_BBOX,
   VIEW_BBOX,
+  WORLD_BBOX,
   eachCoord,
   geometryValid,
   type ProvinceGeometry,
@@ -90,8 +91,8 @@ export function WarMap({
         dragRotate: false,
         pitchWithRotate: false,
         maxBounds: [
-          [VIEW_BBOX[0], VIEW_BBOX[1]],
-          [VIEW_BBOX[2], VIEW_BBOX[3]],
+          [WORLD_BBOX[0], WORLD_BBOX[1]],
+          [WORLD_BBOX[2], WORLD_BBOX[3]],
         ],
         canvasContextAttributes: {
           preserveDrawingBuffer: true,
@@ -162,7 +163,7 @@ export function WarMap({
             "match",
             ["get", "owner"],
             ...Object.entries(BACKDROP_OWNER_COLOR).flat(),
-            "#a8ada8",
+            "#b4b2ae",
           ] as unknown as maplibregl.ExpressionSpecification,
           "fill-opacity": 0.96,
         },
@@ -172,9 +173,9 @@ export function WarMap({
         type: "line",
         source: "backdrop",
         paint: {
-          "line-color": "#5c6468",
-          "line-width": 1.1,
-          "line-opacity": 0.85,
+          "line-color": "#3e4448",
+          "line-width": 0.8,
+          "line-opacity": 0.9,
         },
       })
       map.addLayer({
@@ -546,11 +547,14 @@ function syncMap(
 
   const labelPoints: GeoJSON.Feature[] = BACKDROP_REGIONS.filter((region) =>
     geometryValid(region.geometry),
-  ).map((region) => ({
-    type: "Feature",
-    properties: { name: region.name },
-    geometry: { type: "Point", coordinates: region.label },
-  }))
+  ).flatMap((region) => {
+    const spots = region.labels?.length ? region.labels : [region.label]
+    return spots.map((coordinates) => ({
+      type: "Feature" as const,
+      properties: { name: region.name },
+      geometry: { type: "Point" as const, coordinates },
+    }))
+  })
   backdropLabels.setData({ type: "FeatureCollection", features: labelPoints })
 
   rivers.setData({
@@ -655,7 +659,21 @@ function syncMap(
         zoom: urlView.zoom ?? 6.5,
       })
     } else {
+      // Fit the playable frame, then apply the same maxBounds clamp main uses
+      // so the opening center and zoom match. World bounds go back afterwards
+      // so the player can still pan out to the rest of the map.
       map.fitBounds(bounds, { padding: 28, animate: false, maxZoom: 8.2 })
+      map.setMaxBounds([
+        [VIEW_BBOX[0], VIEW_BBOX[1]],
+        [VIEW_BBOX[2], VIEW_BBOX[3]],
+      ])
+      const center = map.getCenter()
+      const zoom = map.getZoom()
+      map.setMaxBounds([
+        [WORLD_BBOX[0], WORLD_BBOX[1]],
+        [WORLD_BBOX[2], WORLD_BBOX[3]],
+      ])
+      map.jumpTo({ center, zoom })
     }
     fitted.current = true
     map.resize()

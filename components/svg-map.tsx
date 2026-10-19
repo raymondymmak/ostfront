@@ -6,8 +6,8 @@ import type { MapProvince } from "@/components/war-map"
 import {
   BACKDROP_REGIONS,
   RIVER_LINES,
+  VIEW_BBOX,
   backdropColor,
-  eachCoord,
   geometryPolygons,
   geometryValid,
   type ProvinceGeometry,
@@ -40,42 +40,15 @@ export function SvgMap({
   const [preview, setPreview] = useState<[number, number] | null>(null)
 
   const view = useMemo(() => {
-    let minLon = Infinity
-    let maxLon = -Infinity
-    let minLat = Infinity
-    let maxLat = -Infinity
-    for (const province of provinces) {
-      if (!geometryValid(province.polygon)) continue
-      eachCoord(province.polygon, ([lon, lat]) => {
-        minLon = Math.min(minLon, lon)
-        maxLon = Math.max(maxLon, lon)
-        minLat = Math.min(minLat, lat)
-        maxLat = Math.max(maxLat, lat)
-      })
-    }
-    for (const region of BACKDROP_REGIONS) {
-      if (!geometryValid(region.geometry)) continue
-      eachCoord(region.geometry, ([lon, lat]) => {
-        minLon = Math.min(minLon, lon)
-        maxLon = Math.max(maxLon, lon)
-        minLat = Math.min(minLat, lat)
-        maxLat = Math.max(maxLat, lat)
-      })
-    }
-    if (!Number.isFinite(minLon)) {
-      minLon = 16
-      maxLon = 28
-      minLat = 48
-      maxLat = 56
-    }
-    const pad = 0.35
+    const [minLon, minLat, maxLon, maxLat] = VIEW_BBOX
+    const pad = 0.15
     const width = maxLon - minLon + pad * 2
     const height = maxLat - minLat + pad * 2
     return {
       box: `${minLon - pad} ${-(maxLat + pad)} ${width} ${height}`,
       label: Math.max(width, height) * 0.018,
     }
-  }, [provinces])
+  }, [])
 
   const byId = useMemo(
     () => new Map(provinces.map((province) => [province.id, province])),

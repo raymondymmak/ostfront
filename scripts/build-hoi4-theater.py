@@ -13,17 +13,21 @@ without a basemap.
 
 from __future__ import annotations
 
+import colorsys
 import json
 import os
 import statistics
 import subprocess
 import unicodedata
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
-from shapely.geometry import Point, Polygon, mapping, shape
-from shapely.ops import nearest_points, unary_union
+from shapely.geometry import Point, Polygon, box, mapping, shape
+from shapely.ops import unary_union
 from shapely.strtree import STRtree
+
+from mod_owners import REJECT_NAME_MATCH, load_mod_owners, lookup_mod, slug as mod_slug
+from world_projection import make_projector, region_of
 
 ROOT = Path(__file__).resolve().parents[1]
 HOI4_DIR = Path(os.environ.get("HOI4_DIR", "/cursor/stores/bot/mapchart-hoi4"))
@@ -35,6 +39,13 @@ WORLDOS_REGIONS = Path(
 )
 OUT_PATH = ROOT / "lib" / "data" / "theater-geometry.json"
 MAPSHAPER = ROOT / "node_modules" / "mapshaper" / "bin" / "mapshaper"
+TGWR_STATES = Path(os.environ.get("TGWR_STATES", "/tmp/tgwr/history/states"))
+TGW_STATES = Path(os.environ.get("TGW_STATES", "/tmp/tgw/mod/thegreatwar/history/states"))
+
+# Frozen on the Europe-only snap so the opening camera does not jump when the
+# world sheet is added. Pseudo-degrees, not geographic.
+EASTERN_BBOX = [-2.1286, -2.548, 2.6801, 2.405]
+EASTERN_VIEW = [-3.0286, -3.248, 3.5801, 3.105]
 
 SNAP_INTERVAL = 0.25
 SCALE = 0.05
@@ -122,6 +133,92 @@ OWNER_OVERRIDES = {
     "Lwów": "austro_hungarian_empire",
     "Stanisławów": "austro_hungarian_empire",
     "Bucovina": "austro_hungarian_empire",
+}
+
+# De jure sovereign on 28 July 1914, after the name match. Occupation does not
+# change the owner. A protectorate is painted as the protecting power unless
+# the polity was actually sovereign (Egypt, Albania, Nepal, Bhutan, Oman).
+DE_JURE_OVERRIDES = {
+    "Bosnia": (
+        "austro_hungarian_empire",
+        "Annexed in 1908. The mod keeps a Bosnian tag and never dates the annexation.",
+    ),
+    "Thrace": (
+        "bulgaria",
+        "MapChart Thrace is Western Thrace (about 25.4E, 42.0N), west of Edirne. The Treaty of Bucharest, 10 August 1913, left it to Bulgaria. Greece received southern Macedonia, including Kavala.",
+    ),
+    "Nicaragua": (
+        "nicaragua",
+        "The United States occupied Nicaragua from 1912. It did not annex it.",
+    ),
+    "Casablanca": (
+        "france",
+        "French protectorate from the Treaty of Fez, 30 March 1912.",
+    ),
+    "Labrador": (
+        "newfoundland",
+        "Labrador belonged to the Dominion of Newfoundland, not Canada.",
+    ),
+    "Johor": ("united_kingdom", "British protectorate, one of the Unfederated Malay States."),
+    "Kelantan": ("united_kingdom", "British protectorate, transferred from Siam in 1909."),
+    "Brunei": ("united_kingdom", "British protectorate since 1888."),
+    "Kuwait": ("united_kingdom", "British protected state under the 1899 agreement."),
+    "Sikkim": ("united_kingdom", "British protectorate. Foreign affairs were conducted by Britain."),
+    "Khuzestan": (
+        "persia",
+        "Persian sovereignty. The Arabistan sheikh was not a separate state.",
+    ),
+    "Maldives": ("united_kingdom", "British protectorate since 1887."),
+}
+
+# Name did not match a mod file, and the area vote is on the wrong side of a border.
+FALLBACK_JUDGMENTS = {
+    "Troms": ("norway", "Norwegian county. The sample landed in Sweden."),
+    "Nordland": ("norway", "Norwegian county. The Swedish border split the vote."),
+    "Dutch_Southern_New_Guinea": (
+        "netherlands",
+        "The MapChart name is the Dutch half of New Guinea. The vote mixed it with German New Guinea.",
+    ),
+    "Northern_Epirus": (
+        "albania",
+        "Under Albanian sovereignty by the May 1914 Protocol of Corfu. The vote's plurality was Serbia.",
+    ),
+    "Sungkiang": (
+        "china",
+        "The state sits on the Chinese bank of the Ussuri, beside Vladivostok. The vote spilled into Russia.",
+    ),
+    "Antwerpen": (
+        "belgium",
+        "Antwerp was Belgian. The vote spilled across the Dutch border.",
+    ),
+    "Atacama": (
+        "chile",
+        "Chilean Atacama, south of Antofagasta. The vote split with Argentina along the Andes.",
+    ),
+    "East_Timor": (
+        "portugal",
+        "Portuguese Timor. The sample landed on Dutch West Timor.",
+    ),
+    "Portuguese_Guinea": (
+        "portugal",
+        "Portuguese Guinea (Guinea-Bissau). The sample spilled into French Guinea.",
+    ),
+    "Equatorial_Guinea": (
+        "spain",
+        "Spanish Guinea (Rio Muni and Fernando Po). The sample spilled into Gabon.",
+    ),
+    "Gilbert_Islands": (
+        "united_kingdom",
+        "British protectorate from 1892. The sample hit the German Marshalls. Those islands are a separate state.",
+    ),
+    "Leeward_Islands": (
+        "united_kingdom",
+        "The British Leeward Islands colony. The sample hit the Danish Virgin Islands.",
+    ),
+    "North_Darfur": (
+        "darfur",
+        "The Darfur sultanate, independent until 1916. The sample spilled east into Anglo-Egyptian Sudan.",
+    ),
 }
 
 OWNER_LABEL = {
@@ -288,7 +385,7 @@ def interior_holes(geom):
 
 def topology_stats(rows, near=0.6):
     geoms = [geom for _, geom in rows]
-    ids = [props["id"] for props, _ in rows]
+    deep = len(rows) <= 300
     tree = STRtree(geoms)
     pairs = 0
     overlaps = []
@@ -303,6 +400,8 @@ def topology_stats(rows, near=0.6):
                 continue
             pairs += 1
             overlaps.append(geom.intersection(other).area)
+            if not deep:
+                continue
             boundary = other.boundary
             near_pts = []
             for part in polygon_parts(geom):
@@ -315,11 +414,15 @@ def topology_stats(rows, near=0.6):
                 continue
             exact_shares.append(sum(d < 1e-3 for d in near_pts) / len(near_pts))
             distances.extend(near_pts)
-    union = unary_union(geoms)
     holes = []
-    for part in polygon_parts(union):
-        for ring in part.interiors:
-            holes.append(Polygon(ring).area)
+    if deep:
+        union = unary_union(geoms)
+        for part in polygon_parts(union):
+            for ring in part.interiors:
+                holes.append(Polygon(ring).area)
+        union_area = round(union.area, 2)
+    else:
+        union_area = None
     tiny = [area for area in holes if area < 0.5]
     return {
         "features": len(rows),
@@ -337,7 +440,7 @@ def topology_stats(rows, near=0.6):
         "vertexMedianPx": round(statistics.median(distances), 4) if distances else None,
         "vertexP90Px": round(sorted(distances)[int(0.9 * len(distances))], 4) if distances else None,
         "sumAreaPx2": round(sum(geom.area for geom in geoms), 2),
-        "unionAreaPx2": round(union.area, 2),
+        "unionAreaPx2": union_area,
     }
 
 
@@ -507,12 +610,88 @@ def shared_length(a, b):
     return a.boundary.intersection(b.boundary).length
 
 
+def owner_label(owner: str) -> str:
+    if owner in OWNER_LABEL:
+        return OWNER_LABEL[owner]
+    return owner.replace("_", " ").title()
+
+
+def muted_color(owner: str) -> str:
+    """Neutral grey stored beside the geometry. The client paints from the same rule."""
+    hue_hash = 2166136261
+    for ch in owner:
+        hue_hash ^= ord(ch)
+        hue_hash = (hue_hash * 16777619) & 0xFFFFFFFF
+    lightness = 0.60 + (hue_hash % 18) / 100
+    hue = 36 if ((hue_hash >> 8) % 2) == 0 else 210
+    saturation = 0.015 + ((hue_hash >> 16) % 16) / 1000
+    red, green, blue = colorsys.hls_to_rgb(hue / 360, lightness, saturation)
+    return f"#{int(red * 255):02x}{int(green * 255):02x}{int(blue * 255):02x}"
+
+
+def from_deg(lon, lat):
+    return (lon / SCALE + ORIGIN_X, lat / SCALE + ORIGIN_Y)
+
+
+def largest_polygon(geom):
+    if geom.is_empty:
+        return None
+    if geom.geom_type == "Polygon":
+        return geom
+    if geom.geom_type == "MultiPolygon":
+        return max(geom.geoms, key=lambda part: part.area)
+    if geom.geom_type == "GeometryCollection":
+        pieces = [
+            part
+            for part in geom.geoms
+            if part.geom_type in ("Polygon", "MultiPolygon") and not part.is_empty
+        ]
+        if not pieces:
+            return None
+        return largest_polygon(max(pieces, key=lambda part: part.area))
+    return None
+
+
+def backdrop_label_points(geom, frame):
+    """A label on the land inside the Eastern Front frame, plus the largest far part.
+
+    The piece that merely intersects the frame can be a whole empire. Label the
+    clipped piece, which is where main put the country name.
+    """
+    parts = polygon_parts(geom)
+    if not parts:
+        return []
+    largest = max(parts, key=lambda part: part.area)
+    points = []
+    visible = []
+    for part in parts:
+        if not part.intersects(frame):
+            continue
+        clipped = part.intersection(frame)
+        if clipped.is_empty or clipped.area < 1:
+            continue
+        visible.append(clipped)
+    if visible:
+        piece = largest_polygon(max(visible, key=lambda item: item.area))
+        if piece is not None:
+            points.append(piece.representative_point())
+    far = largest.representative_point()
+    if not points or far.distance(points[0]) > 80:
+        points.append(far)
+    return points
+
+
 def main():
-    source = HOI4_DIR / "theater-states.geojson"
+    source = HOI4_DIR / "hoi4-states.geojson"
     if not source.exists():
         raise SystemExit(f"Missing {source}. Set HOI4_DIR to the MapChart extract.")
     if not WORLDOS_REGIONS.exists():
         raise SystemExit(f"Missing {WORLDOS_REGIONS}. Set WORLDOS_REGIONS to the 1914 owner map.")
+    if not TGWR_STATES.exists():
+        raise SystemExit(
+            f"Missing {TGWR_STATES}. Point TGWR_STATES at The Great War Redux history/states. "
+            "Mod files are read locally and are not written into the repo."
+        )
     if not MAPSHAPER.exists():
         raise SystemExit(f"Missing {MAPSHAPER}. Install dependencies with npm install.")
 
@@ -543,7 +722,7 @@ def main():
     )
     snapped = load_features(snapped_path)
     after = topology_stats(snapped, near=0.4)
-    print("AFTER_SNAP", json.dumps(after))
+    print("AFTER_SNAP", json.dumps({k: after[k] for k in ("features", "overlapsAbove001", "maxOverlapPx2", "sumAreaPx2")}))
 
     area_before = {props["id"]: geom.area for props, geom in original}
     area_after = {props["id"]: geom.area for props, geom in snapped}
@@ -555,16 +734,27 @@ def main():
     worst.sort(reverse=True)
     print("WORST_AREA", [(round(item[0], 4), item[1], round(item[2], 3)) for item in worst[:8]])
 
-    pixel_to_lonlat, coeffs, residuals = fit_geo(snapped)
-    print("Y_COEFFS", [round(value, 4) for value in coeffs])
-    print("ANCHOR_RESIDUALS", json.dumps(residuals, ensure_ascii=False))
+    pixel_to_europe, coeffs, europe_residuals = fit_geo(snapped)
+    points = {}
+    for props, geom in snapped:
+        rep = geom.representative_point()
+        points[props["id"]] = (rep.x, rep.y)
+    pixel_to_lonlat, fit_residuals, fit_summary = make_projector(points, pixel_to_europe)
+    print("FIT", json.dumps(fit_summary))
+
+    # The Great War (Wolferos) filenames often name a different state than the file
+    # contains, so they are not used as a name index. TGWR_STATES is the source.
+    indexes = [load_mod_owners(TGWR_STATES, "tgwr")]
+    rejected_names = []
 
     owner_geoms, owner_ids, owner_tree = load_owners()
     votes = {}
     for props, geom in snapped:
         counts = Counter()
         missed = 0
-        for point in sample_points(geom):
+        region_counts = Counter()
+        for point in sample_points(geom, step=0.9, cap=64):
+            region_counts[region_of(point.x, point.y)] += 1
             lon, lat = pixel_to_lonlat(point.x, point.y)
             owner = owner_at(owner_tree, owner_geoms, owner_ids, lon, lat)
             if owner is None:
@@ -572,36 +762,108 @@ def main():
             else:
                 counts[owner] += 1
         total = sum(counts.values())
+        nearest = None
         if not counts:
             rep = geom.representative_point()
             lon, lat = pixel_to_lonlat(rep.x, rep.y)
-            # Coastal slivers often sample as open water. Take the nearest 1914 region.
             point = Point(lon, lat)
-            nearest = None
-            for index in owner_tree.query(point.buffer(1.2)):
+            for index in owner_tree.query(point.buffer(4)):
                 dist = owner_geoms[index].distance(point)
                 if nearest is None or dist < nearest[0]:
                     nearest = (dist, owner_ids[index])
-            if nearest and nearest[0] <= 1.2:
+            if nearest and nearest[0] <= 4:
                 counts[nearest[1]] += 1
                 total = 1
-        winner, win_n = counts.most_common(1)[0] if counts else ("unknown", 0)
-        second = counts.most_common(2)[1] if len(counts) > 1 else None
+        winner, win_n = counts.most_common(1)[0] if counts else ("unclaimed", 0)
         votes[props["id"]] = {
             "owner": winner,
             "pct": round(100 * win_n / total, 1) if total else 0,
             "samples": total,
             "missed": missed,
-            "second": None if second is None else {"owner": second[0], "pct": round(100 * second[1] / total, 1)},
-            "playable": props["id"] in PLAYABLE,
+            "region": region_counts.most_common(1)[0][0] if region_counts else None,
+            "nearestDeg": None if nearest is None else round(nearest[0], 2),
         }
 
-    close = [
-        {"id": name, **info}
-        for name, info in sorted(votes.items(), key=lambda item: item[1]["pct"])
-        if info["pct"] < 80
-    ]
-    print("OWNERS_UNDER_80", json.dumps(close, ensure_ascii=False))
+    name_matched = 0
+    fallback = 0
+    redirected = 0
+    judgments = []
+    disagreements = []
+    fallback_states = []
+    unsure = []
+    state_owners = {}
+    for props, geom in snapped:
+        state_id = props["id"]
+        area = votes[state_id]
+        reject_reason = REJECT_NAME_MATCH.get(mod_slug(state_id))
+        mod = None if reject_reason else lookup_mod(state_id, indexes)
+        if reject_reason:
+            rejected_names.append({"id": state_id, "reason": reject_reason, "worldosOwner": area["owner"], "worldosPct": area["pct"]})
+        if mod:
+            name_matched += 1
+            final = mod["owner"]
+            method = "name"
+            if mod.get("redirected"):
+                redirected += 1
+            if (
+                area["owner"] not in (final, "unclaimed")
+                and area["samples"] >= 4
+                and area["pct"] >= 50
+            ):
+                disagreements.append(
+                    {
+                        "id": state_id,
+                        "modTag": mod["tag"],
+                        "modOwner": mod["owner"],
+                        "modFile": mod["file"],
+                        "modSource": mod["source"],
+                        "worldosOwner": area["owner"],
+                        "worldosPct": area["pct"],
+                        "finalOwner": final,
+                        "redirected": bool(mod.get("redirected")),
+                        "alias": bool(mod.get("alias")),
+                    }
+                )
+        else:
+            fallback += 1
+            final = area["owner"]
+            method = "fallback"
+            fallback_states.append(
+                {
+                    "id": state_id,
+                    "owner": final,
+                    "pct": area["pct"],
+                    "region": area["region"],
+                }
+            )
+            judged = FALLBACK_JUDGMENTS.get(state_id)
+            if judged:
+                judgments.append(
+                    {
+                        "id": state_id,
+                        "vote": final,
+                        "votePct": area["pct"],
+                        "owner": judged[0],
+                        "reason": judged[1],
+                    }
+                )
+                final = judged[0]
+                fallback_states[-1]["owner"] = final
+                fallback_states[-1]["judged"] = True
+            if not judged and (final == "unclaimed" or area["pct"] < 60 or area["samples"] < 3):
+                unsure.append(
+                    {
+                        "id": state_id,
+                        "owner": final,
+                        "pct": area["pct"],
+                        "samples": area["samples"],
+                        "region": area["region"],
+                        "nearestDeg": area["nearestDeg"],
+                    }
+                )
+        state_owners[state_id] = final
+        area["method"] = method
+        area["final"] = final
 
     override_report = []
     for state_id, forced in OWNER_OVERRIDES.items():
@@ -610,67 +872,110 @@ def main():
             {
                 "id": state_id,
                 "owner": forced,
-                "areaOwner": info["owner"],
-                "areaPct": info["pct"],
+                "resolvedOwner": info["final"],
+                "method": info["method"],
+                "worldosOwner": info["owner"],
+                "worldosPct": info["pct"],
             }
         )
-        info["areaOwner"] = info["owner"]
-        info["areaPct"] = info["pct"]
-        info["owner"] = forced
-        info["override"] = True
-    print("OWNER_OVERRIDES", json.dumps(override_report, ensure_ascii=False))
+        info["final"] = forced
+        state_owners[state_id] = forced
+    de_jure_report = []
+    for state_id, (forced, reason) in DE_JURE_OVERRIDES.items():
+        if state_id not in votes:
+            raise SystemExit(f"De jure override names a missing state: {state_id}")
+        info = votes[state_id]
+        de_jure_report.append(
+            {
+                "id": state_id,
+                "owner": forced,
+                "resolvedOwner": info["final"],
+                "method": info["method"],
+                "reason": reason,
+            }
+        )
+        info["final"] = forced
+        state_owners[state_id] = forced
+    # Refresh a disagreement row if an override changed the owner that will be stored.
+    for row in disagreements:
+        row["finalOwner"] = state_owners[row["id"]]
+    print(
+        "OWNERS",
+        json.dumps(
+            {
+                "nameMatched": name_matched,
+                "fallback": fallback,
+                "redirected": redirected,
+                "rejectedNames": len(rejected_names),
+                "judgments": len(judgments),
+                "disagreements": len(disagreements),
+                "unsure": len(unsure),
+            }
+        ),
+    )
 
-    tagged_features = []
+    playable_geoms = {}
+    backdrop_features = []
     for props, geom in snapped:
         state_id = props["id"]
-        owner = votes[state_id]["owner"] or "unknown"
+        owner = state_owners[state_id]
         if state_id in PLAYABLE:
-            gid = f"play:{slug(state_id)}"
-            name = state_id.replace("_", " ")
-            role = "playable"
-        else:
-            gid = f"bg:{owner}"
-            name = OWNER_LABEL.get(owner, owner.replace("_", " ").title())
-            role = "backdrop"
-        tagged_features.append(
+            playable_geoms[slug(state_id)] = (state_id, geom)
+            continue
+        backdrop_features.append(
             {
                 "type": "Feature",
-                "properties": {
-                    "gid": gid,
-                    "name": name,
-                    "role": role,
-                    "owner": owner,
-                    "slug": slug(state_id) if role == "playable" else gid,
-                    "source_id": state_id,
-                },
+                "properties": {"owner": owner, "name": owner_label(owner)},
                 "geometry": mapping(geom),
             }
         )
-    tagged_path = work / "tagged.geojson"
-    tagged_path.write_text(json.dumps({"type": "FeatureCollection", "features": tagged_features}))
-    dissolved_path = work / "dissolved.geojson"
-    run_mapshaper(
-        tagged_path,
-        dissolved_path,
-        ["-dissolve", "gid", "copy-fields=name,role,owner,slug"],
-    )
-    dissolved = json.loads(dissolved_path.read_text())
-    playable_geoms = {}
-    backdrop = []
-    for feature in dissolved["features"]:
-        props = feature["properties"]
-        geom = shape(feature["geometry"])
-        if not geom.is_valid:
-            geom = geom.buffer(0)
-        if props["role"] == "playable":
-            playable_geoms[props["slug"]] = (props, geom)
-        else:
-            backdrop.append((props, geom))
-
     if len(playable_geoms) != len(PLAYABLE):
         raise SystemExit(f"Expected {len(PLAYABLE)} playable states, got {sorted(playable_geoms)}")
 
-    # Neighbours from shared boundary length. A corner touch is not a border.
+    tagged_path = work / "backdrop-states.geojson"
+    tagged_path.write_text(json.dumps({"type": "FeatureCollection", "features": backdrop_features}))
+    dissolved_path = work / "backdrop-dissolved.geojson"
+    run_mapshaper(tagged_path, dissolved_path, ["-dissolve", "owner", "copy-fields=name"])
+    simple_path = work / "backdrop-simple.geojson"
+    run_mapshaper(
+        dissolved_path,
+        simple_path,
+        ["-simplify", "weighted", "interval=1.2", "planar", "keep-shapes"],
+    )
+    simplified = load_features(simple_path)
+    play_union = unary_union([geom for _key, (_state_id, geom) in playable_geoms.items()])
+    expanded = []
+    for props, geom in simplified:
+        if not geom.is_valid:
+            geom = geom.buffer(0)
+        grown = geom.buffer(0.45, resolution=1)
+        if grown.is_empty:
+            continue
+        expanded.append(
+            {
+                "type": "Feature",
+                "properties": {"owner": props["owner"], "name": props.get("name") or owner_label(props["owner"])},
+                "geometry": mapping(grown),
+            }
+        )
+    expanded_path = work / "backdrop-expanded.geojson"
+    expanded_path.write_text(json.dumps({"type": "FeatureCollection", "features": expanded}))
+    cleaned_path = work / "backdrop-cleaned.geojson"
+    run_mapshaper(
+        expanded_path,
+        cleaned_path,
+        ["-clean", "gap-width=0.45", "overlap-rule=max-area"],
+    )
+    backdrop = []
+    for props, geom in load_features(cleaned_path):
+        if not geom.is_valid:
+            geom = geom.buffer(0)
+        clipped = geom.difference(play_union)
+        if clipped.is_empty or clipped.area < 0.05:
+            continue
+        backdrop.append((props, clipped))
+    print("BACKDROP_MASSES", len(backdrop), "bytes_simple", simple_path.stat().st_size)
+
     slugs = sorted(playable_geoms)
     geoms = [playable_geoms[key][1] for key in slugs]
     tree = STRtree(geoms)
@@ -692,7 +997,6 @@ def main():
         neighbors[key] = sorted(set(neighbors[key]))
     print("PLAYABLE_OVERLAPS", overlap_left)
 
-    # Connectivity of the playable graph.
     seen = set()
     stack = [slugs[0]]
     while stack:
@@ -704,22 +1008,8 @@ def main():
     isolated = [key for key in slugs if key not in seen]
     print("DISCONNECTED", isolated)
 
-    # Backdrop states fully inside the playable union.
-    play_union = unary_union(geoms)
-    enclosed = []
-    for props, geom in snapped:
-        if props["id"] in PLAYABLE:
-            continue
-        if play_union.covers(geom.representative_point()) and geom.intersection(play_union).area > geom.area * 0.6:
-            enclosed.append(props["id"])
-    print("ENCLOSED_BACKDROP", enclosed)
-
     city_hits = {}
     for name, (lon, lat) in CITIES.items():
-        # Invert the fitted mapping approximately by scanning state containment
-        # in pixel space: project with the x formula and the fitted y.
-        y_guess = None
-        # Solve y from lon/lat using the same polynomial.
         a, b, c, d = coeffs
         y_guess = a + b * lat + c * lat * lat + d * lon
         x_guess = 3.9 * lon + 697.0
@@ -730,17 +1020,18 @@ def main():
                 hit = props["id"]
                 break
         if hit is None:
-            # nearest playable or any state within 4 px
             best = None
             for props, geom in snapped:
                 dist = geom.distance(point)
                 if best is None or dist < best[0]:
                     best = (dist, props["id"])
-            hit = None if best is None or best[0] > 4 else best[1]
-            city_hits[name] = {"state": hit, "distancePx": None if best is None else round(best[0], 2), "inside": False}
+            city_hits[name] = {
+                "state": None if best is None or best[0] > 4 else best[1],
+                "distancePx": None if best is None else round(best[0], 2),
+                "inside": False,
+            }
         else:
             city_hits[name] = {"state": hit, "slug": slug(hit), "inside": True, "playable": hit in PLAYABLE}
-    print("CITIES", json.dumps(city_hits, ensure_ascii=False))
 
     def state_of(city):
         info = city_hits.get(city) or {}
@@ -764,81 +1055,101 @@ def main():
             continue
         seen_rails.add(key)
         kept_rails.append([sa, sb])
-    print("RAILS_KEPT", json.dumps(kept_rails))
     print("RAILS_DROPPED", json.dumps(dropped_rails))
-
-    # Frame: the 75 MapChart core states, plus a margin of open water.
-    core_geoms = [geom for props, geom in snapped if props.get("theater_role") == "core" or props["id"] in PLAYABLE]
-    # snapped features may have lost theater_role. Use the original role via source ids.
-    core_ids = {props["id"] for props, _ in original if props.get("theater_role") == "core"}
-    core_geoms = [geom for props, geom in snapped if props["id"] in core_ids]
-    core_union = unary_union(core_geoms)
-    minx, miny, maxx, maxy = core_union.bounds
-    pad_n, pad_s, pad_e, pad_w = 8.0, 6.0, 4.0, 4.0
-    frame = (minx - pad_w, miny - pad_s, maxx + pad_e, maxy + pad_n)
-    bbox = [*to_deg(frame[0], frame[1]), *to_deg(frame[2], frame[3])]
-    # maxBounds wider than the fit target so padding can show the whole frame.
-    view = (
-        frame[0] - 18,
-        frame[1] - 14,
-        frame[2] + 18,
-        frame[3] + 14,
-    )
-    view_bbox = [*to_deg(view[0], view[1]), *to_deg(view[2], view[3])]
 
     polygons = {}
     centroids = {}
-    for key, (props, geom) in playable_geoms.items():
+    for key, (_state_id, geom) in playable_geoms.items():
         polygons[key] = transform_geom(geom)
         point = label_point(geom)
         centroids[key] = list(to_deg(point.x, point.y))
 
+    vx0, vy0 = from_deg(EASTERN_VIEW[0], EASTERN_VIEW[1])
+    vx1, vy1 = from_deg(EASTERN_VIEW[2], EASTERN_VIEW[3])
+    frame = box(min(vx0, vx1), min(vy0, vy1), max(vx0, vx1), max(vy0, vy1))
+
     backdrop_out = []
     for props, geom in backdrop:
-        point = label_point(geom)
+        spots = backdrop_label_points(geom, frame)
+        if not spots:
+            continue
+        primary = spots[0]
         backdrop_out.append(
             {
-                "id": props["gid"].replace(":", "-"),
-                "name": props["name"],
+                "id": "bg-" + props["owner"].replace("_", "-"),
+                "name": props.get("name") or owner_label(props["owner"]),
                 "owner": props["owner"],
-                "label": list(to_deg(point.x, point.y)),
+                "label": list(to_deg(primary.x, primary.y)),
+                "labels": [list(to_deg(point.x, point.y)) for point in spots],
                 "geometry": transform_geom(geom),
             }
         )
     backdrop_out.sort(key=lambda item: item["id"])
 
+    minx = min(geom.bounds[0] for _props, geom in snapped)
+    miny = min(geom.bounds[1] for _props, geom in snapped)
+    maxx = max(geom.bounds[2] for _props, geom in snapped)
+    maxy = max(geom.bounds[3] for _props, geom in snapped)
+    pad = 12.0
+    world_px = (minx - pad, miny - pad, maxx + pad, maxy + pad)
+    world_bbox = [round(v, 4) for v in (*to_deg(world_px[0], world_px[1]), *to_deg(world_px[2], world_px[3]))]
     sea = {
         "type": "Polygon",
         "coordinates": [
             [
-                list(to_deg(view[0], view[1])),
-                list(to_deg(view[2], view[1])),
-                list(to_deg(view[2], view[3])),
-                list(to_deg(view[0], view[3])),
-                list(to_deg(view[0], view[1])),
+                list(to_deg(world_px[0], world_px[1])),
+                list(to_deg(world_px[2], world_px[1])),
+                list(to_deg(world_px[2], world_px[3])),
+                list(to_deg(world_px[0], world_px[3])),
+                list(to_deg(world_px[0], world_px[1])),
             ]
         ],
     }
 
-    # Post-conversion overlap check in pixel space already done; repeat on degrees roughly via px.
+    owners_used = sorted({item["owner"] for item in backdrop_out} | set(state_owners.values()))
+    owner_colors = {owner: muted_color(owner) for owner in owners_used}
+    audit = {
+        "states": len(snapped),
+        "nameMatched": name_matched,
+        "fallback": fallback,
+        "nameRedirected": redirected,
+        "rejectedNames": rejected_names,
+        "judgments": judgments,
+        "deJure": de_jure_report,
+        "disagreements": disagreements,
+        "fallbackStates": fallback_states,
+        "unsure": unsure,
+        "fit": fit_summary,
+        "sources": {
+            "names": "The Great War Redux history/states, public mirror Xaelor/the-great-war-redux. Wolferos Great War filenames do not match the states in those files, so they were not used.",
+            "cutoff": "1914-07-28",
+            "fallback": "Per-region pixel fit sampled against WorldOS owner_1914",
+            "note": "Mod files are not part of this repo.",
+        },
+    }
     payload = {
         "source": CREDIT,
         "projection": {
             "type": "hoi4-pixel",
             "scale": SCALE,
             "origin": [ORIGIN_X, ORIGIN_Y],
-            "note": "lon=(x-780)*0.05, lat=(y-480)*0.05. Not geographic.",
+            "note": "lon=(x-780)*0.05, lat=(y-480)*0.05. Display is flat pixel space. The regional fit is only for 1914 owner sampling.",
         },
         "snap": {
             "intervalPx": SNAP_INTERVAL,
             "cleanGapWidthPx": SNAP_INTERVAL,
+            "backdropSimplifyPx": 1.2,
             "before": before,
             "after": after,
             "maxRelativeAreaChange": round(worst[0][0], 4) if worst else None,
         },
         "ownerOverrides": override_report,
-        "bbox": [round(v, 6) for v in bbox],
-        "viewBbox": [round(v, 6) for v in view_bbox],
+        "ownerAudit": audit,
+        "stateOwners": state_owners,
+        "ownerColors": owner_colors,
+        "bbox": EASTERN_BBOX,
+        "viewBbox": EASTERN_VIEW,
+        "worldBbox": world_bbox,
         "polygons": polygons,
         "centroids": centroids,
         "neighbors": neighbors,
@@ -849,24 +1160,25 @@ def main():
         "seaPolygons": [sea["coordinates"][0]],
     }
     OUT_PATH.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
-    print(f"WROTE {OUT_PATH} bytes={OUT_PATH.stat().st_size} playable={len(polygons)} backdrop={len(backdrop_out)}")
-
+    print(
+        f"WROTE {OUT_PATH} bytes={OUT_PATH.stat().st_size} playable={len(polygons)} backdrop={len(backdrop_out)}"
+    )
     report = {
-        "snapIntervalPx": SNAP_INTERVAL,
-        "before": before,
-        "after": after,
-        "worstArea": [(round(item[0], 4), item[1], round(item[2], 3)) for item in worst[:12]],
-        "coeffs": [round(v, 5) for v in coeffs],
-        "residuals": residuals,
-        "closeCalls": close,
-        "owners": votes,
-        "cities": city_hits,
-        "railsKept": kept_rails,
+        "fit": fit_summary,
+        "fitResiduals": fit_residuals,
+        "europeResiduals": europe_residuals,
+        "nameMatched": name_matched,
+        "fallback": fallback,
+        "redirected": redirected,
+        "disagreements": disagreements,
+        "unsure": unsure,
+        "fallbackStates": fallback_states,
+        "overrides": override_report,
         "railsDropped": dropped_rails,
+        "railsKept": kept_rails,
         "disconnected": isolated,
-        "enclosed": enclosed,
-        "neighbors": neighbors,
-        "centroids": {key: centroids[key] for key in slugs},
+        "cities": city_hits,
+        "worldBbox": world_bbox,
     }
     (work / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print("REPORT", work / "report.json")
