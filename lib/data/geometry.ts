@@ -2,9 +2,11 @@ import * as turf from "@turf/turf"
 import theaterData from "@/lib/data/theater-geometry.json"
 import { PROVINCE_DEFS } from "@/lib/data/definitions"
 
+export type ProvinceRings = [number, number][][]
+
 export type TheaterGraph = {
   neighbors: Record<string, string[]>
-  polygons: Record<string, [number, number][]>
+  polygons: Record<string, ProvinceRings>
   centroids: Record<string, [number, number]>
 }
 
@@ -33,8 +35,18 @@ export const GEOMETRY_SOURCE = theaterData.source as string
 export const BACKDROP_REGIONS = theaterData.backdrop as BackdropRegion[]
 export const RIVER_LINES = theaterData.rivers as RiverLine[]
 
+export function provinceHasGeometry(rings: ProvinceRings): boolean {
+  return (rings[0]?.length ?? 0) >= 4
+}
+
+export function forEachProvinceCoord(rings: ProvinceRings, visit: (coord: [number, number]) => void) {
+  for (const ring of rings) {
+    for (const coord of ring) visit(coord)
+  }
+}
+
 type TheaterFile = {
-  polygons: Record<string, [number, number][]>
+  polygons: Record<string, ProvinceRings>
   centroids: Record<string, [number, number]>
   neighbors: Record<string, string[]>
   backdrop: BackdropRegion[]
@@ -47,11 +59,13 @@ const loaded = theaterData as unknown as TheaterFile
 export function buildTheater(
   defs: { id: string; lon: number; lat: number }[] = PROVINCE_DEFS,
 ): TheaterGraph {
-  const polygons: Record<string, [number, number][]> = {}
+  const polygons: Record<string, ProvinceRings> = {}
   const centroids: Record<string, [number, number]> = {}
 
   for (const def of defs) {
-    polygons[def.id] = loaded.polygons[def.id] ?? []
+    const raw = loaded.polygons[def.id] as ProvinceRings | [number, number][] | undefined
+    polygons[def.id] =
+      raw && Array.isArray(raw[0]?.[0]) ? (raw as ProvinceRings) : raw?.length ? [raw as [number, number][]] : []
     centroids[def.id] = loaded.centroids[def.id] ?? [def.lon, def.lat]
   }
   const neighbors: Record<string, string[]> = {}
@@ -62,8 +76,8 @@ export function buildTheater(
 }
 
 /** Recompute adjacency from polygon rings (shared borders). */
-export function neighborsFromPolygons(polygons: Record<string, [number, number][]>): Record<string, string[]> {
-  const features = Object.entries(polygons).map(([id, ring]) => turf.polygon([ring], { id }))
+export function neighborsFromPolygons(polygons: Record<string, ProvinceRings>): Record<string, string[]> {
+  const features = Object.entries(polygons).map(([id, rings]) => turf.polygon(rings, { id }))
   const neighbors: Record<string, string[]> = {}
   for (const id of Object.keys(polygons)) neighbors[id] = []
 

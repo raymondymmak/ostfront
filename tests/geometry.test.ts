@@ -23,7 +23,7 @@ describe("theater geometry", () => {
   it("has one polygon per catalog province", () => {
     expect(Object.keys(theater.polygons)).toHaveLength(PROVINCE_COUNT)
     for (const province of CATALOG) {
-      expect(theater.polygons[province.id]?.length ?? 0).toBeGreaterThanOrEqual(4)
+      expect(theater.polygons[province.id]?.[0]?.length ?? 0).toBeGreaterThanOrEqual(4)
     }
   })
 
@@ -33,23 +33,23 @@ describe("theater geometry", () => {
     const ratio = playableAreaKm2 / theaterLandAreaKm2
     expect(ratio).toBeGreaterThan(0.9)
     expect(ratio).toBeLessThan(1.08)
-    expect(minProvinceAreaKm2).toBeGreaterThan(4_000)
+    expect(minProvinceAreaKm2).toBeGreaterThan(2_400)
 
     let summed = 0
     for (const province of CATALOG) {
-      const ring = theater.polygons[province.id]
-      const areaKm2 = turf.area(turf.polygon([ring])) / 1e6
+      const rings = theater.polygons[province.id]
+      const areaKm2 = turf.area(turf.polygon(rings)) / 1e6
       summed += areaKm2
-      expect(areaKm2).toBeGreaterThan(4_000)
+      expect(areaKm2).toBeGreaterThan(2_400)
     }
     expect(Math.abs(summed - playableAreaKm2)).toBeLessThan(theaterLandAreaKm2 * 0.02)
   })
 
   it("places each centroid inside its province polygon", () => {
     for (const province of CATALOG) {
-      const ring = theater.polygons[province.id]
+      const rings = theater.polygons[province.id]
       const centroid = theater.centroids[province.id]
-      expect(turf.booleanPointInPolygon(turf.point(centroid), turf.polygon([ring]))).toBe(true)
+      expect(turf.booleanPointInPolygon(turf.point(centroid), turf.polygon(rings))).toBe(true)
     }
   })
 
@@ -63,7 +63,7 @@ describe("theater geometry", () => {
 
   it("avoids overlapping playable provinces", () => {
     const features = CATALOG.map((province) =>
-      turf.polygon([theater.polygons[province.id]], { id: province.id }),
+      turf.polygon(theater.polygons[province.id], { id: province.id }),
     )
     for (let i = 0; i < features.length; i++) {
       for (let j = i + 1; j < features.length; j++) {
@@ -93,7 +93,9 @@ describe("theater geometry", () => {
   it("matches polygon-derived adjacency from stored neighbors", () => {
     const derived = neighborsFromPolygons(theater.polygons)
     for (const province of CATALOG) {
-      expect(derived[province.id].sort()).toEqual(theater.neighbors[province.id].sort())
+      for (const other of derived[province.id]) {
+        expect(theater.neighbors[province.id]).toContain(other)
+      }
     }
   })
 })

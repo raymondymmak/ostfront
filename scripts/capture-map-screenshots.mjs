@@ -48,6 +48,20 @@ await capture("map-desktop-selection-tarnow", 1440, 900, async (page) => {
   await page.mouse.click(point.x, point.y)
   await page.waitForTimeout(600)
 })
+await capture("map-desktop-1914-backdrop", 1440, 900, async (page) => {
+  await page.evaluate(() => {
+    const map = window.__ostfrontMap
+    if (!map) return
+    map.fitBounds(
+      [
+        [9.0, 46.75],
+        [32.0, 57.35],
+      ],
+      { padding: 24, duration: 0 },
+    )
+  })
+  await page.waitForTimeout(1200)
+})
 await capture("map-desktop-east-prussia", 1440, 900, async (page) => {
   const point = await projectOnMap(page, 20.45, 54.72)
   if (!point) return

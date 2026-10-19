@@ -36,8 +36,8 @@ export function SvgMap({
     let maxLon = -Infinity
     let minLat = Infinity
     let maxLat = -Infinity
-    const rings = [
-      ...provinces.map((province) => province.polygon),
+    const rings: [number, number][][] = [
+      ...provinces.flatMap((province) => province.polygon),
       ...BACKDROP_REGIONS.map((region) => region.polygon),
     ]
     for (const polygon of rings) {
@@ -166,31 +166,40 @@ export function SvgMap({
         />
       ))}
       {provinces.map((province) => {
-        if (province.polygon.length < 4) return null
-        const points = province.polygon.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
+        if ((province.polygon[0]?.length ?? 0) < 4) return null
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
+        const stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
+        const fill = provinceFill(province, overlay)
         return (
-          <polygon
-            key={province.id}
-            points={points}
-            fill={provinceFill(province, overlay)}
-            stroke={selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"}
-            strokeWidth={selected ? view.label * 0.22 : view.label * 0.08}
-            className={flashing ? "animate-pulse" : undefined}
-            style={{ cursor: orderMode ? "crosshair" : "pointer" }}
-            onMouseDown={(event) => {
-              if (!orderMode) return
-              event.preventDefault()
-              event.stopPropagation()
-              setOriginId(province.id)
-            }}
-            onMouseUp={(event) => {
-              event.stopPropagation()
-              if (orderMode && originId) commit(province.id)
-              else onSelect(province.id)
-            }}
-          />
+          <g key={province.id}>
+            {province.polygon.map((ring, ringIndex) => {
+              const points = ring.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
+              return (
+                <polygon
+                  key={`${province.id}-${ringIndex}`}
+                  points={points}
+                  fill={ringIndex === 0 ? fill : "#0d1218"}
+                  fillRule="evenodd"
+                  stroke={ringIndex === 0 ? stroke : "none"}
+                  strokeWidth={ringIndex === 0 ? (selected ? view.label * 0.22 : view.label * 0.08) : 0}
+                  className={flashing ? "animate-pulse" : undefined}
+                  style={{ cursor: orderMode ? "crosshair" : "pointer" }}
+                  onMouseDown={(event) => {
+                    if (!orderMode) return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setOriginId(province.id)
+                  }}
+                  onMouseUp={(event) => {
+                    event.stopPropagation()
+                    if (orderMode && originId) commit(province.id)
+                    else onSelect(province.id)
+                  }}
+                />
+              )
+            })}
+          </g>
         )
       })}
       {orders.map((order) => {
@@ -224,7 +233,7 @@ export function SvgMap({
         />
       )}
       {provinces
-        .filter((province) => province.polygon.length >= 4)
+        .filter((province) => (province.polygon[0]?.length ?? 0) >= 4)
         .map((province) => {
         const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
         const x = province.centroid[0]

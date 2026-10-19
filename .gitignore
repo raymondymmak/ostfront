@@ -20,6 +20,9 @@
 # production
 /build
 
+# map build caches (CShapes, OHM, uezds — large downloads)
+/scripts/cache/
+
 # misc
 .DS_Store
 *.pem

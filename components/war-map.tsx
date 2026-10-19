@@ -15,10 +15,11 @@ import {
 } from "@/lib/data/geometry"
 import { shortProvinceName } from "@/lib/map/labels"
 import type { QueuedOrder } from "@/lib/orders"
+import type { ProvinceRings } from "@/lib/data/geometry"
 import type { Province } from "@/lib/types"
 
 export type MapProvince = Province & {
-  polygon: [number, number][]
+  polygon: ProvinceRings
   centroid: [number, number]
 }
 
@@ -583,10 +584,12 @@ function syncMap(
   bounds.extend([THEATER_BBOX[2], THEATER_BBOX[3]])
   let hasGeometry = false
   for (const province of snapshot.provinces) {
-    if (province.polygon.length < 4) continue
+    if ((province.polygon[0]?.length ?? 0) < 4) continue
     hasGeometry = true
     const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
-    for (const coord of province.polygon) bounds.extend(coord)
+    for (const ring of province.polygon) {
+      for (const coord of ring) bounds.extend(coord)
+    }
     features.push({
       type: "Feature",
       id: province.id,
@@ -598,14 +601,14 @@ function syncMap(
         unrest: province.unrest,
         strength,
       },
-      geometry: { type: "Polygon", coordinates: [province.polygon] },
+      geometry: { type: "Polygon", coordinates: province.polygon },
     })
   }
   provinces.setData({ type: "FeatureCollection", features })
 
   const seen = new Set<string>()
   for (const province of snapshot.provinces) {
-    if (province.polygon.length < 4) continue
+    if ((province.polygon[0]?.length ?? 0) < 4) continue
     seen.add(province.id)
     const element = markerElement(province, snapshot.selectedId)
     const existing = markers.get(province.id)
