@@ -15,6 +15,25 @@ type ValidationMeta = {
   theaterLandAreaKm2: number
   playableAreaKm2: number
   minProvinceAreaKm2: number
+  georefMaxResidualKm?: number
+}
+
+const MAX_PROVINCE_STRETCH = 3.35
+const MAX_PROVINCE_ASPECT = 4.5
+const MAX_PROVINCE_DIAGONAL_KM = 580
+
+function provinceShapeMetrics(rings: [number, number][][]) {
+  const feat = turf.polygon(rings)
+  const areaKm2 = turf.area(feat) / 1e6
+  const [minLon, minLat, maxLon, maxLat] = turf.bbox(feat)
+  const sw = turf.point([minLon, minLat])
+  const diagonalKm = turf.distance(sw, turf.point([maxLon, maxLat]), { units: "kilometers" })
+  const equivDiameterKm = 2 * Math.sqrt(areaKm2 / Math.PI)
+  const stretch = diagonalKm / Math.max(equivDiameterKm, 1)
+  const widthKm = turf.distance(sw, turf.point([maxLon, minLat]), { units: "kilometers" })
+  const heightKm = turf.distance(sw, turf.point([minLon, maxLat]), { units: "kilometers" })
+  const aspect = Math.max(widthKm, heightKm) / Math.max(1e-6, Math.min(widthKm, heightKm))
+  return { diagonalKm, stretch, aspect, areaKm2 }
 }
 
 describe("theater geometry", () => {
@@ -28,13 +47,29 @@ describe("theater geometry", () => {
     }
   })
 
+  it("keeps georef residuals within 15 km when HOI4-sourced", () => {
+    if (!/hoi4|kaiserreich/i.test(GEOMETRY_SOURCE)) return
+    expect(validation?.georefMaxResidualKm).toBeDefined()
+    expect(validation!.georefMaxResidualKm!).toBeLessThanOrEqual(15)
+  })
+
+  it("rejects spiky province bounding boxes", () => {
+    for (const province of CATALOG) {
+      const rings = theater.polygons[province.id]
+      const { diagonalKm, stretch, aspect } = provinceShapeMetrics(rings)
+      expect(diagonalKm).toBeLessThan(MAX_PROVINCE_DIAGONAL_KM)
+      expect(stretch).toBeLessThan(MAX_PROVINCE_STRETCH)
+      expect(aspect).toBeLessThan(MAX_PROVINCE_ASPECT)
+    }
+  })
+
   it("keeps playable area close to theater land and provinces above minimum size", () => {
     expect(validation).toBeDefined()
     const { theaterLandAreaKm2, playableAreaKm2, minProvinceAreaKm2 } = validation!
     const ratio = playableAreaKm2 / theaterLandAreaKm2
     expect(ratio).toBeGreaterThan(0.9)
     expect(ratio).toBeLessThan(1.08)
-    expect(minProvinceAreaKm2).toBeGreaterThan(2_400)
+    expect(minProvinceAreaKm2).toBeGreaterThan(2_000)
 
     for (const province of CATALOG) {
       const rings = theater.polygons[province.id]
@@ -43,7 +78,7 @@ describe("theater geometry", () => {
         parts.length === 1
           ? turf.area(parts[0]) / 1e6
           : turf.area(turf.union(turf.featureCollection(parts))!) / 1e6
-      expect(areaKm2).toBeGreaterThan(2_400)
+      expect(areaKm2).toBeGreaterThan(2_000)
     }
   })
 

@@ -3,6 +3,7 @@
  * Run: npx tsx scripts/build-hoi4-theater.ts
  */
 import { mkdirSync, writeFileSync, existsSync } from "node:fs"
+import polygonClipping from "polygon-clipping"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as turf from "@turf/turf"
@@ -28,15 +29,11 @@ import {
   isPlayableGid,
 } from "./hoi4/id-codes"
 import { loadNationTable, nationAtPoint } from "./hoi4/nation-assign"
-import {
-  polygonizeGtiff,
-  readGeoJson,
-  runMapshaper,
-  warpTpsGcps,
-  writeUInt16Gtiff,
-} from "./hoi4/gdal-tools"
-import { buildHybridWarp } from "./hoi4/tps"
-import type { Gcp } from "./hoi4/tps"
+import { polygonizeGtiff, readGeoJson, runMapshaper, writeUInt16Gtiff } from "./hoi4/gdal-tools"
+import { buildGeorefGcps, buildWarpGcps } from "./hoi4/gcp-build"
+import { buildHullClampedGeoref } from "./hoi4/polynomial-georef"
+
+const MAX_GEOREF_RESIDUAL_KM = 15
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 const CACHE = join(ROOT, "scripts/cache")
@@ -44,10 +41,15 @@ const HOI4 = join(CACHE, "hoi4")
 const WORK = join(CACHE, "hoi4-build")
 const BBOX: [number, number, number, number] = [15.8, 48.35, 28.8, 56.35]
 const VIEW_BBOX: [number, number, number, number] = [9.0, 46.75, 32.0, 57.35]
+/** Clip playable outlines (avoid VIEW_BBOX east/north chords that create spikes). */
+const PLAYABLE_CLIP_BBOX: [number, number, number, number] = [
+  BBOX[0],
+  VIEW_BBOX[1],
+  BBOX[2],
+  BBOX[3],
+]
 const NE_RIVERS =
   "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_rivers_lake_centerlines.geojson"
-const NE_LAND =
-  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson"
 
 type BackdropRegion = { id: string; name: string; polygon: [number, number][] }
 type RiverLine = { id: string; name: string; coordinates: [number, number][] }
@@ -179,28 +181,7 @@ function buildIdRaster(
   return modeFilter3x3(gw, gh, modeFilter3x3(gw, gh, data))
 }
 
-function buildTpsGcps(centroids: Map<number, { x: number; y: number }>) {
-  const seen = new Set<number>()
-  const gcps: { px: number; py: number; lon: number; lat: number }[] = []
-  for (const anchor of HOI4_GAME_ANCHORS) {
-    if (seen.has(anchor.hoi4Id)) continue
-    const c = centroids.get(anchor.hoi4Id)
-    if (!c) continue
-    seen.add(anchor.hoi4Id)
-    gcps.push({ px: c.x, py: c.y, lon: anchor.lon, lat: anchor.lat })
-  }
-  for (const anchor of HOI4_FIT_ANCHORS) {
-    if (seen.has(anchor.hoi4Id)) continue
-    const c = centroids.get(anchor.hoi4Id)
-    if (!c) continue
-    seen.add(anchor.hoi4Id)
-    gcps.push({ px: c.x, py: c.y, lon: anchor.lon, lat: anchor.lat })
-  }
-  return gcps
-}
-
-function warpFeatureCollection(fc: FeatureCollection, gcps: Gcp[]) {
-  const transform = buildHybridWarp(gcps)
+function warpFeatureCollection(fc: FeatureCollection, transform: (x: number, y: number) => [number, number]) {
   const out: FeatureCollection = { type: "FeatureCollection", features: [] }
   for (const feature of fc.features) {
     const geom = feature.geometry
@@ -258,11 +239,32 @@ function mergeClippedParts(geom: Polygon | MultiPolygon): Feature<Polygon | Mult
   return turf.union(turf.featureCollection(parts)) ?? parts[0]
 }
 
+function pushSeaRings(geom: Polygon | MultiPolygon, seaRings: [number, number][][]) {
+  const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates
+  for (const poly of polys) {
+    const outer = snapRing(ringFromCoords(poly[0] as number[][]))
+    if (outer.length >= 4) seaRings.push(outer)
+  }
+}
+
 function extractPolygonsFromFeatures(
   fc: FeatureCollection,
   nationNames: Map<number, string>,
 ) {
-  const theaterClip = turf.bboxPolygon(VIEW_BBOX)
+  const viewClip = turf.bboxPolygon(VIEW_BBOX)
+  const clipInset = 0.04
+  const playableClip = turf.bboxPolygon([
+    PLAYABLE_CLIP_BBOX[0] + clipInset,
+    PLAYABLE_CLIP_BBOX[1] + clipInset,
+    PLAYABLE_CLIP_BBOX[2] - clipInset,
+    PLAYABLE_CLIP_BBOX[3] - clipInset,
+  ])
+  const nationClip = turf.bboxPolygon([
+    VIEW_BBOX[0],
+    VIEW_BBOX[1],
+    BBOX[2] - clipInset,
+    VIEW_BBOX[3] - clipInset,
+  ])
   const byGame: Record<string, Feature<Polygon | MultiPolygon>[]> = {}
   for (const def of PROVINCE_DEFS) byGame[def.id] = []
 
@@ -273,27 +275,32 @@ function extractPolygonsFromFeatures(
   for (const feature of fc.features) {
     const gid = Number(feature.properties?.gid ?? 0)
     if (!gid) continue
-    let geom = feature.geometry
-    if (!geom || (geom.type !== "Polygon" && geom.type !== "MultiPolygon")) continue
-    const clipped = clipGeomToBbox(geom, theaterClip)
-    if (!clipped) continue
-    const merged = mergeClippedParts(clipped)
-    if (!merged) continue
-    geom = merged.geometry
+    const raw = feature.geometry
+    if (!raw || (raw.type !== "Polygon" && raw.type !== "MultiPolygon")) continue
 
     if (gid === SEA_GID) {
-      const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates
-      for (const poly of polys) {
-        const outer = snapRing(ringFromCoords(poly[0] as number[][]))
-        if (outer.length >= 4) seaRings.push(outer)
-      }
+      const clipped = clipGeomToBbox(raw, viewClip)
+      if (!clipped) continue
+      const merged = mergeClippedParts(clipped)
+      if (!merged) continue
+      pushSeaRings(merged.geometry, seaRings)
       continue
     }
 
     if (isPlayableGid(gid)) {
-      byGame[INDEX_TO_GAME.get(gid)!].push(feature as Feature<Polygon | MultiPolygon>)
+      const clipped = clipGeomToBbox(raw, playableClip)
+      if (!clipped) continue
+      const merged = mergeClippedParts(clipped)
+      if (!merged) continue
+      byGame[INDEX_TO_GAME.get(gid)!].push(merged)
       continue
     }
+
+    const clipped = clipGeomToBbox(raw, nationClip)
+    if (!clipped) continue
+    const merged = mergeClippedParts(clipped)
+    if (!merged) continue
+    const geom = merged.geometry
 
     if (isNationGid(gid)) {
       const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates
@@ -337,6 +344,88 @@ function extractPolygonsFromFeatures(
   }
 
   return { polygons, backdrop, seaRings, landRings }
+}
+
+function clampOversizedProvince(
+  rings: ProvinceRings,
+  anchor: [number, number],
+  maxRadiusKm: number,
+): ProvinceRings {
+  const feat = featureFromRings(rings)
+  if (!feat) return rings
+  const bbox = turf.bbox(feat)
+  const diagKm = turf.distance(turf.point([bbox[0], bbox[1]]), turf.point([bbox[2], bbox[3]]), {
+    units: "kilometers",
+  })
+  const areaKm2 = turf.area(feat) / 1e6
+  if (diagKm < 320 && areaKm2 < 18_000) return rings
+  const [lon, lat] = anchor
+  const dLon = maxRadiusKm / (111 * Math.cos((lat * Math.PI) / 180))
+  const dLat = maxRadiusKm / 111
+  const cap = turf.bboxPolygon([lon - dLon, lat - dLat, lon + dLon * 0.92, lat + dLat * 0.82])
+  const outer = rings[0]
+  if (!outer || outer.length < 4) return rings
+  let clipRing = outer
+  try {
+    const cleaned = turf.buffer(turf.polygon([outer]), 0)
+    if (cleaned?.geometry.type === "Polygon") {
+      clipRing = cleaned.geometry.coordinates[0] as [number, number][]
+    }
+  } catch {
+    /* use original ring */
+  }
+  const capRing = cap.geometry.coordinates[0] as [number, number][]
+  let parts: polygonClipping.MultiPolygon = []
+  try {
+    parts = polygonClipping.intersection([clipRing.map((c) => [c[0], c[1]] as [number, number])], [
+      capRing,
+    ]) as polygonClipping.MultiPolygon
+  } catch {
+    return rings
+  }
+  if (!parts.length) return rings
+  let best = parts[0][0]
+  let bestA = 0
+  for (const poly of parts) {
+    const ring = poly[0]
+    if (!ring || ring.length < 4) continue
+    const a = turf.area(turf.polygon([ring as [number, number][]]))
+    if (a > bestA) {
+      bestA = a
+      best = ring
+    }
+  }
+  const next = [snapRing(ringFromCoords(best as number[][]))]
+  if (areaKm2FromRings(next) < 2_000) return rings
+  return next
+}
+
+function stripGeorefSpikes(rings: ProvinceRings, anchor: [number, number]): ProvinceRings {
+  let ring = rings[0]
+  if (!ring || ring.length < 5) return rings
+  for (let pass = 0; pass < 4; pass++) {
+    const dists = ring.map((c) => turf.distance(anchor, c, { units: "kilometers" }))
+    const ranked = dists
+      .map((d, i) => ({ d, i }))
+      .sort((a, b) => b.d - a.d)
+    const top = ranked[0]
+    const next = ranked[1]
+    if (!top || !next) break
+    if (top.d < 265 || top.d < next.d * 1.75) break
+    ring = ring.filter((_, i) => i !== top.i)
+    if (ring.length < 4) return rings
+  }
+  const first = ring[0]
+  const last = ring[ring.length - 1]
+  if (first[0] !== last[0] || first[1] !== last[1]) ring = [...ring, first]
+  const f = turf.polygon([ring])
+  try {
+    const fixed = turf.buffer(f, 0)
+    if (!fixed?.geometry || fixed.geometry.type !== "Polygon") return [snapRing(ring)]
+    return [snapRing(ringFromCoords(fixed.geometry.coordinates[0]))]
+  } catch {
+    return [snapRing(ring)]
+  }
 }
 
 function fixProvinceRings(rings: ProvinceRings): ProvinceRings {
@@ -462,14 +551,30 @@ async function main() {
   writeUInt16Gtiff(idsTif, gw, gh, raster, x0, y0)
   polygonizeGtiff(idsTif, rawJson)
   runMapshaper(rawJson, cleanJson, ROOT)
-  const gcps = buildTpsGcps(centroids)
-  console.log(`ogr2ogr TPS georef with ${gcps.length} GCPs…`)
-  warpTpsGcps(cleanJson, warpedJson, gcps)
-  const warped = readGeoJson(warpedJson)
-  const sample = warped.features[0]?.geometry?.coordinates?.[0]?.[0] as number[] | undefined
-  const ogrOk = sample && Math.abs(sample[0]) <= 90 && Math.abs(sample[1]) <= 90 && sample[0] > 5
-  const warpedFinal = ogrOk ? warped : warpFeatureCollection(readGeoJson(cleanJson), gcps)
-  if (!ogrOk) console.warn("ogr2ogr TPS unchanged coords; using TS hybrid warp")
+  const { gcps: warpGcps, labels: warpLabels } = buildWarpGcps(centroids)
+  const { gcps: reportGcps, labels: reportLabels } = buildGeorefGcps(centroids, aff, theaterLand, {
+    x0,
+    y0,
+    x1,
+    y1,
+  })
+  if (warpGcps.length < 30) {
+    throw new Error(`need at least 30 warp GCPs, got ${warpGcps.length}`)
+  }
+  const georef = buildHullClampedGeoref(warpGcps, warpLabels, 3, { x0, y0, x1, y1 })
+  console.log(
+    `hull-clamped georef (TPS + degree-${georef.degree} poly) with ${warpGcps.length} warp GCPs (${reportGcps.length} reported):`,
+  )
+  for (const r of georef.residualsKm.sort((a, b) => b.km - a.km).slice(0, 12)) {
+    console.log(`  ${r.label}: ${r.km.toFixed(2)} km`)
+  }
+  console.log(`  max residual: ${georef.maxResidualKm.toFixed(2)} km`)
+  if (georef.maxResidualKm > MAX_GEOREF_RESIDUAL_KM) {
+    throw new Error(
+      `georef max residual ${georef.maxResidualKm.toFixed(2)} km exceeds ${MAX_GEOREF_RESIDUAL_KM} km`,
+    )
+  }
+  const warpedFinal = warpFeatureCollection(readGeoJson(cleanJson), georef.transform)
   writeFileSync(warpedJson, JSON.stringify(warpedFinal))
 
   const { polygons, backdrop, seaRings, landRings } = extractPolygonsFromFeatures(
@@ -484,6 +589,14 @@ async function main() {
     polygons[def.id] = fixProvinceRings(polygons[def.id])
   }
   snapMeshVertices(polygons, 4)
+  for (const def of PROVINCE_DEFS) {
+    const anchor = HOI4_GAME_ANCHORS.find((a) => a.gameId === def.id)
+    if (!anchor) continue
+    const anchorPt: [number, number] = [anchor.lon, anchor.lat]
+    polygons[def.id] = clampOversizedProvince(polygons[def.id], anchorPt, 128)
+    polygons[def.id] = stripGeorefSpikes(polygons[def.id], anchorPt)
+    polygons[def.id] = fixProvinceRings(polygons[def.id])
+  }
   const neighbors = neighborsFromPolygons(polygons)
   for (const [a, b] of RAIL_PAIRS) {
     if (!neighbors[a].includes(b)) {
@@ -517,65 +630,67 @@ async function main() {
   const playableAreaKm2 = turf.area(playableUnion) / 1e6
   const theaterLandAreaKm2 = playableAreaKm2
 
-  if (minProvinceAreaKm2 < 2_400) {
-    throw new Error(`province too small: ${minProvinceAreaKm2.toFixed(0)} km²`)
+  const MIN_PROVINCE_KM2 = 2_000
+  if (minProvinceAreaKm2 < MIN_PROVINCE_KM2) {
+    const tiny = PROVINCE_DEFS.filter((d) => areaKm2FromRings(polygons[d.id]) < MIN_PROVINCE_KM2).map(
+      (d) => d.id,
+    )
+    throw new Error(`province too small: ${minProvinceAreaKm2.toFixed(0)} km² (${tiny.join(", ")})`)
   }
 
   const rivers = extractRivers(await fetchJson(NE_RIVERS))
-  const neLand = await fetchJson(NE_LAND)
-  const westView = turf.bboxPolygon([9, 46.75, 15.85, 57.35])
   const viewClip = turf.bboxPolygon(VIEW_BBOX)
-  const landMerged = mergeLandRings(landRings)
+  const clipInset = 0.04
+  const nationClip = turf.bboxPolygon([
+    VIEW_BBOX[0],
+    VIEW_BBOX[1],
+    BBOX[2] - clipInset,
+    VIEW_BBOX[3] - clipInset,
+  ])
   const landForView: [number, number][][] = []
-  for (const ring of landMerged) {
-    const clipped = turf.intersect(turf.featureCollection([viewClip, turf.polygon([ring])]))
-    if (!clipped) continue
+  const pushClippedRings = (
+    clipped: Feature<Polygon | MultiPolygon> | null,
+    target: [number, number][][],
+  ) => {
+    if (!clipped) return
     if (clipped.geometry.type === "Polygon") {
-      landForView.push(snapRing(ringFromCoords(clipped.geometry.coordinates[0])))
+      target.push(snapRing(ringFromCoords(clipped.geometry.coordinates[0])))
     } else if (clipped.geometry.type === "MultiPolygon") {
       for (const p of clipped.geometry.coordinates) {
-        landForView.push(snapRing(ringFromCoords(p[0])))
+        target.push(snapRing(ringFromCoords(p[0])))
       }
     }
   }
-  for (const feature of neLand.features) {
-    if (!feature.geometry) continue
-    const clipped = turf.intersect(
-      turf.featureCollection([westView, feature as Feature<Polygon | MultiPolygon>]),
+  for (const ring of landRings) {
+    pushClippedRings(
+      turf.intersect(turf.featureCollection([nationClip, turf.polygon([ring])])) as Feature<
+        Polygon | MultiPolygon
+      > | null,
+      landForView,
     )
-    if (!clipped) continue
-    if (clipped.geometry.type === "Polygon") {
-      landForView.push(snapRing(ringFromCoords(clipped.geometry.coordinates[0])))
-    } else if (clipped.geometry.type === "MultiPolygon") {
-      for (const p of clipped.geometry.coordinates) {
-        landForView.push(snapRing(ringFromCoords(p[0])))
-      }
-    }
   }
   for (const region of backdrop) {
     const clipped = turf.intersect(
-      turf.featureCollection([viewClip, turf.polygon([region.polygon])]),
-    )
-    if (!clipped) continue
-    if (clipped.geometry.type === "Polygon") {
-      landForView.push(snapRing(ringFromCoords(clipped.geometry.coordinates[0])))
-    } else if (clipped.geometry.type === "MultiPolygon") {
-      for (const p of clipped.geometry.coordinates) {
-        landForView.push(snapRing(ringFromCoords(p[0])))
-      }
-    }
+      turf.featureCollection([nationClip, turf.polygon([region.polygon])]),
+    ) as Feature<Polygon | MultiPolygon> | null
+    pushClippedRings(clipped, landForView)
   }
 
   const seaClipped: [number, number][][] = []
   for (const ring of seaRings) {
     const clipped = turf.intersect(turf.featureCollection([viewClip, turf.polygon([ring])]))
-    if (clipped?.geometry.type === "Polygon") {
+    if (!clipped) continue
+    if (clipped.geometry.type === "Polygon") {
       seaClipped.push(snapRing(ringFromCoords(clipped.geometry.coordinates[0])))
+    } else if (clipped.geometry.type === "MultiPolygon") {
+      for (const p of clipped.geometry.coordinates) {
+        seaClipped.push(snapRing(ringFromCoords(p[0])))
+      }
     }
   }
 
   const payload = {
-    source: `Playable provinces traced from ${HOI4_MAP_SOURCE.name} (provinces.bmp); raster ID mesh → gdal_polygonize → mapshaper → TPS/affine hybrid georef (${gcps.length} city GCPs); 1914 grey nations via CShapes 2.0 (June 1915) HOI4 assignment; rivers: Natural Earth. Non-commercial learning use; no Paradox files in repo.`,
+    source: `Playable provinces traced from ${HOI4_MAP_SOURCE.name} (provinces.bmp); raster ID mesh → gdal_polygonize → mapshaper → TPS+hull-clamped degree-${georef.degree} poly georef (${warpGcps.length} GCPs, max residual ${georef.maxResidualKm.toFixed(1)} km); 1914 grey nations via CShapes 2.0 (June 1915) HOI4 assignment; rivers: Natural Earth. Non-commercial learning use; no Paradox files in repo.`,
     hoi4MapSource: HOI4_MAP_SOURCE.repoUrl,
     bbox: BBOX,
     viewBbox: VIEW_BBOX,
@@ -590,6 +705,9 @@ async function main() {
       theaterLandAreaKm2: Math.round(theaterLandAreaKm2),
       playableAreaKm2: Math.round(playableAreaKm2),
       minProvinceAreaKm2: Math.round(minProvinceAreaKm2),
+      georefMaxResidualKm: Math.round(georef.maxResidualKm * 100) / 100,
+      georefGcpCount: warpGcps.length,
+      georefDegree: georef.degree,
     },
   }
 

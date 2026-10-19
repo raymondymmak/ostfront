@@ -664,10 +664,50 @@ function syncMap(
 
   if (hasGeometry && !fitted.current) {
     map.resize()
-    map.fitBounds(bounds, { padding: 32, animate: false, maxZoom: 7.2 })
+    const urlView = readMapViewFromUrl()
+    if (urlView.bounds) {
+      map.fitBounds(urlView.bounds, { padding: urlView.padding ?? 24, animate: false, maxZoom: 8.5 })
+    } else if (urlView.center) {
+      map.jumpTo({
+        center: urlView.center,
+        zoom: urlView.zoom ?? 6.5,
+      })
+    } else {
+      map.fitBounds(bounds, { padding: 32, animate: false, maxZoom: 7.2 })
+    }
     fitted.current = true
     map.resize()
   }
+}
+
+function readMapViewFromUrl(): {
+  center?: [number, number]
+  zoom?: number
+  bounds?: [[number, number], [number, number]]
+  padding?: number
+} {
+  if (typeof window === "undefined") return {}
+  const q = new URLSearchParams(window.location.search)
+  const boundsRaw = q.get("mapBounds")
+  if (boundsRaw) {
+    const parts = boundsRaw.split(",").map((v) => Number(v.trim()))
+    if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
+      return {
+        bounds: [[parts[0], parts[1]], [parts[2], parts[3]]],
+        padding: q.has("mapPadding") ? Number(q.get("mapPadding")) : undefined,
+      }
+    }
+  }
+  const lon = q.get("mapLon")
+  const lat = q.get("mapLat")
+  if (lon && lat) {
+    const zoom = q.get("mapZoom")
+    return {
+      center: [Number(lon), Number(lat)],
+      zoom: zoom ? Number(zoom) : undefined,
+    }
+  }
+  return {}
 }
 
 function markerElement(province: MapProvince, selectedId: string | null): HTMLDivElement {
