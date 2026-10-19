@@ -10,7 +10,6 @@ export const RAIL_PAIRS: [string, string][] = [
   ["allenstein", "mlawa"],
   ["thorn", "bromberg"],
   ["bromberg", "posen"],
-  ["thorn", "mlawa"],
   ["thorn", "plock"],
   ["mlawa", "warsaw"],
   ["plock", "warsaw"],

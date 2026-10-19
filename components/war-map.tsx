@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react"
 import * as maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 import { SvgMap } from "@/components/svg-map"
+import { MapLegend } from "@/components/map-legend"
 import { BACKDROP_REGIONS, RIVER_LINES, THEATER_BBOX } from "@/lib/data/geometry"
+import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
 
@@ -42,7 +44,6 @@ export function WarMap({
   const containerRef = useRef<HTMLDivElement>(null)
   const blitRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const blitFrameRef = useRef<number | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<string | null>(null)
@@ -88,7 +89,7 @@ export function WarMap({
             {
               id: "background",
               type: "background",
-              paint: { "background-color": "#6e8ea3" },
+              paint: { "background-color": "#4f7f9d" },
             },
           ],
         },
@@ -111,6 +112,7 @@ export function WarMap({
 
     map.on("load", () => {
       map.addSource("backdrop", { type: "geojson", data: emptyCollection() })
+      map.addSource("backdrop-label-points", { type: "geojson", data: emptyCollection() })
       map.addSource("rivers", { type: "geojson", data: emptyCollection() })
       map.addSource("provinces", { type: "geojson", data: emptyCollection() })
       map.addSource("orders", { type: "geojson", data: emptyCollection() })
@@ -121,8 +123,8 @@ export function WarMap({
         type: "fill",
         source: "backdrop",
         paint: {
-          "fill-color": "#8a9399",
-          "fill-opacity": 0.55,
+          "fill-color": "#8f9699",
+          "fill-opacity": 0.94,
         },
       })
       map.addLayer({
@@ -131,26 +133,27 @@ export function WarMap({
         source: "backdrop",
         paint: {
           "line-color": "#5c6468",
-          "line-width": 0.8,
-          "line-opacity": 0.65,
+          "line-width": 1.1,
+          "line-opacity": 0.85,
         },
       })
       map.addLayer({
         id: "backdrop-labels",
         type: "symbol",
-        source: "backdrop",
+        source: "backdrop-label-points",
         layout: {
           "text-field": ["get", "name"],
-          "text-size": 11,
+          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 10, 7.5, 13],
           "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
-          "text-letter-spacing": 0.04,
+          "text-letter-spacing": 0.06,
           "text-allow-overlap": false,
+          "text-optional": true,
         },
         paint: {
-          "text-color": "#4a5258",
-          "text-halo-color": "#d8dee2",
-          "text-halo-width": 1.2,
-          "text-opacity": 0.55,
+          "text-color": "#3f464b",
+          "text-halo-color": "#e2e6e8",
+          "text-halo-width": 1.4,
+          "text-opacity": 0.72,
         },
       })
       map.addLayer({
@@ -183,6 +186,60 @@ export function WarMap({
         source: "provinces",
         filter: ["==", ["get", "id"], ""],
         paint: { "fill-color": "#f3e2a8", "fill-opacity": 0 },
+      })
+      map.addSource("province-labels", { type: "geojson", data: emptyCollection() })
+      map.addLayer({
+        id: "province-strength",
+        type: "symbol",
+        source: "province-labels",
+        filter: [">", ["get", "strength"], 0],
+        layout: {
+          "text-field": ["to-string", ["get", "strength"]],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 8.5, 8, 11.5],
+          "text-offset": [
+            ["get", "strengthOffsetX"],
+            ["get", "strengthOffsetY"],
+          ] as unknown as maplibregl.DataDrivenPropertyValueSpecification<[number, number]>,
+          "text-anchor": "top",
+          "text-font": ["Open Sans Bold", "Arial Unicode MS Regular"],
+          "text-allow-overlap": false,
+          "text-optional": true,
+        },
+        paint: {
+          "text-color": [
+            "match",
+            ["get", "controller"],
+            "central",
+            "#1c3348",
+            "russia",
+            "#6a2a22",
+            "#241c14",
+          ],
+          "text-halo-color": "#f6f1e4",
+          "text-halo-width": 1.5,
+        },
+      })
+      map.addLayer({
+        id: "province-labels",
+        type: "symbol",
+        source: "province-labels",
+        filter: ["<=", ["get", "labelRank"], ["step", ["zoom"], 1, 5.2, 2, 6.4, 3, 7.4, 4]],
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 9.5, 7.5, 12.5, 9, 14],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+          "text-variable-anchor": ["center", "top", "bottom", "left", "right"],
+          "text-radial-offset": 0.45,
+          "text-justify": "auto",
+          "text-allow-overlap": false,
+          "text-optional": true,
+          "symbol-sort-key": ["get", "labelRank"],
+        },
+        paint: {
+          "text-color": "#241c14",
+          "text-halo-color": "#f6f1e4",
+          "text-halo-width": 1.6,
+        },
       })
       map.addLayer({
         id: "borders",
@@ -343,26 +400,23 @@ export function WarMap({
       })
 
       loadedRef.current = true
-      syncMap(map, propsRef.current, markersRef.current, fittedRef)
+      syncMap(map, propsRef.current, fittedRef)
       map.once("idle", () => blitMap(map, blitRef.current))
     })
 
     const observer = new ResizeObserver(() => {
       map.resize()
       if (loadedRef.current) {
-        syncMap(map, propsRef.current, markersRef.current, fittedRef)
+        syncMap(map, propsRef.current, fittedRef)
       }
     })
     observer.observe(container.parentElement ?? container)
 
-    const markers = markersRef.current
     return () => {
       observer.disconnect()
       if (blitFrameRef.current !== null) cancelAnimationFrame(blitFrameRef.current)
       loadedRef.current = false
       fittedRef.current = false
-      markers.forEach((marker) => marker.remove())
-      markers.clear()
       map.remove()
       mapRef.current = null
     }
@@ -387,7 +441,7 @@ export function WarMap({
     }
     const map = mapRef.current
     if (!map || !loadedRef.current) return
-    syncMap(map, propsRef.current, markersRef.current, fittedRef)
+    syncMap(map, propsRef.current, fittedRef)
     map.once("idle", () => blitMap(map, blitRef.current))
     if (orderMode) map.dragPan.disable()
     else map.dragPan.enable()
@@ -449,33 +503,8 @@ export function WarMap({
           {hoverTip}
         </div>
       )}
-      <div className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-md bg-[#f6f1e4]/92 px-2.5 py-2 text-[11px] text-[#241c14] shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="inline-block size-2.5 bg-[#4a6d90]" /> Central Powers
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="inline-block size-2.5 bg-[#a85b49]" /> Russia
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="inline-block size-2 rotate-45 bg-[#8a6a32]" /> Depot
-        </div>
-        <div className="mt-1.5 border-t border-[#3d342b]/25 pt-1.5">
-          <p className="font-semibold text-[#3d342b]">Strength counters</p>
-          <p className="mt-0.5 flex items-center gap-2">
-            <span className="inline-flex min-w-[1.1rem] justify-center rounded-full border border-[#1c3348]/45 bg-[#f6f1e4] px-1 text-[9px] font-bold text-[#1c3348]">
-              82
-            </span>
-            Central Powers total in a province
-          </p>
-          <p className="mt-0.5 flex items-center gap-2">
-            <span className="inline-flex min-w-[1.1rem] justify-center rounded-full border border-[#6a2a22]/45 bg-[#f6f1e4] px-1 text-[9px] font-bold text-[#6a2a22]">
-              52
-            </span>
-            Russia total in a province
-          </p>
-        </div>
-        <p className="mt-1 text-[#5c5144]">Hover a province for the exact total. Baltic lies north.</p>
-      </div>
+      <MapLegend />
+
       {orderMode && (
         <div className="pointer-events-none absolute top-3 left-3 rounded-md bg-[#241c14]/90 px-2.5 py-1.5 text-xs text-[#f3e2a8]">
           Drag from a province to a neighbor to order a move or an attack.
@@ -488,15 +517,16 @@ export function WarMap({
 function syncMap(
   map: maplibregl.Map,
   snapshot: Snapshot,
-  markers: Map<string, maplibregl.Marker>,
   fitted: { current: boolean },
 ) {
   const backdrop = map.getSource("backdrop") as maplibregl.GeoJSONSource | undefined
+  const backdropLabels = map.getSource("backdrop-label-points") as maplibregl.GeoJSONSource | undefined
+  const provinceLabels = map.getSource("province-labels") as maplibregl.GeoJSONSource | undefined
   const rivers = map.getSource("rivers") as maplibregl.GeoJSONSource | undefined
   const provinces = map.getSource("provinces") as maplibregl.GeoJSONSource | undefined
   const orders = map.getSource("orders") as maplibregl.GeoJSONSource | undefined
   const ends = map.getSource("order-ends") as maplibregl.GeoJSONSource | undefined
-  if (!backdrop || !rivers || !provinces || !orders || !ends) return
+  if (!backdrop || !backdropLabels || !rivers || !provinces || !orders || !ends || !provinceLabels) return
 
   const backdropFeatures: GeoJSON.Feature[] = BACKDROP_REGIONS.map((region) => {
     if (region.polygon.length < 4) return null
@@ -509,6 +539,21 @@ function syncMap(
     }
   }).filter(Boolean) as GeoJSON.Feature[]
   backdrop.setData({ type: "FeatureCollection", features: backdropFeatures })
+
+  const labelPoints: GeoJSON.Feature[] = []
+  const seenLabels = new Set<string>()
+  for (const region of BACKDROP_REGIONS) {
+    if (region.name === "Baltic Sea" || seenLabels.has(region.name)) continue
+    if (region.polygon.length < 4) continue
+    const centroid = turfCentroid(region.polygon)
+    seenLabels.add(region.name)
+    labelPoints.push({
+      type: "Feature",
+      properties: { name: region.name },
+      geometry: { type: "Point", coordinates: centroid },
+    })
+  }
+  backdropLabels.setData({ type: "FeatureCollection", features: labelPoints })
 
   rivers.setData({
     type: "FeatureCollection",
@@ -545,6 +590,28 @@ function syncMap(
   }
   provinces.setData({ type: "FeatureCollection", features })
 
+  provinceLabels.setData({
+    type: "FeatureCollection",
+    features: snapshot.provinces
+      .filter((province) => province.polygon.length >= 4)
+      .map((province) => {
+        const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
+        return {
+          type: "Feature",
+          properties: {
+            id: province.id,
+            label: shortProvinceName(province.name),
+            labelRank: labelRank(province),
+            strength,
+            controller: province.controller,
+            strengthOffsetX: strengthLabelOffset(province.id)[0],
+            strengthOffsetY: strengthLabelOffset(province.id)[1],
+          },
+          geometry: { type: "Point", coordinates: province.centroid },
+        }
+      }),
+  })
+
   const byId = new Map(snapshot.provinces.map((province) => [province.id, province]))
   const lines: GeoJSON.Feature[] = []
   const tips: GeoJSON.Feature[] = []
@@ -578,29 +645,6 @@ function syncMap(
     map.setFilter("selected", ["==", ["get", "id"], snapshot.selectedId ?? ""])
   }
 
-  const seen = new Set<string>()
-  for (const province of snapshot.provinces) {
-    if (province.polygon.length < 4) continue
-    seen.add(province.id)
-    const element = markerElement(province, snapshot.selectedId)
-    const existing = markers.get(province.id)
-    if (existing) {
-      existing.getElement().className = element.className
-      existing.getElement().innerHTML = element.innerHTML
-      existing.setLngLat(province.centroid)
-    } else {
-      markers.set(
-        province.id,
-        new maplibregl.Marker({ element, anchor: "center" }).setLngLat(province.centroid).addTo(map),
-      )
-    }
-  }
-  for (const [id, marker] of markers) {
-    if (seen.has(id)) continue
-    marker.remove()
-    markers.delete(id)
-  }
-
   if (hasGeometry && !fitted.current) {
     map.resize()
     map.fitBounds(bounds, { padding: 32, animate: false, maxZoom: 7.2 })
@@ -609,30 +653,15 @@ function syncMap(
   }
 }
 
-function markerElement(province: MapProvince, selectedId: string | null): HTMLDivElement {
-  const element = document.createElement("div")
-  element.className = [
-    "map-tag",
-    province.id === selectedId ? "is-selected" : "",
-    province.depot ? "is-depot" : "",
-  ]
-    .filter(Boolean)
-    .join(" ")
-  element.style.pointerEvents = "none"
-  const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
-  const faction = province.controller === "central" ? "Central Powers" : "Russia"
-  const badge = strength
-    ? `<div class="map-badge ${province.controller}" title="Total unit strength: ${strength} (${faction})">${strength}</div>`
-    : ""
-  element.innerHTML = `<div class="map-tag-name">${escapeHtml(province.name)}</div>${badge}`
-  return element
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
+function turfCentroid(ring: [number, number][]): [number, number] {
+  let lon = 0
+  let lat = 0
+  const count = Math.max(1, ring.length - 1)
+  for (let i = 0; i < count; i++) {
+    lon += ring[i][0]
+    lat += ring[i][1]
+  }
+  return [lon / count, lat / count]
 }
 
 function blitMap(map: maplibregl.Map, target: HTMLCanvasElement | null) {

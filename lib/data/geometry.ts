@@ -28,13 +28,14 @@ export const RIVER_LINES = theaterData.rivers as RiverLine[]
 type TheaterFile = {
   polygons: Record<string, [number, number][]>
   centroids: Record<string, [number, number]>
+  neighbors: Record<string, string[]>
   backdrop: BackdropRegion[]
   rivers: RiverLine[]
 }
 
 const loaded = theaterData as unknown as TheaterFile
 
-/** Playable province polygons and adjacency derived from shared borders (Natural Earth–clipped Voronoi). */
+/** Playable province polygons and grid-derived adjacency (Natural Earth land clip). */
 export function buildTheater(
   defs: { id: string; lon: number; lat: number }[] = PROVINCE_DEFS,
 ): TheaterGraph {
@@ -45,7 +46,10 @@ export function buildTheater(
     polygons[def.id] = loaded.polygons[def.id] ?? []
     centroids[def.id] = loaded.centroids[def.id] ?? [def.lon, def.lat]
   }
-  const neighbors = neighborsFromPolygons(polygons)
+  const neighbors: Record<string, string[]> = {}
+  for (const def of defs) {
+    neighbors[def.id] = [...(loaded.neighbors[def.id] ?? [])]
+  }
   return { neighbors, polygons, centroids }
 }
 

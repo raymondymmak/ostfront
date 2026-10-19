@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "r
 import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
 import { BACKDROP_REGIONS, RIVER_LINES } from "@/lib/data/geometry"
+import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 
 type SvgMapProps = {
   provinces: MapProvince[]
@@ -93,7 +94,7 @@ export function SvgMap({
     <svg
       ref={svgRef}
       viewBox={view.box}
-      className="absolute inset-0 h-full w-full overflow-hidden bg-[#6e8ea3]"
+      className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
       data-testid="svg-map"
       onMouseMove={(event) => {
         if (!originId) return
@@ -117,11 +118,11 @@ export function SvgMap({
           <g key={region.id} pointerEvents="none">
             <polygon
               points={points}
-              fill="#8a9399"
-              fillOpacity={0.55}
+              fill="#8f9699"
+              fillOpacity={0.94}
               stroke="#5c6468"
-              strokeWidth={view.label * 0.05}
-              strokeOpacity={0.65}
+              strokeWidth={view.label * 0.06}
+              strokeOpacity={0.85}
             />
             {region.name !== "Baltic Sea" && (
               <text
@@ -129,7 +130,7 @@ export function SvgMap({
                 y={-cy}
                 textAnchor="middle"
                 fill="#4a5258"
-                fillOpacity={0.55}
+                fillOpacity={0.72}
                 fontSize={view.label * 0.85}
                 fontFamily="Georgia, serif"
               >
@@ -208,12 +209,14 @@ export function SvgMap({
           pointerEvents="none"
         />
       )}
-      {provinces.map((province) => {
-        if (province.polygon.length < 4) return null
+      {provinces
+        .filter((province) => province.polygon.length >= 4 && labelRank(province) <= 2)
+        .map((province) => {
         const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
         const x = province.centroid[0]
         const y = -province.centroid[1]
         const offset = labelOffset(province.id)
+        const [sx, sy] = strengthLabelOffset(province.id)
         return (
           <g key={`${province.id}-label`} pointerEvents="none">
             <text
@@ -227,12 +230,12 @@ export function SvgMap({
               style={{ textShadow: "0 1px 0 rgba(255,248,230,0.75)" }}
             >
               {province.depot ? "◆ " : ""}
-              {province.name}
+              {shortProvinceName(province.name)}
             </text>
             {strength > 0 && (
               <text
-                x={x + offset[0]}
-                y={y + offset[1] + view.label * 1.15}
+                x={x + offset[0] + sx * view.label * 0.35}
+                y={y + offset[1] + view.label * (1.15 + sy * 0.15)}
                 textAnchor="middle"
                 fill={province.controller === "central" ? "#1c3348" : "#6a2a22"}
                 fontSize={view.label * 0.85}
