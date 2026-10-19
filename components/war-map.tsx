@@ -6,20 +6,22 @@ import "maplibre-gl/dist/maplibre-gl.css"
 import { SvgMap } from "@/components/svg-map"
 import { MapLegend } from "@/components/map-legend"
 import {
+  BACKDROP_OWNER_COLOR,
   BACKDROP_REGIONS,
-  LAND_POLYGONS,
-  SEA_POLYGONS,
   RIVER_LINES,
+  SEA_GEOMETRY,
   THEATER_BBOX,
   VIEW_BBOX,
+  eachCoord,
+  geometryValid,
+  type ProvinceGeometry,
 } from "@/lib/data/geometry"
 import { shortProvinceName } from "@/lib/map/labels"
 import type { QueuedOrder } from "@/lib/orders"
-import type { ProvinceRings } from "@/lib/data/geometry"
 import type { Province } from "@/lib/types"
 
 export type MapProvince = Province & {
-  polygon: ProvinceRings
+  polygon: ProvinceGeometry
   centroid: [number, number]
 }
 
@@ -102,7 +104,7 @@ export function WarMap({
             {
               id: "background",
               type: "background",
-              paint: { "background-color": "#8f9699" },
+              paint: { "background-color": "#4f7f9d" },
             },
           ],
         },
@@ -156,8 +158,13 @@ export function WarMap({
         type: "fill",
         source: "backdrop",
         paint: {
-          "fill-color": "#8f9699",
-          "fill-opacity": 0.94,
+          "fill-color": [
+            "match",
+            ["get", "owner"],
+            ...Object.entries(BACKDROP_OWNER_COLOR).flat(),
+            "#a8ada8",
+          ] as unknown as maplibregl.ExpressionSpecification,
+          "fill-opacity": 0.96,
         },
       })
       map.addLayer({
@@ -520,53 +527,30 @@ function syncMap(
 
   sea.setData({
     type: "FeatureCollection",
-    features: SEA_POLYGONS
-      .filter((ring) => ring.length >= 4)
-      .map((ring, index) => ({
-        type: "Feature",
-        id: `sea-${index}`,
-        properties: {},
-        geometry: { type: "Polygon", coordinates: [ring] },
-      })),
+    features: SEA_GEOMETRY
+      ? [{ type: "Feature", id: "sea", properties: {}, geometry: SEA_GEOMETRY }]
+      : [],
   })
 
-  land.setData({
-    type: "FeatureCollection",
-    features: LAND_POLYGONS
-      .filter((ring) => ring.length >= 4)
-      .map((ring, index) => ({
-        type: "Feature",
-        id: `land-${index}`,
-        properties: {},
-        geometry: { type: "Polygon", coordinates: [ring] },
-      })),
-  })
+  land.setData({ type: "FeatureCollection", features: [] })
 
-  const backdropFeatures: GeoJSON.Feature[] = BACKDROP_REGIONS.map((region) => {
-    if (region.name === "Baltic Sea" || region.polygon.length < 4) return null
-    const ring = region.polygon
-    return {
-      type: "Feature",
-      properties: { id: region.id, name: region.name },
-      geometry: { type: "Polygon", coordinates: [ring] },
-      id: region.id,
-    }
-  }).filter(Boolean) as GeoJSON.Feature[]
+  const backdropFeatures: GeoJSON.Feature[] = BACKDROP_REGIONS.filter((region) =>
+    geometryValid(region.geometry),
+  ).map((region) => ({
+    type: "Feature",
+    properties: { id: region.id, name: region.name, owner: region.owner },
+    geometry: region.geometry,
+    id: region.id,
+  }))
   backdrop.setData({ type: "FeatureCollection", features: backdropFeatures })
 
-  const labelPoints: GeoJSON.Feature[] = []
-  const seenLabels = new Set<string>()
-  for (const region of BACKDROP_REGIONS) {
-    if (region.name === "Baltic Sea" || seenLabels.has(region.name)) continue
-    if (region.polygon.length < 4) continue
-    const centroid = turfCentroid(region.polygon)
-    seenLabels.add(region.name)
-    labelPoints.push({
-      type: "Feature",
-      properties: { name: region.name },
-      geometry: { type: "Point", coordinates: centroid },
-    })
-  }
+  const labelPoints: GeoJSON.Feature[] = BACKDROP_REGIONS.filter((region) =>
+    geometryValid(region.geometry),
+  ).map((region) => ({
+    type: "Feature",
+    properties: { name: region.name },
+    geometry: { type: "Point", coordinates: region.label },
+  }))
   backdropLabels.setData({ type: "FeatureCollection", features: labelPoints })
 
   rivers.setData({
@@ -584,12 +568,10 @@ function syncMap(
   bounds.extend([THEATER_BBOX[2], THEATER_BBOX[3]])
   let hasGeometry = false
   for (const province of snapshot.provinces) {
-    if ((province.polygon[0]?.length ?? 0) < 4) continue
+    if (!geometryValid(province.polygon)) continue
     hasGeometry = true
     const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
-    for (const ring of province.polygon) {
-      for (const coord of ring) bounds.extend(coord)
-    }
+    eachCoord(province.polygon, (coord) => bounds.extend(coord))
     features.push({
       type: "Feature",
       id: province.id,
@@ -601,17 +583,14 @@ function syncMap(
         unrest: province.unrest,
         strength,
       },
-      geometry:
-        province.polygon.length > 1
-          ? { type: "MultiPolygon", coordinates: province.polygon.map((ring) => [ring]) }
-          : { type: "Polygon", coordinates: province.polygon },
+      geometry: province.polygon,
     })
   }
   provinces.setData({ type: "FeatureCollection", features })
 
   const seen = new Set<string>()
   for (const province of snapshot.provinces) {
-    if ((province.polygon[0]?.length ?? 0) < 4) continue
+    if (!geometryValid(province.polygon)) continue
     seen.add(province.id)
     const element = markerElement(province, snapshot.selectedId)
     const existing = markers.get(province.id)
@@ -676,7 +655,7 @@ function syncMap(
         zoom: urlView.zoom ?? 6.5,
       })
     } else {
-      map.fitBounds(bounds, { padding: 32, animate: false, maxZoom: 7.2 })
+      map.fitBounds(bounds, { padding: 28, animate: false, maxZoom: 8.2 })
     }
     fitted.current = true
     map.resize()
@@ -737,17 +716,6 @@ function escapeHtml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-}
-
-function turfCentroid(ring: [number, number][]): [number, number] {
-  let lon = 0
-  let lat = 0
-  const count = Math.max(1, ring.length - 1)
-  for (let i = 0; i < count; i++) {
-    lon += ring[i][0]
-    lat += ring[i][1]
-  }
-  return [lon / count, lat / count]
 }
 
 function blitMap(map: maplibregl.Map, target: HTMLCanvasElement | null) {

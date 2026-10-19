@@ -14,7 +14,7 @@ import { WarMap, type MapProvince } from "@/components/war-map"
 
 export function GameApp() {
   const [game, setGame] = useState<SaveGame>(() => loadGame() ?? freshGame())
-  const [selectedId, setSelectedId] = useState("tarnow")
+  const [selectedId, setSelectedId] = useState("krakow")
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
   const [orderMode, setOrderMode] = useState(false)
   const [directive, setDirective] = useState("")
@@ -193,7 +193,7 @@ export function GameApp() {
     setFlash([])
     setError(null)
     setLogIndex(null)
-    setSelectedId("tarnow")
+    setSelectedId("krakow")
     setArmReset(false)
   }
 

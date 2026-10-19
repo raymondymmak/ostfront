@@ -58,11 +58,11 @@ The situation is saved in `localStorage` under `ostfront-1915-v1`. Restarting th
 
 Each turn is a fortnight. The first date is 4 June 1915, two days after the recapture of Przemyśl.
 
-Warsaw is Russian-held and is Russia's depot, which matches the front after the 1914 retreat from Poland. Königsberg is the German depot. Two extra railheads keep both wings supplied: Kraków for the Austro-Hungarian South, and Rovno for the Russian South-West Front. A depot feeds only its own faction, and only while that faction controls it. Taking Warsaw starves Russia. It does not feed the Central Powers.
+Warsaw is Russian-held and is Russia's depot. Königsberg is the German depot. Kraków, which now contains Tarnów, Rzeszów, and Przemyśl as one Hearts of Iron IV state, is the Austro-Hungarian depot and already borders Lemberg. Rovno, inside Volhynia, is the Russian forward railhead. A depot feeds only its own faction, and only while that faction controls it. Taking Warsaw starves Russia. It does not feed the Central Powers.
 
-`owner` is the 1914 sovereign, used for occupation unrest. `controller` is who holds the ground. Lemberg, Stanislav, and Tarnopol are Austrian homeland under Russian control, so they start with unrest. Przemyśl is Central Powers, fort level 2.
+`owner` is the 1914 sovereign that holds most of the state, used for occupation unrest. `controller` is who holds the ground on 4 June 1915. Lemberg, Stanislav, and Bukovina are Austrian homeland under Russian control, so they start with unrest. Kraków, including Przemyśl, is Central Powers.
 
-The campaign that can actually move is Galicia. The Tarnów group must march to Przemyśl before it can attack Lemberg, because only Przemyśl borders Lemberg on your side. A typed order `Attack Lemberg.` commits the Przemyśl assault group alone, at poor odds. The panel shows those odds before you close the fortnight. The second axis is Kraków–Kielce–Radom–Warsaw. East Prussia is long and thin on supply.
+The Galicia hammer does not march: Mackensen's group, the Beskiden corps, and the Przemyśl assault group all start in Kraków, which shares a border with Lemberg. A typed order `Attack Lemberg.` commits that whole Kraków stack. The second axis is Kielce–Warsaw; Radom sits inside the Warsaw state. East Prussia is Königsberg plus Ermland-Masuren. Pomorze is the 1914 West Prussia state (the map source labels it Gdynia).
 
 On the first fortnight the Russian staff only digs. Later they attack when local odds are at least 1.25, and they do not abandon the last unit on an enemy border.
 
@@ -94,17 +94,17 @@ components      map, orders, province, chronicle
 
 The map is MapLibre, with a blank style and no remote tiles. Its worker is served from `public/maplibre-gl-worker.mjs`. Each painted frame is copied onto a normal canvas so the front is still visible in browsers that will not composite a WebGL canvas. If WebGL cannot paint at all, the same polygons are drawn as SVG.
 
-**Map data:** Playable province shapes and adjacency live in `lib/data/theater-geometry.json`. Regenerate with:
+**Map data:** Playable province shapes and adjacency live in `lib/data/theater-geometry.json`. The states are Hearts of Iron IV provinces in MapChart's own pixel space, drawn flat (pixels scaled to a few pseudo-degrees around the equator). There is no real-world basemap. Lakes and the sea are the gaps between those states.
+
+Map geometry: MapChart.net (CC BY-SA 4.0), based on Hearts of Iron IV by Paradox Interactive.
+
+1914 owners are assigned by area from the WorldOS 1914 map, which is an input to the build and is not committed. Regenerate with the sources available locally:
 
 ```bash
-# Place the WorldOS theater extract at uploads/ww1-1914-theater-regions.geojson
-npm run ingest:worldos    # → lib/data/worldos-theater-regions.geojson
-npm run build:theater     # downloads Natural Earth rivers if needed, writes theater-geometry.json
+HOI4_DIR=/path/to/mapchart-hoi4 WORLDOS_REGIONS=/path/to/ww1-1914-regions.geojson npm run build:theater
 ```
 
-Region geometry derived from the worldos.cc World War I Game map (World101), itself built from Natural Earth (public domain) and aourednik/historical-basemaps 1914 owners (CC-BY-SA); used in a non-commercial learning project.
-
-The committed `lib/data/worldos-theater-regions.geojson` is a lightly simplified derivative of that extract. Each game province is one or more whole regions, split only along a Natural Earth river or a short deliberate line. Grey backdrop is the other 1914 regions in view, dissolved by owner. Sea is the viewport not covered by those coastlines, so the Baltic and the Black Sea follow the WorldOS shore.
+The raw SVG and the full state geojson are not committed. The script snaps shared borders, dissolves non-playable states by 1914 owner, and writes only the theater file.
 
 The MapLibre container sits in a sized wrapper so `maplibregl-map`’s `position: relative` cannot collapse the viewport (which previously stacked labels down the page on narrow screens). Labels and strength counters use MapLibre markers anchored in map space; backdrop layers ignore pointer events.
 
@@ -135,7 +135,7 @@ After deploy, open the production URL and play a fortnight with no env vars to c
 ## Add a province
 
 1. Add a `ProvinceDef` in `lib/data/definitions.ts`: `id`, `name`, `lon`, `lat`, `terrain`, `owner`, `controller`, `fort`, and optionally `depot`, `unrest`, and `aliases`.
-2. Regenerate `lib/data/theater-geometry.json` with `npx tsx scripts/generate-theater-geometry.ts` and commit the result.
+2. Regenerate `lib/data/theater-geometry.json` with `npm run build:theater` (needs `HOI4_DIR` and `WORLDOS_REGIONS`) and commit the result.
 3. Add rail pairs in `lib/data/rails.ts`. A pair is kept only when the two provinces share a border. `npm run map` lists gaps.
 4. Place units in `PLACEMENTS` in `lib/data/scenario.ts`.
 5. Run `npm test` and `npm run map`.

@@ -3,7 +3,15 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
-import { BACKDROP_REGIONS, LAND_POLYGONS, RIVER_LINES } from "@/lib/data/geometry"
+import {
+  BACKDROP_REGIONS,
+  RIVER_LINES,
+  backdropColor,
+  eachCoord,
+  geometryPolygons,
+  geometryValid,
+  type ProvinceGeometry,
+} from "@/lib/data/geometry"
 import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 
 type SvgMapProps = {
@@ -36,17 +44,23 @@ export function SvgMap({
     let maxLon = -Infinity
     let minLat = Infinity
     let maxLat = -Infinity
-    const rings: [number, number][][] = [
-      ...provinces.flatMap((province) => province.polygon),
-      ...BACKDROP_REGIONS.map((region) => region.polygon),
-    ]
-    for (const polygon of rings) {
-      for (const [lon, lat] of polygon) {
+    for (const province of provinces) {
+      if (!geometryValid(province.polygon)) continue
+      eachCoord(province.polygon, ([lon, lat]) => {
         minLon = Math.min(minLon, lon)
         maxLon = Math.max(maxLon, lon)
         minLat = Math.min(minLat, lat)
         maxLat = Math.max(maxLat, lat)
-      }
+      })
+    }
+    for (const region of BACKDROP_REGIONS) {
+      if (!geometryValid(region.geometry)) continue
+      eachCoord(region.geometry, ([lon, lat]) => {
+        minLon = Math.min(minLon, lon)
+        maxLon = Math.max(maxLon, lon)
+        minLat = Math.min(minLat, lat)
+        maxLat = Math.max(maxLat, lat)
+      })
     }
     if (!Number.isFinite(minLon)) {
       minLon = 16
@@ -107,50 +121,30 @@ export function SvgMap({
         setPreview(null)
       }}
     >
-      {LAND_POLYGONS.map((ring, index) => {
-        if (ring.length < 4) return null
-        const points = ring.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
-        return (
-          <polygon
-            key={`land-${index}`}
-            points={points}
-            fill="#8f9699"
-            fillOpacity={0.96}
-            stroke="none"
-            pointerEvents="none"
-          />
-        )
-      })}
       {BACKDROP_REGIONS.map((region) => {
-        if (region.polygon.length < 4) return null
-        const points = region.polygon.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
-        const cx =
-          region.polygon.reduce((sum, coord) => sum + coord[0], 0) / region.polygon.length
-        const cy =
-          region.polygon.reduce((sum, coord) => sum + coord[1], 0) / region.polygon.length
+        if (!geometryValid(region.geometry)) return null
         return (
           <g key={region.id} pointerEvents="none">
-            <polygon
-              points={points}
-              fill="#8f9699"
-              fillOpacity={0.94}
+            <path
+              d={geometryPath(region.geometry)}
+              fill={backdropColor(region.owner)}
+              fillOpacity={0.96}
+              fillRule="evenodd"
               stroke="#5c6468"
               strokeWidth={view.label * 0.06}
               strokeOpacity={0.85}
             />
-            {region.name !== "Baltic Sea" && (
-              <text
-                x={cx}
-                y={-cy}
-                textAnchor="middle"
-                fill="#4a5258"
-                fillOpacity={0.72}
-                fontSize={view.label * 0.85}
-                fontFamily="Georgia, serif"
-              >
-                {region.name}
-              </text>
-            )}
+            <text
+              x={region.label[0]}
+              y={-region.label[1]}
+              textAnchor="middle"
+              fill="#4a5258"
+              fillOpacity={0.72}
+              fontSize={view.label * 0.85}
+              fontFamily="Georgia, serif"
+            >
+              {region.name}
+            </text>
           </g>
         )
       })}
@@ -166,40 +160,33 @@ export function SvgMap({
         />
       ))}
       {provinces.map((province) => {
-        if ((province.polygon[0]?.length ?? 0) < 4) return null
+        if (!geometryValid(province.polygon)) return null
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
         const stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
         const fill = provinceFill(province, overlay)
         return (
-          <g key={province.id}>
-            {province.polygon.map((ring, ringIndex) => {
-              const points = ring.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
-              return (
-                <polygon
-                  key={`${province.id}-${ringIndex}`}
-                  points={points}
-                  fill={fill}
-                  fillRule="evenodd"
-                  stroke={stroke}
-                  strokeWidth={selected ? view.label * 0.22 : view.label * 0.08}
-                  className={flashing ? "animate-pulse" : undefined}
-                  style={{ cursor: orderMode ? "crosshair" : "pointer" }}
-                  onMouseDown={(event) => {
-                    if (!orderMode) return
-                    event.preventDefault()
-                    event.stopPropagation()
-                    setOriginId(province.id)
-                  }}
-                  onMouseUp={(event) => {
-                    event.stopPropagation()
-                    if (orderMode && originId) commit(province.id)
-                    else onSelect(province.id)
-                  }}
-                />
-              )
-            })}
-          </g>
+          <path
+            key={province.id}
+            d={geometryPath(province.polygon)}
+            fill={fill}
+            fillRule="evenodd"
+            stroke={stroke}
+            strokeWidth={selected ? view.label * 0.22 : view.label * 0.08}
+            className={flashing ? "animate-pulse" : undefined}
+            style={{ cursor: orderMode ? "crosshair" : "pointer" }}
+            onMouseDown={(event) => {
+              if (!orderMode) return
+              event.preventDefault()
+              event.stopPropagation()
+              setOriginId(province.id)
+            }}
+            onMouseUp={(event) => {
+              event.stopPropagation()
+              if (orderMode && originId) commit(province.id)
+              else onSelect(province.id)
+            }}
+          />
         )
       })}
       {orders.map((order) => {
@@ -233,7 +220,7 @@ export function SvgMap({
         />
       )}
       {provinces
-        .filter((province) => (province.polygon[0]?.length ?? 0) >= 4)
+        .filter((province) => geometryValid(province.polygon))
         .map((province) => {
         const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
         const x = province.centroid[0]
@@ -285,6 +272,17 @@ function labelOffset(id: string): [number, number] {
   const angle = (hash % 360) * (Math.PI / 180)
   const radius = 0.04 + (hash % 7) * 0.01
   return [Math.cos(angle) * radius, Math.sin(angle) * radius]
+}
+
+function geometryPath(geometry: ProvinceGeometry): string {
+  const parts: string[] = []
+  for (const rings of geometryPolygons(geometry)) {
+    for (const ring of rings) {
+      const cmds = ring.map(([lon, lat], index) => `${index === 0 ? "M" : "L"}${lon},${-lat}`)
+      parts.push(`${cmds.join(" ")} Z`)
+    }
+  }
+  return parts.join(" ")
 }
 
 function provinceFill(province: MapProvince, overlay: SvgMapProps["overlay"]): string {

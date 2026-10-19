@@ -11,21 +11,21 @@ import type {
 } from "@/lib/types"
 
 const FORTRESS = new Set([
-  "warsaw",
-  "brest",
-  "lemberg",
-  "kovno",
+  "warszawa",
+  "lublin",
+  "lwow",
+  "suduva",
   "krakow",
   "konigsberg",
 ])
 
 const DIPLOMACY = [
-  "Berlin tells Vienna that the Kraków—Przemyśl railway is the campaign. Lemberg before everything.",
+  "Berlin tells Vienna that the Kraków state already holds Przemyśl. Lemberg, the next state east, is the campaign.",
   "Stavka warns the Warsaw depot that Galicia can be thinned if the Narew starts to bend.",
-  "Conrad wants another push east of Przemyśl before the Russians dig in front of Lemberg.",
+  "Conrad wants the Kraków group kept massed on the Lemberg border before the Russians dig.",
   "Falkenhayn will send no fresh corps from the west. This fortnight is fought with the rails already in hand.",
-  "Bucharest stays noncommittal. The Bukovina is watched, not entered.",
-  "The heavy artillery asks for ammunition trains through Tarnów before the next assault.",
+  "Bucharest stays noncommittal. Bukovina is watched, not entered. Romania is still neutral.",
+  "The heavy artillery is already with the Kraków group. Ammunition, not another march, is the constraint.",
 ]
 
 export function mockAiTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
@@ -114,7 +114,7 @@ export function mockAiTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
   }
 
   if (state.turn % 2 === 0) {
-    for (const id of ["warsaw", "brest", "lemberg"]) {
+    for (const id of ["warszawa", "lublin", "lwow"]) {
       const province = findProvince(state, id)
       if (
         province &&
@@ -170,7 +170,7 @@ function pickEvents(state: GameState): GameEvent[] {
     }
   }
   if (state.turn % 5 === 4) {
-    const hub = findProvince(state, "warsaw")
+    const hub = findProvince(state, "warszawa")
     if (hub) {
       events.push({
         type: "strike",

@@ -1,5 +1,5 @@
 import { PROVINCE_DEFS } from "@/lib/data/definitions"
-import { buildTheater } from "@/lib/data/geometry"
+import { buildTheater, type ProvinceGeometry } from "@/lib/data/geometry"
 import { railsFromNeighbors } from "@/lib/data/rails"
 import type { Faction, Province, Terrain } from "@/lib/types"
 
@@ -16,7 +16,7 @@ export type CatalogProvince = {
   unrest: number
   aliases: string[]
   centroid: [number, number]
-  polygon: [number, number][][]
+  polygon: ProvinceGeometry
 }
 
 export const PROVINCE_COUNT = PROVINCE_DEFS.length

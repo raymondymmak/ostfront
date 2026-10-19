@@ -14,7 +14,7 @@ export function MapLegend() {
   }, [])
 
   return (
-    <div className="pointer-events-auto absolute bottom-3 left-3 z-20 max-w-[15rem] rounded-md bg-[#f6f1e4]/95 text-[11px] text-[#241c14] shadow-sm">
+    <div className="pointer-events-auto absolute bottom-3 left-3 z-20 max-w-[18rem] rounded-md bg-[#f6f1e4]/95 text-[11px] text-[#241c14] shadow-sm">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left font-semibold text-[#3d342b]"
@@ -33,7 +33,7 @@ export function MapLegend() {
             <span className="inline-block size-2.5 bg-[#a85b49]" /> Russia
           </div>
           <div className="mt-1 flex items-center gap-2">
-            <span className="inline-block size-2.5 bg-[#8a7d72]" /> Surrounding states
+            <span className="inline-block size-2.5 bg-[#c4b49a]" /> Surrounding states, tinted by 1914 owner
           </div>
           <div className="mt-1 flex items-center gap-2">
             <span className="inline-block size-2.5 rotate-45 bg-[#8a6a32]" /> Depot
@@ -53,7 +53,10 @@ export function MapLegend() {
               Russia total in a province
             </p>
           </div>
-          <p className="mt-1 text-[#5c5144]">Zoom in for more city names. Baltic lies north.</p>
+          <p className="mt-1 text-[#5c5144]">Baltic lies north. The states are the map.</p>
+          <p className="mt-1 text-[10px] leading-snug text-[#5c5144]">
+            Map geometry: MapChart.net (CC BY-SA 4.0), based on Hearts of Iron IV by Paradox Interactive.
+          </p>
         </div>
       )}
     </div>

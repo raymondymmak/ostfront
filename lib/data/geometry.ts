@@ -3,18 +3,21 @@ import type { Feature, LineString, MultiLineString, MultiPolygon, Polygon } from
 import theaterData from "@/lib/data/theater-geometry.json"
 import { PROVINCE_DEFS } from "@/lib/data/definitions"
 
-export type ProvinceRings = [number, number][][]
+/** A province or backdrop shape, holes included. Extra rings are lakes, not extra land. */
+export type ProvinceGeometry = Polygon | MultiPolygon
 
 export type TheaterGraph = {
   neighbors: Record<string, string[]>
-  polygons: Record<string, ProvinceRings>
+  polygons: Record<string, ProvinceGeometry>
   centroids: Record<string, [number, number]>
 }
 
 export type BackdropRegion = {
   id: string
   name: string
-  polygon: [number, number][]
+  owner: string
+  label: [number, number]
+  geometry: ProvinceGeometry
 }
 
 export type RiverLine = {
@@ -26,32 +29,57 @@ export type RiverLine = {
 export const THEATER_BBOX = theaterData.bbox as [number, number, number, number]
 const theaterMeta = theaterData as unknown as {
   viewBbox?: [number, number, number, number]
-  landPolygons?: [number, number][][]
-  seaPolygons?: [number, number][][]
+  sea?: ProvinceGeometry
 }
 export const VIEW_BBOX = theaterMeta.viewBbox ?? THEATER_BBOX
-export const LAND_POLYGONS = theaterMeta.landPolygons ?? []
-export const SEA_POLYGONS = theaterMeta.seaPolygons ?? []
+export const SEA_GEOMETRY = theaterMeta.sea
 export const GEOMETRY_SOURCE = theaterData.source as string
 export const BACKDROP_REGIONS = theaterData.backdrop as BackdropRegion[]
 export const RIVER_LINES = theaterData.rivers as RiverLine[]
 
-export function provinceHasGeometry(rings: ProvinceRings): boolean {
-  return (rings[0]?.length ?? 0) >= 4
+/** Muted 1914-owner tints for non-playable states. Playable land keeps faction colors. */
+export const BACKDROP_OWNER_COLOR: Record<string, string> = {
+  german_empire: "#9aa3ad",
+  austro_hungarian_empire: "#c4b49a",
+  russia: "#8fa08a",
+  romania: "#a898a8",
+  sweden: "#aeb8c0",
+  norway: "#b7c0c4",
+  bulgaria: "#9a94a6",
+  italy: "#a8b09a",
+  denmark: "#b0a0a4",
+  serbia: "#a8ada8",
+  montenegro: "#a8ada8",
+  greece: "#b0ae9a",
+  albania: "#a8ada8",
+  ottoman_empire: "#b0a090",
 }
 
-export function forEachProvinceCoord(rings: ProvinceRings, visit: (coord: [number, number]) => void) {
-  for (const ring of rings) {
-    for (const coord of ring) visit(coord)
+export function backdropColor(owner: string): string {
+  return BACKDROP_OWNER_COLOR[owner] ?? "#a8ada8"
+}
+
+export function geometryPolygons(geometry: ProvinceGeometry): number[][][][] {
+  return geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates
+}
+
+export function geometryValid(geometry: ProvinceGeometry | undefined): boolean {
+  if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return false
+  return geometryPolygons(geometry).some((rings) => (rings[0]?.length ?? 0) >= 4)
+}
+
+export function eachCoord(geometry: ProvinceGeometry, visit: (coord: [number, number]) => void) {
+  for (const rings of geometryPolygons(geometry)) {
+    for (const ring of rings) {
+      for (const coord of ring) visit([coord[0], coord[1]])
+    }
   }
 }
 
 type TheaterFile = {
-  polygons: Record<string, ProvinceRings>
+  polygons: Record<string, ProvinceGeometry>
   centroids: Record<string, [number, number]>
   neighbors: Record<string, string[]>
-  backdrop: BackdropRegion[]
-  rivers: RiverLine[]
 }
 
 const loaded = theaterData as unknown as TheaterFile
@@ -60,13 +88,11 @@ const loaded = theaterData as unknown as TheaterFile
 export function buildTheater(
   defs: { id: string; lon: number; lat: number }[] = PROVINCE_DEFS,
 ): TheaterGraph {
-  const polygons: Record<string, ProvinceRings> = {}
+  const polygons: Record<string, ProvinceGeometry> = {}
   const centroids: Record<string, [number, number]> = {}
 
   for (const def of defs) {
-    const raw = loaded.polygons[def.id] as ProvinceRings | [number, number][] | undefined
-    polygons[def.id] =
-      raw && Array.isArray(raw[0]?.[0]) ? (raw as ProvinceRings) : raw?.length ? [raw as [number, number][]] : []
+    polygons[def.id] = loaded.polygons[def.id]
     centroids[def.id] = loaded.centroids[def.id] ?? [def.lon, def.lat]
   }
   const neighbors: Record<string, string[]> = {}
@@ -76,13 +102,8 @@ export function buildTheater(
   return { neighbors, polygons, centroids }
 }
 
-/** Recompute adjacency from polygon rings (shared borders). */
-function asProvinceFeature(id: string, rings: ProvinceRings) {
-  if (rings.length <= 1) return turf.polygon(rings, { id })
-  return turf.multiPolygon(
-    rings.map((ring) => [ring]),
-    { id },
-  )
+function asProvinceFeature(id: string, geometry: ProvinceGeometry): Feature<Polygon | MultiPolygon> {
+  return { type: "Feature", properties: { id }, geometry }
 }
 
 function boundaryLine(feature: Feature<Polygon | MultiPolygon>): Feature<LineString | MultiLineString> {
@@ -107,8 +128,8 @@ export function sharedBorderKm(a: Feature<Polygon | MultiPolygon>, b: Feature<Po
   }
 }
 
-export function neighborsFromPolygons(polygons: Record<string, ProvinceRings>): Record<string, string[]> {
-  const features = Object.entries(polygons).map(([id, rings]) => asProvinceFeature(id, rings))
+export function neighborsFromPolygons(polygons: Record<string, ProvinceGeometry>): Record<string, string[]> {
+  const features = Object.entries(polygons).map(([id, geometry]) => asProvinceFeature(id, geometry))
   const neighbors: Record<string, string[]> = {}
   for (const id of Object.keys(polygons)) neighbors[id] = []
 

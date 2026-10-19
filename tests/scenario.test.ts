@@ -9,31 +9,31 @@ describe("June 1915 scenario", () => {
   beforeEach(() => {
     delete process.env.LLM_API_KEY
   })
-  it("builds forty provinces, connected rails, and a Russian-held Warsaw", () => {
+  it("builds the HOI4 front, connected rails, and a Russian-held Warsaw", () => {
     const state = createInitialState()
-    expect(state.provinces).toHaveLength(40)
+    expect(state.provinces).toHaveLength(39)
     expect(state.date).toBe("4 June 1915")
     expect(RAIL_GAPS).toEqual([])
 
-    const warsaw = state.provinces.find((province) => province.id === "warsaw")!
+    const warsaw = state.provinces.find((province) => province.id === "warszawa")!
     const konigsberg = state.provinces.find((province) => province.id === "konigsberg")!
     const krakow = state.provinces.find((province) => province.id === "krakow")!
-    const rovno = state.provinces.find((province) => province.id === "rovno")!
-    const lemberg = state.provinces.find((province) => province.id === "lemberg")!
-    const przemysl = state.provinces.find((province) => province.id === "przemysl")!
+    const rovno = state.provinces.find((province) => province.id === "wolyn")!
+    const lemberg = state.provinces.find((province) => province.id === "lwow")!
 
     expect(warsaw.controller).toBe("russia")
     expect(warsaw.depot).toBe("russia")
     expect(warsaw.supply).toBe(100)
     expect(konigsberg.depot).toBe("central")
     expect(konigsberg.supply).toBe(100)
+    expect(krakow.controller).toBe("central")
     expect(krakow.depot).toBe("central")
+    expect(krakow.supply).toBe(100)
     expect(rovno.depot).toBe("russia")
+    expect(rovno.supply).toBe(100)
     expect(lemberg.controller).toBe("russia")
     expect(lemberg.owner).toBe("central")
-    expect(przemysl.controller).toBe("central")
-    expect(przemysl.neighbors).toContain("lemberg")
-    expect(przemysl.supply).toBeGreaterThanOrEqual(60)
+    expect(krakow.neighbors).toContain("lwow")
     expect(lemberg.supply).toBeGreaterThanOrEqual(50)
 
     const ids = state.provinces.flatMap((province) =>
@@ -49,7 +49,7 @@ describe("June 1915 scenario", () => {
       { type: "text", text: "Attack Lemberg." },
     ])
     const attack = interpreted.proposals.find((proposal) => proposal.type === "attack")
-    expect(attack).toMatchObject({ type: "attack", target: "lemberg" })
+    expect(attack).toMatchObject({ type: "attack", target: "lwow" })
 
     const played = await playTurn(state, [
       { type: "text", text: "Attack Lemberg." },
