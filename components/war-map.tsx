@@ -601,7 +601,10 @@ function syncMap(
         unrest: province.unrest,
         strength,
       },
-      geometry: { type: "Polygon", coordinates: province.polygon },
+      geometry:
+        province.polygon.length > 1
+          ? { type: "MultiPolygon", coordinates: province.polygon.map((ring) => [ring]) }
+          : { type: "Polygon", coordinates: province.polygon },
     })
   }
   provinces.setData({ type: "FeatureCollection", features })

@@ -1,4 +1,5 @@
 import * as turf from "@turf/turf"
+import type { Feature, LineString, MultiLineString, MultiPolygon, Polygon } from "geojson"
 import theaterData from "@/lib/data/theater-geometry.json"
 import { PROVINCE_DEFS } from "@/lib/data/definitions"
 
@@ -76,20 +77,46 @@ export function buildTheater(
 }
 
 /** Recompute adjacency from polygon rings (shared borders). */
+function asProvinceFeature(id: string, rings: ProvinceRings) {
+  if (rings.length <= 1) return turf.polygon(rings, { id })
+  return turf.multiPolygon(
+    rings.map((ring) => [ring]),
+    { id },
+  )
+}
+
+function boundaryLine(feature: Feature<Polygon | MultiPolygon>): Feature<LineString | MultiLineString> {
+  const polygons = feature.geometry.type === "Polygon" ? [feature.geometry.coordinates] : feature.geometry.coordinates
+  const coordinates: number[][][] = []
+  for (const rings of polygons) {
+    const line = turf.polygonToLine(turf.polygon(rings))
+    if (line.type !== "Feature") continue
+    if (line.geometry.type === "LineString") coordinates.push(line.geometry.coordinates as number[][])
+    else coordinates.push(...(line.geometry.coordinates as number[][][]))
+  }
+  return turf.multiLineString(coordinates)
+}
+
+/** Shared-border length in kilometers. Corner touches are not a border. */
+export function sharedBorderKm(a: Feature<Polygon | MultiPolygon>, b: Feature<Polygon | MultiPolygon>) {
+  try {
+    const overlap = turf.lineOverlap(boundaryLine(a), boundaryLine(b), { tolerance: 0.002 })
+    return turf.length(overlap, { units: "kilometers" })
+  } catch {
+    return 0
+  }
+}
+
 export function neighborsFromPolygons(polygons: Record<string, ProvinceRings>): Record<string, string[]> {
-  const features = Object.entries(polygons).map(([id, rings]) => turf.polygon(rings, { id }))
+  const features = Object.entries(polygons).map(([id, rings]) => asProvinceFeature(id, rings))
   const neighbors: Record<string, string[]> = {}
   for (const id of Object.keys(polygons)) neighbors[id] = []
 
   for (let i = 0; i < features.length; i++) {
     for (let j = i + 1; j < features.length; j++) {
-      const a = features[i]
-      const b = features[j]
-      if (!turf.booleanIntersects(a, b)) continue
-      const line = turf.lineIntersect(a, b)
-      if (!line.features.length && !turf.booleanTouches(a, b)) continue
-      const idA = a.properties?.id as string
-      const idB = b.properties?.id as string
+      if (sharedBorderKm(features[i], features[j]) < 0.25) continue
+      const idA = features[i].properties?.id as string
+      const idB = features[j].properties?.id as string
       if (!neighbors[idA].includes(idB)) neighbors[idA].push(idB)
       if (!neighbors[idB].includes(idA)) neighbors[idB].push(idA)
     }

@@ -1,13 +1,14 @@
 /**
- * Normalize WorldOS theater export → lib/data/worldos-theater-regions.geojson (simplified, topology-safe).
+ * Simplify Raymond's WorldOS theater extract into the committed derivative.
+ * Input: uploads/ww1-1914-theater-regions.geojson (gitignored).
+ * Output: lib/data/worldos-theater-regions.geojson
  *
- * Preferred input: uploads/ww1-1914-theater-regions.geojson (Raymond's World101 theater extract).
- * Run: npx tsx scripts/ingest-worldos-theater-regions.ts
+ * Run: npm run ingest:worldos
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { join, dirname } from "node:path"
-import { fileURLToPath } from "node:url"
 import { execFileSync } from "node:child_process"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
@@ -15,48 +16,43 @@ const UPLOAD = join(ROOT, "uploads/ww1-1914-theater-regions.geojson")
 const OUT = join(ROOT, "lib/data/worldos-theater-regions.geojson")
 const WORK = join(ROOT, "scripts/cache/worldos-ingest")
 
-function normalizeProps(props: Record<string, unknown>) {
-  const name = String(props.name ?? props.label ?? props.region_name ?? "region")
-  const owner = String(
-    props.owner_1914 ?? props.owner ?? props.nation_1914 ?? props.nation ?? "Unknown",
-  )
-  const regionId = String(props.region_id ?? props.id ?? props.regionId ?? name)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-  return { region_id: regionId, name, owner_1914: owner }
-}
+const KEEP = ["id", "name", "owner_1914", "owner_label", "country_modern"] as const
 
-function loadSource(): FeatureCollection {
+function main() {
   if (!existsSync(UPLOAD)) {
-    throw new Error(
-      `Missing ${UPLOAD}. Place the WorldOS theater extract there, then re-run ingest.`,
-    )
+    throw new Error(`Missing ${UPLOAD}. Place the WorldOS theater extract there and re-run.`)
   }
-  const fc = JSON.parse(readFileSync(UPLOAD, "utf8")) as FeatureCollection
+  const source = JSON.parse(readFileSync(UPLOAD, "utf8")) as FeatureCollection
+  if (source.type !== "FeatureCollection" || source.features.length !== 103) {
+    throw new Error(`Expected 103 WorldOS theater regions, found ${source.features?.length ?? 0}`)
+  }
   const features: Feature<Polygon | MultiPolygon>[] = []
-  for (const feature of fc.features) {
+  for (const feature of source.features) {
     if (!feature.geometry || (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon")) {
-      continue
+      throw new Error("theater extract contains a non-polygon")
+    }
+    const props = feature.properties ?? {}
+    for (const key of KEEP) {
+      if (props[key] == null || props[key] === "") throw new Error(`region is missing ${key}`)
     }
     features.push({
       type: "Feature",
-      properties: normalizeProps((feature.properties ?? {}) as Record<string, unknown>),
+      properties: {
+        id: String(props.id),
+        name: String(props.name),
+        owner_1914: String(props.owner_1914),
+        owner_label: String(props.owner_label),
+        country_modern: String(props.country_modern),
+        geometrySource: "natural-earth-admin1-1914",
+      },
       geometry: feature.geometry,
     })
   }
-  if (features.length < 80) {
-    throw new Error(`Expected ~103 theater regions, got ${features.length}`)
-  }
-  return { type: "FeatureCollection", features }
-}
 
-function main() {
-  const fc = loadSource()
   mkdirSync(WORK, { recursive: true })
   const raw = join(WORK, "raw.geojson")
   const simplified = join(WORK, "simplified.geojson")
-  writeFileSync(raw, JSON.stringify(fc))
+  writeFileSync(raw, JSON.stringify({ type: "FeatureCollection", features }))
   const mapshaper = join(ROOT, "node_modules/mapshaper/bin/mapshaper")
   execFileSync(
     mapshaper,
@@ -65,23 +61,25 @@ function main() {
       raw,
       "encoding=utf8",
       "-clean",
-      "gap-fill-area=0",
-      "-filter-slivers",
-      "min-area=0.15",
+      "overlap-rule=max-area",
       "-simplify",
-      "0.25%",
+      "weighted",
+      "90%",
       "keep-shapes",
       "-o",
       simplified,
       "format=geojson",
+      "precision=0.0001",
       "gj2008",
     ],
-    { stdio: "pipe", cwd: ROOT },
+    { stdio: "inherit", cwd: ROOT },
   )
-  const outFc = JSON.parse(readFileSync(simplified, "utf8")) as FeatureCollection
-  mkdirSync(dirname(OUT), { recursive: true })
-  writeFileSync(OUT, `${JSON.stringify(outFc)}\n`)
-  console.log(`Wrote ${OUT} (${outFc.features.length} regions)`)
+  const out = JSON.parse(readFileSync(simplified, "utf8")) as FeatureCollection
+  if (out.features.length !== 103) {
+    throw new Error(`simplify changed the region count to ${out.features.length}`)
+  }
+  writeFileSync(OUT, `${JSON.stringify(out)}\n`)
+  console.log(`Wrote ${OUT} (${out.features.length} regions, ${(Buffer.byteLength(JSON.stringify(out)) / 1e3).toFixed(0)} KB)`)
 }
 
 main()

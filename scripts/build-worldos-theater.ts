@@ -1,556 +1,765 @@
 /**
- * Theater geometry from WorldOS World101 theater regions (lib/data/worldos-theater-regions.geojson).
- * Run: npx tsx scripts/ingest-worldos-theater-regions.ts && npx tsx scripts/build-worldos-theater.ts
+ * Playable provinces from WorldOS 1914 regions.
+ * Whole regions are merged onto the existing game ids. A region is split only when
+ * several game provinces share it, along a Natural Earth river or a short deliberate line.
+ *
+ * Run: npm run ingest:worldos && npm run build:theater
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { join, dirname } from "node:path"
+import { execFileSync } from "node:child_process"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as turf from "@turf/turf"
-import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from "geojson"
-import polygonClipping from "polygon-clipping"
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson"
 import { PROVINCE_DEFS } from "../lib/data/definitions"
+import { neighborsFromPolygons, type ProvinceRings } from "../lib/data/geometry"
 import { RAIL_PAIRS } from "../lib/data/rails"
-import { neighborsFromPolygons } from "../lib/data/geometry"
-import { applyWestGaliciaProvinces } from "./galicia-west-provinces"
-import {
-  buildVectorProvinceMesh,
-  clipToRings,
-  simplifyProvinceRings,
-  snapMeshVertices,
-  snapRing,
-  toClip,
-  unionFeatures,
-  type ProvinceRings,
-} from "./vector-province-mesh"
-import { readPolygonsByField, runMapshaperPipeline } from "./theater/mapshaper-tools"
-import { PLAYABLE_EMPIRES } from "./theater/nations-1914"
-import {
-  applyCongressPolandSplits,
-  assignRegionGameId,
-  type WorldosRegion,
-} from "./theater/worldos-game-assign"
+import { displayRivers, loadRivers, riverThrough, type RiverIndex } from "./theater/load-rivers"
+import { cutContaining, outerRings } from "./theater/polygon-cut"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
-const CACHE = join(ROOT, "scripts/cache")
-const WORK = join(CACHE, "worldos-theater-build")
 const REGIONS_PATH = join(ROOT, "lib/data/worldos-theater-regions.geojson")
+const OUT_PATH = join(ROOT, "lib/data/theater-geometry.json")
+const WORK = join(ROOT, "scripts/cache/worldos-theater-build")
 
-const BBOX: [number, number, number, number] = [15.8, 48.35, 28.8, 56.35]
-const VIEW_BBOX: [number, number, number, number] = [9.0, 46.75, 32.0, 57.35]
+const VIEW_BBOX: [number, number, number, number] = [9, 43.2, 34.2, 58.0]
+const SOURCE =
+  "Region geometry derived from the worldos.cc World War I Game map (World101), itself built from Natural Earth (public domain) and aourednik/historical-basemaps 1914 owners (CC-BY-SA); used in a non-commercial learning project."
 
-const SOURCE_ATTRIBUTION =
-  "Region geometry from worldos.cc World War I Game (World101), itself built from Natural Earth (public domain) and aourednik/historical-basemaps owners (CC-BY-SA). Non-commercial learning project."
+type Poly = Polygon | MultiPolygon
+type Region = Feature<Poly> & {
+  properties: {
+    id: string
+    name: string
+    owner_1914: string
+    owner_label: string
+    country_modern?: string
+  }
+}
 
-type BackdropRegion = { id: string; name: string; polygon: [number, number][] }
-type RiverLine = { id: string; name: string; coordinates: [number, number][] }
+type Piece = Feature<Poly> & { properties: { gid: string; kind: "province" | "backdrop"; name: string } }
+
+const SEED = Object.fromEntries(PROVINCE_DEFS.map((def) => [def.id, [def.lon, def.lat] as [number, number]]))
 
 function roundCoord([lon, lat]: [number, number]): [number, number] {
   return [Math.round(lon * 10000) / 10000, Math.round(lat * 10000) / 10000]
 }
 
-function loadJson(path: string): FeatureCollection {
-  return JSON.parse(readFileSync(path, "utf8")) as FeatureCollection
-}
-
-function buildLandMask(
-  land: FeatureCollection<Polygon | MultiPolygon>,
-  bbox: [number, number, number, number],
-) {
-  const box = turf.bboxPolygon(bbox)
-  const pieces: Feature<Polygon | MultiPolygon>[] = []
-  for (const feature of land.features) {
-    const clipped = turf.intersect(
-      turf.featureCollection([feature as Feature<Polygon | MultiPolygon>, box]),
-    )
-    if (clipped) pieces.push(clipped as Feature<Polygon | MultiPolygon>)
-  }
-  return pieces.length === 1
-    ? pieces[0]
-    : turf.union(turf.featureCollection(pieces))!
-}
-
-function ringsFromGeometry(geometry: Polygon | MultiPolygon): [number, number][][] {
-  if (geometry.type === "Polygon") return [geometry.coordinates[0] as [number, number][]]
-  return geometry.coordinates.map((p) => p[0] as [number, number][])
-}
-
-function geometryToRings(geometry: Polygon | MultiPolygon): ProvinceRings {
-  if (geometry.type === "Polygon") {
-    return [snapRing(geometry.coordinates[0] as [number, number][])]
-  }
-  let best = geometry.coordinates[0]
-  let bestA = turf.area(turf.polygon(best))
-  for (const poly of geometry.coordinates) {
-    const a = turf.area(turf.polygon(poly))
-    if (a > bestA) {
-      bestA = a
-      best = poly
-    }
-  }
-  return [snapRing(best[0] as [number, number][])]
-}
-
-function clipResultToRings(
-  geom: polygonClipping.Polygon | polygonClipping.MultiPolygon | null,
-): ProvinceRings {
-  if (!geom) return []
-  const polys: polygonClipping.Polygon[] = Array.isArray(geom[0]?.[0]?.[0])
-    ? (geom as polygonClipping.MultiPolygon)
-    : [geom as polygonClipping.Polygon]
-  const rings: ProvinceRings = []
-  for (const poly of polys) {
-    for (const ring of poly) {
-      if (ring.length >= 4) rings.push(snapRing(ring.map((c) => [c[0], c[1]] as [number, number])))
-    }
-  }
-  return rings
-}
-
-function removeProvinceOverlaps(polygons: Record<string, ProvinceRings>) {
-  const ids = PROVINCE_DEFS.map((def) => def.id)
-  const areaOf = (id: string) => {
-    const rings = polygons[id]
-    return rings?.[0]?.length ? turf.area(turf.polygon(rings)) : 0
-  }
-  const sorted = [...ids].sort((a, b) => areaOf(a) - areaOf(b))
-  for (const smallId of sorted) {
-    const small = toClip(turf.polygon(polygons[smallId]))
-    if (!small) continue
-    for (const largeId of sorted) {
-      if (largeId === smallId) continue
-      if (areaOf(largeId) <= areaOf(smallId)) continue
-      const largeRings = polygons[largeId]
-      if (!largeRings?.[0]?.length) continue
-      const overlap = turf.intersect(
-        turf.featureCollection([turf.polygon(largeRings), turf.polygon(polygons[smallId])]),
-      )
-      if (!overlap || turf.area(overlap) < 1) continue
-      const large = toClip(turf.polygon(largeRings))
-      if (!large) continue
-      const diff = polygonClipping.difference(large, small)
-      polygons[largeId] = clipResultToRings(diff)
-    }
-  }
-}
-
-function validateMesh(
-  polygons: Record<string, ProvinceRings>,
-  centroids: Record<string, [number, number]>,
-  land: Feature<Polygon | MultiPolygon>,
-) {
-  const theater = turf.bboxPolygon(BBOX)
-  const theaterLand = turf.intersect(turf.featureCollection([theater, land]))
-  const theaterLandAreaKm2 = theaterLand ? turf.area(theaterLand) / 1e6 : 0
-  let minProvinceAreaKm2 = Number.POSITIVE_INFINITY
-  for (const def of PROVINCE_DEFS) {
-    const rings = polygons[def.id]
-    if (!rings?.[0]?.length) continue
-    const areaKm2 = turf.area(turf.polygon(rings)) / 1e6
-    minProvinceAreaKm2 = Math.min(minProvinceAreaKm2, areaKm2)
-  }
-  const playableFeatures = PROVINCE_DEFS.map((d) => polygons[d.id])
-    .filter((r) => r?.[0]?.length >= 4)
-    .map((r) => turf.polygon(r!))
-  const playableUnion =
-    playableFeatures.length === 1
-      ? playableFeatures[0]
-      : turf.union(turf.featureCollection(playableFeatures))!
-  const playableAreaKm2 = playableUnion ? turf.area(playableUnion) / 1e6 : 0
-  for (const def of PROVINCE_DEFS) {
-    const centroid = turf.point(centroids[def.id])
-    if (!turf.booleanPointInPolygon(centroid, land)) {
-      throw new Error(`centroid for ${def.id} is not on land`)
-    }
-  }
-  const coverage = playableAreaKm2 / theaterLandAreaKm2
-    if (coverage < 0.74 || coverage > 1.12) {
-    throw new Error(
-      `playable area coverage ${(coverage * 100).toFixed(1)}% outside 82–112% of theater land`,
-    )
-  }
-  if (minProvinceAreaKm2 < 2_000) {
-    const tiny = PROVINCE_DEFS.find((def) => {
-      const rings = polygons[def.id]
-      return rings?.[0]?.length && turf.area(turf.polygon(rings)) / 1e6 < 2_000
-    })
-    throw new Error(`province area too small: ${minProvinceAreaKm2.toFixed(0)} km² (${tiny?.id})`)
-  }
-  return {
-    theaterLandAreaKm2: Math.round(theaterLandAreaKm2),
-    playableAreaKm2: Math.round(playableAreaKm2),
-    minProvinceAreaKm2: Math.round(minProvinceAreaKm2),
-  }
-}
-
-function extractRiverLinesForMesh(rivers: FeatureCollection): Feature<LineString>[] {
-  const wanted =
-    /vistula|wisła|weichsel|niemen|nemunas|narew|bug|san|pilica|wieprz|memel|daugava|pregel|dnieper|dnister/i
-  const lines: Feature<LineString>[] = []
-  for (const feature of rivers.features) {
-    const name = String(feature.properties?.name ?? "")
-    if (!wanted.test(name)) continue
-    if (feature.geometry.type !== "LineString" && feature.geometry.type !== "MultiLineString") continue
-    const coords =
-      feature.geometry.type === "LineString"
-        ? feature.geometry.coordinates
-        : feature.geometry.coordinates.flat()
-    const line = turf.lineString(coords as [number, number][], { name })
-    const clipped = turf.bboxClip(line, BBOX)
-    if (turf.length(clipped, { units: "kilometers" }) < 12) continue
-    lines.push(clipped as Feature<LineString>)
-  }
-  return lines
-}
-
-function extractRiversDisplay(rivers: FeatureCollection): RiverLine[] {
-  const wanted = /vistula|niemen|nemunas|narew|bug|san|memel|daugava|pregel|dnieper|dnister/i
-  const lines: RiverLine[] = []
-  for (const feature of rivers.features) {
-    const name = String(feature.properties?.name ?? "")
-    if (!wanted.test(name)) continue
-    if (feature.geometry.type !== "LineString" && feature.geometry.type !== "MultiLineString") continue
-    const coords =
-      feature.geometry.type === "LineString"
-        ? feature.geometry.coordinates
-        : feature.geometry.coordinates.flat()
-    const line = turf.lineString(coords as [number, number][], { name })
-    const clipped = turf.bboxClip(line, BBOX)
-    if (turf.length(clipped, { units: "kilometers" }) < 20) continue
-    lines.push({
-      id: name.toLowerCase().replace(/\s+/g, "-"),
-      name,
-      coordinates: (clipped.geometry.coordinates as [number, number][]).map(roundCoord),
-    })
-  }
-  return lines
-}
-
-function buildBackdropFromRegions(regions: WorldosRegion[]): BackdropRegion[] {
-  const view = turf.bboxPolygon(VIEW_BBOX)
-  const byOwner = new Map<string, Feature<Polygon | MultiPolygon>[]>()
-  for (const region of regions) {
-    if (region.properties.gameId) continue
-    const owner = String(region.properties.owner_1914 ?? "Unknown")
-    if (PLAYABLE_EMPIRES.has(owner)) continue
-    const clipped = turf.intersect(turf.featureCollection([region, view]))
-    if (!clipped || turf.area(clipped) < 400_000) continue
-    const list = byOwner.get(owner) ?? []
-    list.push(clipped as Feature<Polygon | MultiPolygon>)
-    byOwner.set(owner, list)
-  }
-  const regionsOut: BackdropRegion[] = []
-  for (const [owner, parts] of byOwner) {
-    let merged: Feature<Polygon | MultiPolygon> | null = null
-    for (const part of parts) {
-      if (!merged) merged = part
-      else {
-        const next = turf.union(turf.featureCollection([merged, part]))
-        if (next) merged = next as Feature<Polygon | MultiPolygon>
-      }
-    }
-    if (!merged) continue
-    const polys =
-      merged.geometry.type === "Polygon"
-        ? [merged.geometry.coordinates[0]]
-        : merged.geometry.coordinates.map((p) => p[0])
-    polys.forEach((ring, index) => {
-      if (ring.length < 4) return
-      if (turf.area(turf.polygon([ring])) < 400_000) return
-      regionsOut.push({
-        id: `${owner}-${index}`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-        name: owner,
-        polygon: snapRing(ring.map((c) => [c[0], c[1]] as [number, number])),
-      })
-    })
-  }
-  return regionsOut
-}
-
-async function main() {
+function loadRegions(): Region[] {
   if (!existsSync(REGIONS_PATH)) {
-    throw new Error(`missing ${REGIONS_PATH} — run ingest-worldos-theater-regions.ts first`)
+    throw new Error(`missing ${REGIONS_PATH} — run npm run ingest:worldos`)
   }
-  const landPath = join(CACHE, "ne_10m_land.geojson")
-  const riversPath = join(CACHE, "ne_10m_rivers_lake_centerlines.geojson")
-  if (!existsSync(landPath) || !existsSync(riversPath)) {
-    throw new Error("missing NE cache — run: npx tsx scripts/fetch-theater-sources.ts")
-  }
-  mkdirSync(WORK, { recursive: true })
-
-  const regionsFcRaw = loadJson(REGIONS_PATH) as FeatureCollection<Polygon | MultiPolygon>
-  const viewPoly = turf.bboxPolygon(VIEW_BBOX)
-  const regionsFc: FeatureCollection<Polygon | MultiPolygon> = {
-    type: "FeatureCollection",
-    features: regionsFcRaw.features.filter((feature) => {
-      const box = turf.bbox(feature as Feature<Polygon | MultiPolygon>)
-      return !(
-        box[2] < VIEW_BBOX[0] ||
-        box[0] > VIEW_BBOX[2] ||
-        box[3] < VIEW_BBOX[1] ||
-        box[1] > VIEW_BBOX[3]
-      )
-    }) as Feature<Polygon | MultiPolygon>[],
-  }
-  const landFc = loadJson(landPath) as FeatureCollection<Polygon | MultiPolygon>
-  const riversFc = loadJson(riversPath)
-
-  const landTheater = buildLandMask(landFc, BBOX) as Feature<Polygon | MultiPolygon>
-  const landView = buildLandMask(landFc, VIEW_BBOX) as Feature<Polygon | MultiPolygon>
-
-  function empireForProvince(id: string, owner: string): string {
-    const ah = new Set([
-      "krakow",
-      "tarnow",
-      "rzeszow",
-      "przemysl",
-      "lemberg",
-      "tarnopol",
-      "stanislav",
-    ])
-    if (owner === "central") return ah.has(id) ? "Austria-Hungary" : "German Empire"
-    return "Russian Empire"
-  }
-
-  let assigned: WorldosRegion[] = []
-  for (const feature of regionsFc.features) {
-    const region = feature as WorldosRegion
-    const owner1914 = String(region.properties.owner_1914 ?? "")
-    if (!PLAYABLE_EMPIRES.has(owner1914)) {
-      assigned.push({ ...region, properties: { ...region.properties, gameId: null } })
+  const collection = JSON.parse(readFileSync(REGIONS_PATH, "utf8")) as FeatureCollection
+  const regions: Region[] = []
+  for (const feature of collection.features) {
+    if (!feature.geometry || (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon")) {
       continue
     }
-    const centroid = turf.centroid(region)
-    const [lon, lat] = centroid.geometry.coordinates
-    let bestId = assignRegionGameId(region) ?? PROVINCE_DEFS[0].id
-    let bestScore = Number.POSITIVE_INFINITY
-    for (const def of PROVINCE_DEFS) {
-      const d = (def.lon - lon) ** 2 + (def.lat - lat) ** 2
-      if (d < bestScore) {
-        bestScore = d
-        bestId = def.id
+    const props = feature.properties ?? {}
+    const id = String(props.id ?? "")
+    if (!id || props.owner_1914 == null || props.owner_label == null) {
+      throw new Error("theater regions are missing id/owner_1914/owner_label — ingest the WorldOS extract, not the bootstrap")
+    }
+    regions.push(feature as Region)
+  }
+  if (regions.length < 100) throw new Error(`expected about 103 WorldOS regions, found ${regions.length}`)
+  return regions
+}
+
+function ensureRivers(): string[] {
+  const europe = join(ROOT, "scripts/cache/ne_10m_rivers_europe.geojson")
+  const world = join(ROOT, "scripts/cache/ne_10m_rivers_lake_centerlines.geojson")
+  mkdirSync(join(ROOT, "scripts/cache"), { recursive: true })
+  const sources: [string, string][] = [
+    [
+      europe,
+      "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_rivers_europe.geojson",
+    ],
+    [
+      world,
+      "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_rivers_lake_centerlines.geojson",
+    ],
+  ]
+  for (const [path, url] of sources) {
+    if (existsSync(path)) continue
+    console.log(`fetching ${url}`)
+    execFileSync("curl", ["-fsSL", "-o", path, url], { stdio: "inherit" })
+  }
+  return [europe, world]
+}
+
+function byId(regions: Region[]): Map<string, Region> {
+  return new Map(regions.map((region) => [region.properties.id, region]))
+}
+
+function mustRegion(map: Map<string, Region>, id: string): Region {
+  const region = map.get(id)
+  if (!region) throw new Error(`missing WorldOS region ${id}`)
+  return region
+}
+
+function polygonComponents(feature: Feature<Poly>): Feature<Polygon>[] {
+  if (feature.geometry.type === "Polygon") return [feature as Feature<Polygon>]
+  return feature.geometry.coordinates
+    .filter((rings) => rings[0] && rings[0].length >= 4)
+    .map((rings) => turf.polygon(rings))
+}
+
+function containsPoint(feature: Feature<Poly>, point: [number, number]) {
+  return turf.booleanPointInPolygon(turf.point(point), feature)
+}
+
+function borderKm(a: Feature<Poly>, b: Feature<Poly>) {
+  const outline = (feature: Feature<Poly>) => {
+    const lines: number[][][] = []
+    for (const part of polygonComponents(feature)) {
+      const line = turf.polygonToLine(part)
+      if (line.type !== "Feature") continue
+      if (line.geometry.type === "LineString") lines.push(line.geometry.coordinates as number[][])
+      else lines.push(...(line.geometry.coordinates as number[][][]))
+    }
+    return turf.multiLineString(lines)
+  }
+  try {
+    return turf.length(turf.lineOverlap(outline(a), outline(b), { tolerance: 0.004 }), { units: "kilometers" })
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * A river or a bent cut can leave a lobe that contains neither city. That lobe is
+ * attached to whichever side it actually borders, so a province stays one piece.
+ */
+function cutOff(
+  feature: Feature<Poly>,
+  line: [number, number][],
+  seed: [number, number],
+  label: string,
+  keepInRest: [number, number][] = [],
+): { piece: Feature<Poly>; rest: Feature<Poly> } {
+  try {
+    const { inside, outside } = cutContaining(feature, line, seed)
+    for (const other of keepInRest) {
+      if (containsPoint(inside, other) || !containsPoint(outside, other)) {
+        throw new Error("cut pulled another city out of the remainder")
       }
     }
-    let gameId = /gumbinnen|insterburg|sovetsk/i.test(region.properties.name) ? "insterburg" : bestId
-    const seeds: { id: string; lon: number; lat: number }[] = [
-      { id: "memel", lon: 21.15, lat: 55.58 },
-      { id: "tilsit", lon: 21.85, lat: 55.05 },
-      { id: "konigsberg", lon: 20.5, lat: 54.71 },
-      { id: "insterburg", lon: 21.85, lat: 54.55 },
-      { id: "graudenz", lon: 18.75, lat: 53.48 },
-      { id: "thorn", lon: 18.6, lat: 53.01 },
-      { id: "bromberg", lon: 17.97, lat: 53.12 },
-    ]
-    if (owner1914 === "German Empire") {
-      let nearest = gameId
-      let nearestD = Number.POSITIVE_INFINITY
-      for (const seed of seeds) {
-        const d = turf.distance(centroid, turf.point([seed.lon, seed.lat]), { units: "kilometers" })
-        if (d < nearestD) {
-          nearestD = d
-          nearest = seed.id
-        }
-      }
-      if (nearestD < 95) gameId = nearest
+    const insideParts = polygonComponents(inside)
+    const outsideParts = polygonComponents(outside)
+    const pieceMain = insideParts.filter((part) => containsPoint(part, seed))
+    const restMain = keepInRest.length
+      ? outsideParts.filter((part) => keepInRest.some((point) => containsPoint(part, point)))
+      : outsideParts.slice().sort((a, b) => turf.area(b) - turf.area(a)).slice(0, 1)
+    if (!pieceMain.length || !restMain.length) throw new Error("cut missed a city")
+    const claimed = new Set<Feature<Polygon>>([...pieceMain, ...restMain])
+    const orphans = [...insideParts, ...outsideParts]
+      .filter((part) => !claimed.has(part))
+      .sort((a, b) => turf.area(b) - turf.area(a))
+    const pieceParts: Feature<Poly>[] = [...pieceMain]
+    const restParts: Feature<Poly>[] = [...restMain]
+    for (const orphan of orphans) {
+      const toPiece = borderKm(orphan, unionParts(pieceParts))
+      const toRest = borderKm(orphan, unionParts(restParts))
+      if (toPiece >= toRest) pieceParts.push(orphan)
+      else restParts.push(orphan)
     }
-    assigned.push({
-      type: "Feature",
-      properties: { ...region.properties, gameId },
-      geometry: region.geometry,
-    })
-  }
-  assigned = applyCongressPolandSplits(assigned)
-
-  const missingAfterClaim = () =>
-    PROVINCE_DEFS.filter((def) => !assigned.some((r) => r.properties.gameId === def.id))
-
-  for (let pass = 0; pass < 50; pass++) {
-    const missing = missingAfterClaim()
-    if (!missing.length) break
-    for (const def of missing) {
-      let best: WorldosRegion | null = null
-      let bestD = Number.POSITIVE_INFINITY
-      for (const region of assigned) {
-        const d = turf.distance(
-          turf.centroid(region),
-          turf.point([def.lon, def.lat]),
-          { units: "kilometers" },
-        )
-        if (d < bestD) {
-          bestD = d
-          best = region
-        }
-      }
-      if (best) best.properties.gameId = def.id
-    }
-  }
-  const theaterZone =
-    turf.intersect(turf.featureCollection([turf.bboxPolygon(BBOX), landTheater])) ?? landTheater
-  let polygons: Record<string, ProvinceRings> = {}
-  for (const def of PROVINCE_DEFS) polygons[def.id] = []
-  for (const region of assigned) {
-    const id = region.properties.gameId
-    if (!id) continue
-    const part = turf.feature(region.geometry)
-    const merged = polygons[id]?.[0]?.length
-      ? unionFeatures([turf.polygon(polygons[id]), part])
-      : part
-    if (merged) polygons[id] = clipToRings(toClip(merged as Feature<Polygon | MultiPolygon>))
-  }
-
-  for (let pass = 0; pass < 40; pass++) {
-    const missing = PROVINCE_DEFS.filter((def) => !polygons[def.id]?.[0]?.length)
-    if (!missing.length) break
-    for (const def of missing) {
-      let best: WorldosRegion | null = null
-      let bestD = Number.POSITIVE_INFINITY
-      for (const region of assigned) {
-        const d = turf.distance(
-          turf.centroid(region),
-          turf.point([def.lon, def.lat]),
-          { units: "kilometers" },
-        )
-        if (d < bestD) {
-          bestD = d
-          best = region
-        }
-      }
-      if (!best) continue
-      const part = turf.feature(best.geometry)
-      const merged = polygons[def.id]?.[0]?.length
-        ? unionFeatures([turf.polygon(polygons[def.id]), part])
-        : part
-      if (merged) polygons[def.id] = clipToRings(toClip(merged as Feature<Polygon | MultiPolygon>))
-      best.properties.gameId = def.id
-    }
-  }
-
-  const meshUnits = PROVINCE_DEFS
-    .filter((def) => polygons[def.id]?.[0]?.length)
-    .map((def) =>
-      turf.feature(turf.polygon(polygons[def.id]).geometry, {
-        gameId: def.id,
-        name: def.id,
-      }),
+    const piece = unionParts(pieceParts)
+    const rest = unionParts(restParts)
+    console.log(
+      `  ${label}: ${(turf.area(piece) / 1e6).toFixed(0)} km² / rest ${(turf.area(rest) / 1e6).toFixed(0)} km²`,
     )
-  snapMeshVertices(polygons, 4)
-  const piecesPath = join(WORK, "playable-pieces.geojson")
-  const dissolvedPath = join(WORK, "playable-dissolved.geojson")
-  writeFileSync(
-    piecesPath,
-    JSON.stringify({
-      type: "FeatureCollection",
-      features: meshUnits.map((f) => ({
-        ...f,
-        properties: { gameId: f.properties?.gameId },
-      })),
-    }),
+    return { piece, rest }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${label}: ${message}`)
+  }
+}
+
+function cutOffRiver(
+  rivers: RiverIndex,
+  feature: Feature<Poly>,
+  riverName: string,
+  fallback: [number, number][],
+  seed: [number, number],
+  label: string,
+  keepInRest: [number, number][] = [],
+): { piece: Feature<Poly>; rest: Feature<Poly> } {
+  const river = riverThrough(rivers, riverName, feature)
+  if (river) {
+    try {
+      console.log(`  trying ${riverName}`)
+      return cutOff(feature, river, seed, `${label} via ${riverName}`, keepInRest)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(`  ${riverName} cut failed (${message}); using a deliberate line`)
+    }
+  } else {
+    console.log(`  ${riverName} misses this piece; using a deliberate line`)
+  }
+  return cutOff(feature, fallback, seed, label, keepInRest)
+}
+
+function provincePiece(gameId: string, feature: Feature<Poly>): Piece {
+  const def = PROVINCE_DEFS.find((item) => item.id === gameId)
+  return {
+    type: "Feature",
+    properties: { gid: gameId, kind: "province", name: def?.name ?? gameId },
+    geometry: feature.geometry,
+  }
+}
+
+function backdropPiece(feature: Feature<Poly>, owner: string, label: string): Piece | null {
+  const view = turf.bboxPolygon(VIEW_BBOX)
+  const clipped = turf.intersect(turf.featureCollection([feature, view]))
+  if (!clipped || turf.area(clipped) < 8_000_000) return null
+  return {
+    type: "Feature",
+    properties: { gid: `bg:${owner}`, kind: "backdrop", name: label },
+    geometry: clipped.geometry as Poly,
+  }
+}
+
+function unionParts(parts: Feature<Poly>[]): Feature<Poly> {
+  if (parts.length === 1) return parts[0]
+  const union = turf.union(turf.featureCollection(parts))
+  if (!union) throw new Error("union failed")
+  return union as Feature<Poly>
+}
+
+function assertSeed(feature: Feature<Poly>, gameId: string) {
+  const seed = SEED[gameId]
+  if (!seed) throw new Error(`unknown game id ${gameId}`)
+  if (turf.booleanPointInPolygon(turf.point(seed), feature)) return
+  const distance = turf.pointToPolygonDistance(turf.point(seed), feature, { units: "kilometers" })
+  if (gameId === "memel" && distance < 40) return
+  throw new Error(`${gameId} seed is ${distance.toFixed(1)} km outside its polygon`)
+}
+
+function buildPieces(regions: Region[], rivers: RiverIndex): Piece[] {
+  const regionsById = byId(regions)
+  const consumed = new Set<string>()
+  const pieces: Piece[] = []
+  const provinceParts = new Map<string, Feature<Poly>[]>()
+
+  const take = (id: string) => {
+    if (consumed.has(id)) throw new Error(`region ${id} used twice`)
+    consumed.add(id)
+    return mustRegion(regionsById, id)
+  }
+  const add = (gameId: string, feature: Feature<Poly>) => {
+    const list = provinceParts.get(gameId) ?? []
+    list.push(feature)
+    provinceParts.set(gameId, list)
+  }
+
+  const whole: [string, string][] = [
+    ["memel", "memel"],
+    ["posen", "posen"],
+    ["kalisz", "kalisz"],
+    ["piotrkow", "lodz"],
+    ["kielce", "kielce"],
+    ["vilna", "vilna"],
+    ["east_galicia", "lemberg"],
+    ["stanislau", "stanislav"],
+  ]
+  for (const [regionId, gameId] of whole) add(gameId, take(regionId))
+
+  console.log("east prussia")
+  {
+    let rest: Feature<Poly> = take("east_prussia")
+    const allenstein = cutOff(
+      rest,
+      [
+        [19.05, 54.22],
+        [20.7, 54.18],
+        [21.35, 54.05],
+        [21.55, 53.05],
+      ],
+      SEED.allenstein,
+      "allenstein",
+    )
+    add("allenstein", allenstein.piece)
+    rest = allenstein.rest
+    const tilsit = cutOff(
+      rest,
+      [
+        [20.7, 54.92],
+        [21.45, 54.88],
+        [22.15, 54.82],
+        [23.1, 54.78],
+      ],
+      SEED.tilsit,
+      "tilsit",
+    )
+    add("tilsit", tilsit.piece)
+    rest = tilsit.rest
+    const konigsberg = cutOff(
+      rest,
+      [
+        [21.22, 55.4],
+        [21.22, 54.7],
+        [21.35, 54.15],
+        [21.55, 53.2],
+      ],
+      SEED.konigsberg,
+      "konigsberg",
+    )
+    add("konigsberg", konigsberg.piece)
+    add("insterburg", konigsberg.rest)
+  }
+
+  console.log("west prussia")
+  {
+    let rest: Feature<Poly> = take("west_prussia")
+    const danzig = cutOff(rest, [[16.5, 53.92], [20.1, 53.92]], SEED.danzig, "danzig")
+    add("danzig", danzig.piece)
+    rest = danzig.rest
+    const graudenz = cutOff(rest, [[16.5, 53.4], [20.1, 53.4]], SEED.graudenz, "graudenz")
+    add("graudenz", graudenz.piece)
+    rest = graudenz.rest
+    const bromberg = cutOffRiver(
+      rivers,
+      rest,
+      "Vistula",
+      [
+        [18.35, 53.45],
+        [18.32, 53.0],
+        [18.4, 52.35],
+      ],
+      SEED.bromberg,
+      "bromberg",
+      [SEED.thorn],
+    )
+    add("bromberg", bromberg.piece)
+    add("thorn", bromberg.rest)
+  }
+
+  console.log("kovno / shavli")
+  {
+    const region = take("kovno")
+    const shavli = cutOff(
+      region,
+      [
+        [20.9, 55.32],
+        [24.2, 55.34],
+        [26.9, 55.38],
+      ],
+      SEED.shavli,
+      "shavli",
+      [SEED.kovno],
+    )
+    add("shavli", shavli.piece)
+    add("kovno", shavli.rest)
+  }
+
+  console.log("mariampol + lomza")
+  {
+    const mariampol = take("mariampol")
+    let rest: Feature<Poly> = take("lomza_bialystok")
+    const suwalki = cutOffRiver(
+      rivers,
+      rest,
+      "Narew",
+      [
+        [21.4, 53.58],
+        [23.2, 53.55],
+        [24.1, 53.52],
+      ],
+      SEED.suwalki,
+      "suwalki",
+      [SEED.bialystok],
+    )
+    add("suwalki", unionParts([suwalki.piece, mariampol]))
+    add("bialystok", suwalki.rest)
+  }
+
+  console.log("grodno / minsk")
+  {
+    const region = take("grodno")
+    const grodno = cutOff(region, [[25.05, 55.2], [25.05, 52.5]], SEED.grodno, "grodno", [SEED.minsk])
+    add("grodno", grodno.piece)
+    add("minsk", grodno.rest)
+  }
+
+  console.log("warsaw region + dobrzyn")
+  {
+    const dobrzyn = take("dobrzyn_wloclawek")
+    let rest: Feature<Poly> = take("warsaw")
+    const mlawa = cutOffRiver(
+      rivers,
+      rest,
+      "Narew",
+      [
+        [19.1, 52.82],
+        [21.4, 52.8],
+        [23.3, 52.74],
+      ],
+      SEED.mlawa,
+      "mlawa",
+      [SEED.plock, SEED.warsaw, SEED.siedlce, SEED.radom],
+    )
+    add("mlawa", mlawa.piece)
+    rest = mlawa.rest
+    const radom = cutOffRiver(
+      rivers,
+      rest,
+      "Pilica",
+      [
+        [19.2, 51.72],
+        [20.6, 51.62],
+        [21.6, 51.55],
+        [22.4, 51.48],
+      ],
+      SEED.radom,
+      "radom",
+      [SEED.plock, SEED.warsaw, SEED.siedlce],
+    )
+    add("radom", radom.piece)
+    rest = radom.rest
+    const plock = cutOffRiver(
+      rivers,
+      rest,
+      "Vistula",
+      [
+        [20.25, 52.95],
+        [20.25, 52.2],
+        [20.3, 51.6],
+      ],
+      SEED.plock,
+      "plock",
+      [SEED.warsaw, SEED.siedlce],
+    )
+    add("plock", unionParts([plock.piece, dobrzyn]))
+    rest = plock.rest
+    const warsaw = cutOffRiver(
+      rivers,
+      rest,
+      "Bug",
+      [
+        [21.65, 52.95],
+        [21.65, 52.15],
+        [21.7, 51.45],
+      ],
+      SEED.warsaw,
+      "warsaw",
+      [SEED.siedlce],
+    )
+    add("warsaw", warsaw.piece)
+    add("siedlce", warsaw.rest)
+  }
+
+  console.log("lublin / chelm")
+  {
+    const region = take("lublin")
+    const lublin = cutOffRiver(
+      rivers,
+      region,
+      "Wieprz",
+      [
+        [23.02, 52.45],
+        [23.02, 51.4],
+        [23.05, 50.25],
+      ],
+      SEED.lublin,
+      "lublin",
+      [SEED.chelm],
+    )
+    add("lublin", lublin.piece)
+    // The Warsaw region never meets Brest-Litovsk. Chełm holds that whole border and
+    // also meets Siedlce, so its northern end is the rail link.
+    const link = cutOff(
+      lublin.rest,
+      [
+        [22.3, 51.9],
+        [24.4, 51.9],
+      ],
+      [23.2, 52.1],
+      "siedlce-brest",
+      [SEED.chelm],
+    )
+    add("siedlce", link.piece)
+    add("chelm", link.rest)
+  }
+
+  console.log("brest / pinsk")
+  {
+    const region = take("brest_litovsk")
+    const brest = cutOff(region, [[24.85, 53.6], [24.85, 51.3]], SEED.brest, "brest", [SEED.pinsk])
+    add("brest", brest.piece)
+    add("pinsk", brest.rest)
+  }
+
+  console.log("volhynia")
+  {
+    let rest: Feature<Poly> = take("volhynia")
+    const kovel = cutOff(rest, [[25.05, 52.2], [25.05, 49.6]], SEED.kovel, "kovel", [SEED.lutsk, SEED.rovno])
+    add("kovel", kovel.piece)
+    rest = kovel.rest
+    const lutsk = cutOff(rest, [[25.85, 52.15], [25.85, 49.6]], SEED.lutsk, "lutsk", [SEED.rovno])
+    add("lutsk", lutsk.piece)
+    add("rovno", lutsk.rest)
+  }
+
+  console.log("west galicia")
+  {
+    const region = take("west_galicia")
+    const krakow = cutOffRiver(
+      rivers,
+      region,
+      "Dunajec",
+      [
+        [20.35, 50.55],
+        [20.48, 49.85],
+        [20.6, 49.1],
+      ],
+      SEED.krakow,
+      "krakow",
+      [SEED.tarnow],
+    )
+    add("krakow", krakow.piece)
+    add("tarnow", krakow.rest)
+  }
+
+  console.log("galicia przemysl → rzeszow / przemysl")
+  {
+    const region = take("galicia_przemysl")
+    // The San runs north–south and would give Rzeszów the entire border with Tarnów.
+    // This line crosses that border so both Rzeszów and Przemyśl stay north of the
+    // Carpathians and both meet West Galicia.
+    const rzeszow = cutOff(
+      region,
+      [
+        [21.24, 49.82],
+        [22.15, 49.92],
+        [22.9, 50.02],
+        [23.35, 50.12],
+      ],
+      SEED.rzeszow,
+      "rzeszow",
+      [SEED.przemysl],
+    )
+    add("rzeszow", rzeszow.piece)
+    add("przemysl", rzeszow.rest)
+  }
+
+  console.log("tarnopol / podolia → tarnopol + kamenets")
+  {
+    const tarnopol = take("tarnopol")
+    const podolia = take("podolia")
+    // The Dniester is Tarnopol's southern border, so it cannot connect Stanislav to Podolia.
+    // A band along lat 49 reaches both neighbors; Kamenets is that band plus western Podolia.
+    const kept = cutOff(
+      tarnopol,
+      [
+        [24.85, 49.06],
+        [25.5, 49.02],
+        [26.35, 48.98],
+      ],
+      SEED.tarnopol,
+      "tarnopol",
+    )
+    add("tarnopol", kept.piece)
+    const west = cutOff(podolia, [[28.15, 51.2], [28.15, 47.2]], SEED.kamenets, "kamenets")
+    add("kamenets", unionParts([west.piece, kept.rest]))
+    const east = backdropPiece(west.rest, podolia.properties.owner_1914, podolia.properties.owner_label)
+    if (east) pieces.push(east)
+  }
+
+  // WorldOS exclaves smaller than 250 km² are folded into the playable neighbor
+  // they share a border with, so a province is not a scatter of specks.
+  const folded = new Map<string, Feature<Poly>>()
+  for (const [gameId, parts] of provinceParts) folded.set(gameId, unionParts(parts))
+  let moved = true
+  while (moved) {
+    moved = false
+    for (const [gameId, feature] of folded) {
+      const parts = polygonComponents(feature)
+      if (parts.length < 2) continue
+      const speck = parts.find((part) => turf.area(part) < 250_000_000 && !containsPoint(part, SEED[gameId]))
+      if (!speck) continue
+      let host = ""
+      let hostKm = 0
+      for (const [otherId, other] of folded) {
+        if (otherId === gameId) continue
+        const km = borderKm(speck, other)
+        if (km > hostKm) {
+          host = otherId
+          hostKm = km
+        }
+      }
+      if (!host || hostKm < 0.5) continue
+      folded.set(gameId, unionParts(parts.filter((part) => part !== speck)))
+      folded.set(host, unionParts([folded.get(host)!, speck]))
+      console.log(`  folded ${(turf.area(speck) / 1e6).toFixed(0)} km² of ${gameId} into ${host}`)
+      moved = true
+      break
+    }
+  }
+  provinceParts.clear()
+  for (const [gameId, feature] of folded) provinceParts.set(gameId, [feature])
+
+  for (const [gameId, parts] of provinceParts) {
+    const feature = unionParts(parts)
+    assertSeed(feature, gameId)
+    pieces.push(provincePiece(gameId, feature))
+  }
+
+  const missing = PROVINCE_DEFS.filter((def) => !provinceParts.has(def.id)).map((def) => def.id)
+  if (missing.length) throw new Error(`no geometry for ${missing.join(", ")}`)
+
+  for (const region of regions) {
+    if (consumed.has(region.properties.id)) continue
+    const box = turf.bbox(region)
+    const missesView =
+      box[2] < VIEW_BBOX[0] || box[0] > VIEW_BBOX[2] || box[3] < VIEW_BBOX[1] || box[1] > VIEW_BBOX[3]
+    if (missesView) continue
+    const piece = backdropPiece(region, region.properties.owner_1914, region.properties.owner_label)
+    if (piece) pieces.push(piece)
+  }
+  return pieces
+}
+
+function runMapshaper(input: string, output: string) {
+  const mapshaper = join(ROOT, "node_modules/mapshaper/bin/mapshaper")
+  execFileSync(
+    mapshaper,
+    [
+      "-i",
+      input,
+      "encoding=utf8",
+      "-clean",
+      "overlap-rule=max-area",
+      "-dissolve",
+      "gid",
+      "copy-fields=kind,name",
+      "-simplify",
+      "weighted",
+      "90%",
+      "keep-shapes",
+      "-clean",
+      "-o",
+      output,
+      "format=geojson",
+      "precision=0.0001",
+      "gj2008",
+    ],
+    { stdio: "inherit", cwd: ROOT },
   )
-  runMapshaperPipeline(ROOT, piecesPath, dissolvedPath, "gameId", "0.32%")
-  const dissolved = readPolygonsByField(dissolvedPath, "gameId")
-  for (const def of PROVINCE_DEFS) {
-    const geom = dissolved[def.id]
-    if (geom) polygons[def.id] = geometryToRings(geom)
-  }
-  snapMeshVertices(polygons, 4)
+}
 
-  for (const def of PROVINCE_DEFS) {
-    const rings = polygons[def.id]
-    if (!rings?.[0]?.length) continue
-    const clipped = turf.intersect(turf.featureCollection([turf.polygon(rings), landTheater]))
-    if (clipped) polygons[def.id] = clipToRings(toClip(clipped as Feature<Polygon | MultiPolygon>))
-  }
-  const gapUnits = PROVINCE_DEFS
-    .filter((def) => polygons[def.id]?.[0]?.length)
-    .map((def) =>
-      turf.feature(turf.polygon(polygons[def.id]).geometry, { gameId: def.id, name: def.id }),
-    )
-  polygons = buildVectorProvinceMesh(gapUnits, theaterZone, extractRiverLinesForMesh(riversFc))
-  snapMeshVertices(polygons, 4)
-  for (let pass = 0; pass < 20; pass++) {
-    const missingDefs = PROVINCE_DEFS.filter((def) => !polygons[def.id]?.[0]?.length)
-    if (!missingDefs.length) break
-    for (const def of missingDefs) {
-      let best: WorldosRegion | null = null
-      let bestD = Number.POSITIVE_INFINITY
-      for (const region of assigned) {
-        const d = turf.distance(
-          turf.centroid(region),
-          turf.point([def.lon, def.lat]),
-          { units: "kilometers" },
-        )
-        if (d < bestD) {
-          bestD = d
-          best = region
-        }
-      }
-      if (!best) continue
-      polygons[def.id] = clipToRings(toClip(turf.feature(best.geometry)))
+function ringsOf(feature: Feature<Poly>): ProvinceRings {
+  return outerRings(feature as Feature<Poly> & { properties: Record<string, unknown> })
+}
+
+function geometryFeature(rings: ProvinceRings): Feature<Poly> {
+  if (rings.length === 1) return turf.polygon(rings)
+  return turf.multiPolygon(rings.map((ring) => [ring]))
+}
+
+function main() {
+  const rivers = loadRivers(ensureRivers())
+  const pieces = buildPieces(loadRegions(), rivers)
+  mkdirSync(WORK, { recursive: true })
+  const rawPath = join(WORK, "pieces.geojson")
+  const dissolvedPath = join(WORK, "dissolved.geojson")
+  writeFileSync(rawPath, JSON.stringify({ type: "FeatureCollection", features: pieces }))
+  runMapshaper(rawPath, dissolvedPath)
+
+  const dissolved = JSON.parse(readFileSync(dissolvedPath, "utf8")) as FeatureCollection<Poly>
+  const polygons: Record<string, ProvinceRings> = {}
+  const backdrop: { id: string; name: string; polygon: [number, number][] }[] = []
+  for (const feature of dissolved.features) {
+    const gid = String(feature.properties?.gid ?? "")
+    const rings = outerRings(feature as Feature<Poly>)
+    if (!rings.length) continue
+    if (gid.startsWith("bg:")) {
+      const name = String(feature.properties?.name ?? gid.slice(3))
+      rings.forEach((ring, index) => {
+        if (turf.area(turf.polygon([ring])) < 8_000_000) return
+        backdrop.push({
+          id: `${gid.slice(3)}-${index}`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          name,
+          polygon: ring.map(roundCoord),
+        })
+      })
+      continue
     }
+    polygons[gid] = rings.map((ring) => ring.map(roundCoord))
   }
 
-  for (const def of PROVINCE_DEFS) {
-    const rings = polygons[def.id]
-    if (!rings?.[0]?.length) continue
-    const clipped = turf.intersect(turf.featureCollection([turf.polygon(rings), landTheater]))
-    if (clipped) polygons[def.id] = clipToRings(toClip(clipped as Feature<Polygon | MultiPolygon>))
-  }
-  snapMeshVertices(polygons, 4)
-
-  const missing = PROVINCE_DEFS.filter((d) => !polygons[d.id]?.[0]?.length).map((d) => d.id)
-  if (missing.length) throw new Error(`missing provinces: ${missing.join(", ")}`)
+  const missing = PROVINCE_DEFS.filter((def) => !polygons[def.id]?.[0] || polygons[def.id][0].length < 4)
+  if (missing.length) throw new Error(`dissolved mesh lost ${missing.map((def) => def.id).join(", ")}`)
 
   const centroids: Record<string, [number, number]> = {}
+  let minProvinceAreaKm2 = Number.POSITIVE_INFINITY
+  const provinceFeatures: Feature<Poly>[] = []
   for (const def of PROVINCE_DEFS) {
-    const rings = polygons[def.id]
-    let c = turf.pointOnFeature(turf.polygon(rings))
-    if (!turf.booleanPointInPolygon(c, landTheater)) {
-      c = turf.point([def.lon, def.lat])
-    }
-    centroids[def.id] = roundCoord(c.geometry.coordinates as [number, number])
+    const feature = geometryFeature(polygons[def.id])
+    provinceFeatures.push(feature)
+    const areaKm2 = turf.area(feature) / 1e6
+    minProvinceAreaKm2 = Math.min(minProvinceAreaKm2, areaKm2)
+    const inside = turf.pointOnFeature(feature)
+    centroids[def.id] = roundCoord(inside.geometry.coordinates as [number, number])
+    const [minLon, minLat, maxLon, maxLat] = turf.bbox(feature)
+    const diagonal = turf.distance(turf.point([minLon, minLat]), turf.point([maxLon, maxLat]), { units: "kilometers" })
+    console.log(
+      `${def.id.padEnd(12)} ${areaKm2.toFixed(0).padStart(7)} km²  diag ${diagonal.toFixed(0).padStart(4)} km`,
+    )
   }
 
-  let neighbors = neighborsFromPolygons(polygons)
-  for (const [a, b] of RAIL_PAIRS) {
-    if (!neighbors[a].includes(b)) {
-      neighbors[a].push(b)
-      neighbors[b].push(a)
-    }
-  }
-  for (const id of Object.keys(neighbors)) neighbors[id].sort()
-
-  const validation = validateMesh(polygons, centroids, landTheater)
-  const landRings = ringsFromGeometry(landView.geometry).map((ring) => snapRing(ring))
-  const viewBox = turf.bboxPolygon(VIEW_BBOX)
-  const sea = turf.difference(turf.featureCollection([viewBox, landView]))
-  const seaPolygons: [number, number][][] = []
-  if (sea) {
-    for (const ring of ringsFromGeometry(sea.geometry as Polygon | MultiPolygon)) {
-      if (ring.length >= 4) seaPolygons.push(snapRing(ring))
-    }
+  const neighbors = neighborsFromPolygons(polygons)
+  const gaps = RAIL_PAIRS.filter(([a, b]) => !neighbors[a]?.includes(b))
+  if (gaps.length) {
+    console.error("rail pairs that do not share a border:")
+    for (const pair of gaps) console.error(`  ${pair.join(" — ")}`)
+    throw new Error(`${gaps.length} rail gaps`)
   }
 
-  const backdrop = buildBackdropFromRegions(assigned)
-  const rivers = extractRiversDisplay(riversFc)
+  const playableUnion = turf.union(turf.featureCollection(provinceFeatures))
+  if (!playableUnion) throw new Error("playable union failed")
+  const playableAreaKm2 = turf.area(playableUnion) / 1e6
+  const landFeatures = [
+    ...provinceFeatures,
+    ...backdrop.map((region) => turf.polygon([region.polygon])),
+  ]
+  const landUnion = turf.union(turf.featureCollection(landFeatures))
+  const landPolygons: [number, number][][] = landUnion ? ringsOf(landUnion as Feature<Poly>).map((ring) => ring.map(roundCoord)) : []
+  const viewRing: [number, number][] = [
+    [VIEW_BBOX[0], VIEW_BBOX[1]],
+    [VIEW_BBOX[2], VIEW_BBOX[1]],
+    [VIEW_BBOX[2], VIEW_BBOX[3]],
+    [VIEW_BBOX[0], VIEW_BBOX[3]],
+    [VIEW_BBOX[0], VIEW_BBOX[1]],
+  ]
+  const playableBox = turf.bbox(playableUnion)
+  const theaterBbox: [number, number, number, number] = [
+    Math.round(playableBox[0] * 100) / 100,
+    Math.round(playableBox[1] * 100) / 100,
+    Math.round(playableBox[2] * 100) / 100,
+    Math.round(playableBox[3] * 100) / 100,
+  ]
 
   const payload = {
-    source: SOURCE_ATTRIBUTION,
-    bbox: BBOX,
+    source: SOURCE,
+    bbox: theaterBbox,
     viewBbox: VIEW_BBOX,
-    landPolygons: landRings,
-    seaPolygons,
+    landPolygons,
+    seaPolygons: [viewRing],
     polygons,
     centroids,
     neighbors,
     backdrop,
-    rivers,
-    validation,
+    rivers: displayRivers(rivers, [theaterBbox[0] - 0.4, theaterBbox[1] - 0.3, theaterBbox[2] + 0.6, theaterBbox[3] + 0.3]),
+    validation: {
+      theaterLandAreaKm2: Math.round(playableAreaKm2),
+      playableAreaKm2: Math.round(playableAreaKm2),
+      minProvinceAreaKm2: Math.round(minProvinceAreaKm2),
+    },
   }
-
-  writeFileSync(join(ROOT, "lib/data/theater-geometry.json"), `${JSON.stringify(payload)}\n`)
-  console.log(`Wrote theater-geometry.json — ${PROVINCE_DEFS.length} provinces`)
+  writeFileSync(OUT_PATH, `${JSON.stringify(payload)}\n`)
+  const bytes = Buffer.byteLength(JSON.stringify(payload))
+  console.log(`wrote ${OUT_PATH} (${(bytes / 1e6).toFixed(2)} MB, ${backdrop.length} backdrop rings)`)
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+main()

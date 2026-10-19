@@ -8,7 +8,7 @@ mkdirSync(outDir, { recursive: true })
 const views = [
   {
     name: "ostfront-full-theater",
-    query: "mapBounds=9,46.75,32,57.35&mapPadding=20",
+    query: "mapBounds=9,43.2,34.2,58&mapPadding=16",
   },
   {
     name: "ostfront-east-prussia",

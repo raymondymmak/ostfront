@@ -179,10 +179,10 @@ export function SvgMap({
                 <polygon
                   key={`${province.id}-${ringIndex}`}
                   points={points}
-                  fill={ringIndex === 0 ? fill : "#0d1218"}
+                  fill={fill}
                   fillRule="evenodd"
-                  stroke={ringIndex === 0 ? stroke : "none"}
-                  strokeWidth={ringIndex === 0 ? (selected ? view.label * 0.22 : view.label * 0.08) : 0}
+                  stroke={stroke}
+                  strokeWidth={selected ? view.label * 0.22 : view.label * 0.08}
                   className={flashing ? "animate-pulse" : undefined}
                   style={{ cursor: orderMode ? "crosshair" : "pointer" }}
                   onMouseDown={(event) => {

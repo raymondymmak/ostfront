@@ -97,16 +97,14 @@ The map is MapLibre, with a blank style and no remote tiles. Its worker is serve
 **Map data:** Playable province shapes and adjacency live in `lib/data/theater-geometry.json`. Regenerate with:
 
 ```bash
-# Place Raymond's WorldOS theater extract (or run bootstrap once):
-#   uploads/ww1-1914-theater-regions.geojson
-npx tsx scripts/fetch-theater-sources.ts   # Natural Earth 10m land + rivers (public domain)
-npm run ingest:worldos                     # → lib/data/worldos-theater-regions.geojson
-npm run build:theater                      # → lib/data/theater-geometry.json
+# Place the WorldOS theater extract at uploads/ww1-1914-theater-regions.geojson
+npm run ingest:worldos    # → lib/data/worldos-theater-regions.geojson
+npm run build:theater     # downloads Natural Earth rivers if needed, writes theater-geometry.json
 ```
 
-Region geometry from [worldos.cc](https://worldos.cc/worlds/ww1-1914) World War I Game (World101), itself built from Natural Earth (public domain) and [aourednik/historical-basemaps](https://github.com/aourednik/historical-basemaps) owners (CC-BY-SA). This Ostfront repo is a **non-commercial learning project**. The committed `lib/data/worldos-theater-regions.geojson` is a simplified derivative; replace `uploads/ww1-1914-theater-regions.geojson` with the full WorldOS export when available, then re-run ingest and build.
+Region geometry derived from the worldos.cc World War I Game map (World101), itself built from Natural Earth (public domain) and aourednik/historical-basemaps 1914 owners (CC-BY-SA); used in a non-commercial learning project.
 
-Grey **1914 backdrop** regions are dissolved from non-playable WorldOS regions by `owner_1914`. Baltic and Black Sea come from Natural Earth 10m land clipped to the viewport.
+The committed `lib/data/worldos-theater-regions.geojson` is a lightly simplified derivative of that extract. Each game province is one or more whole regions, split only along a Natural Earth river or a short deliberate line. Grey backdrop is the other 1914 regions in view, dissolved by owner. Sea is the viewport not covered by those coastlines, so the Baltic and the Black Sea follow the WorldOS shore.
 
 The MapLibre container sits in a sized wrapper so `maplibregl-map`’s `position: relative` cannot collapse the viewport (which previously stacked labels down the page on narrow screens). Labels and strength counters use MapLibre markers anchored in map space; backdrop layers ignore pointer events.
 

@@ -6,9 +6,11 @@ import {
   LAND_POLYGONS,
   buildTheater,
   neighborsFromPolygons,
+  sharedBorderKm,
 } from "@/lib/data/geometry"
 import theaterData from "@/lib/data/theater-geometry.json"
 import { createInitialState } from "@/lib/data/scenario"
+import type { Feature, MultiPolygon, Polygon } from "geojson"
 import * as turf from "@turf/turf"
 
 type ValidationMeta = {
@@ -22,8 +24,13 @@ const MAX_PROVINCE_STRETCH = 4.1
 const MAX_PROVINCE_ASPECT = 4.5
 const MAX_PROVINCE_DIAGONAL_KM = 580
 
+function provinceFeature(rings: [number, number][][]): Feature<Polygon | MultiPolygon> {
+  if (rings.length <= 1) return turf.polygon(rings)
+  return turf.multiPolygon(rings.map((ring) => [ring]))
+}
+
 function provinceShapeMetrics(rings: [number, number][][]) {
-  const feat = turf.polygon(rings)
+  const feat = provinceFeature(rings)
   const areaKm2 = turf.area(feat) / 1e6
   const [minLon, minLat, maxLon, maxLat] = turf.bbox(feat)
   const sw = turf.point([minLon, minLat])
@@ -80,7 +87,7 @@ describe("theater geometry", () => {
     for (const province of CATALOG) {
       const rings = theater.polygons[province.id]
       const centroid = theater.centroids[province.id]
-      expect(turf.booleanPointInPolygon(turf.point(centroid), turf.polygon(rings))).toBe(true)
+      expect(turf.booleanPointInPolygon(turf.point(centroid), provinceFeature(rings) as Feature<Polygon>)).toBe(true)
     }
   })
 
@@ -132,19 +139,29 @@ describe("theater geometry", () => {
   it("gives adjacent provinces a shared border segment", () => {
     if (!/worldos/i.test(GEOMETRY_SOURCE)) return
 
-    const derived = neighborsFromPolygons(theater.polygons)
     for (const province of CATALOG) {
-      for (const other of derived[province.id]) {
-        const a = turf.polygon(theater.polygons[province.id])
-        const b = turf.polygon(theater.polygons[other])
-        const line = turf.lineIntersect(a, b)
-        let km = 0
-        for (const f of line.features) {
-          if (f.geometry.type === "LineString") km += turf.length(f, { units: "kilometers" })
-        }
-        expect(km).toBeGreaterThan(0.25)
+      for (const other of theater.neighbors[province.id]) {
+        const a = provinceFeature(theater.polygons[province.id])
+        const b = provinceFeature(theater.polygons[other])
+        expect(sharedBorderKm(a, b)).toBeGreaterThan(0.25)
       }
     }
+  })
+
+  it("covers the playable front in one piece without interior holes", () => {
+    const features = CATALOG.map((province) => provinceFeature(theater.polygons[province.id])) as Feature<Polygon>[]
+    const union = turf.union(turf.featureCollection(features))
+    expect(union).toBeTruthy()
+    const polygons =
+      union!.geometry.type === "Polygon" ? [union!.geometry.coordinates] : union!.geometry.coordinates
+    expect(polygons).toHaveLength(1)
+    let holeKm2 = 0
+    for (const polygon of polygons) {
+      for (let index = 1; index < polygon.length; index++) {
+        holeKm2 += turf.area(turf.polygon([polygon[index]])) / 1e6
+      }
+    }
+    expect(holeKm2).toBeLessThan(1)
   })
 
   it("matches polygon-derived adjacency from stored neighbors", () => {
