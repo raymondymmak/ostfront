@@ -8,6 +8,8 @@ import { MapLegend } from "@/components/map-legend"
 import {
   BACKDROP_OWNER_COLOR,
   BACKDROP_REGIONS,
+  COUNTRY_BORDERS,
+  COUNTRY_LABELS,
   RIVER_LINES,
   SEA_GEOMETRY,
   THEATER_BBOX,
@@ -129,9 +131,11 @@ export function WarMap({
 
     map.on("load", () => {
       map.addSource("land", { type: "geojson", data: emptyCollection() })
-      map.addSource("sea", { type: "geojson", data: emptyCollection() })
-      map.addSource("backdrop", { type: "geojson", data: emptyCollection() })
-      map.addSource("backdrop-label-points", { type: "geojson", data: emptyCollection() })
+      map.addSource("sea", { type: "geojson", data: seaCollection() })
+      map.addSource("backdrop", { type: "geojson", data: backdropCollection() })
+      map.addSource("country-borders", { type: "geojson", data: countryBorderCollection() })
+      map.addSource("backdrop-label-points", { type: "geojson", data: countryLabelCollection() })
+      map.addSource("state-labels", { type: "geojson", data: stateLabelCollection() })
       map.addSource("rivers", { type: "geojson", data: emptyCollection() })
       map.addSource("provinces", { type: "geojson", data: emptyCollection() })
       map.addSource("orders", { type: "geojson", data: emptyCollection() })
@@ -174,9 +178,19 @@ export function WarMap({
         type: "line",
         source: "backdrop",
         paint: {
-          "line-color": "#3e4448",
-          "line-width": 0.8,
+          "line-color": "#6a7278",
+          "line-width": 0.55,
           "line-opacity": 0.9,
+        },
+      })
+      map.addLayer({
+        id: "country-borders",
+        type: "line",
+        source: "country-borders",
+        paint: {
+          "line-color": "#2a3034",
+          "line-width": 1.35,
+          "line-opacity": 0.92,
         },
       })
       map.addLayer({
@@ -196,6 +210,26 @@ export function WarMap({
           "text-halo-color": "#e2e6e8",
           "text-halo-width": 1.4,
           "text-opacity": 0.72,
+        },
+      })
+      map.addLayer({
+        id: "state-labels",
+        type: "symbol",
+        source: "state-labels",
+        minzoom: 7.5,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 7.5, 9, 10, 13],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-padding": 2,
+          "text-allow-overlap": false,
+          "text-optional": true,
+        },
+        paint: {
+          "text-color": "#3a4146",
+          "text-halo-color": "#e4e7e8",
+          "text-halo-width": 1.1,
+          "text-opacity": 0.88,
         },
       })
       map.addLayer({
@@ -517,46 +551,11 @@ function syncMap(
   markers: Map<string, maplibregl.Marker>,
   fitted: { current: boolean },
 ) {
-  const sea = map.getSource("sea") as maplibregl.GeoJSONSource | undefined
-  const land = map.getSource("land") as maplibregl.GeoJSONSource | undefined
-  const backdrop = map.getSource("backdrop") as maplibregl.GeoJSONSource | undefined
-  const backdropLabels = map.getSource("backdrop-label-points") as maplibregl.GeoJSONSource | undefined
   const rivers = map.getSource("rivers") as maplibregl.GeoJSONSource | undefined
   const provinces = map.getSource("provinces") as maplibregl.GeoJSONSource | undefined
   const orders = map.getSource("orders") as maplibregl.GeoJSONSource | undefined
   const ends = map.getSource("order-ends") as maplibregl.GeoJSONSource | undefined
-  if (!sea || !land || !backdrop || !backdropLabels || !rivers || !provinces || !orders || !ends) return
-
-  sea.setData({
-    type: "FeatureCollection",
-    features: SEA_GEOMETRY
-      ? [{ type: "Feature", id: "sea", properties: {}, geometry: SEA_GEOMETRY }]
-      : [],
-  })
-
-  land.setData({ type: "FeatureCollection", features: [] })
-
-  const backdropFeatures: GeoJSON.Feature[] = BACKDROP_REGIONS.filter((region) =>
-    geometryValid(region.geometry),
-  ).map((region) => ({
-    type: "Feature",
-    properties: { id: region.id, name: region.name, owner: region.owner },
-    geometry: region.geometry,
-    id: region.id,
-  }))
-  backdrop.setData({ type: "FeatureCollection", features: backdropFeatures })
-
-  const labelPoints: GeoJSON.Feature[] = BACKDROP_REGIONS.filter((region) =>
-    geometryValid(region.geometry),
-  ).flatMap((region) => {
-    const spots = region.labels?.length ? region.labels : [region.label]
-    return spots.map((coordinates) => ({
-      type: "Feature" as const,
-      properties: { name: region.name },
-      geometry: { type: "Point" as const, coordinates },
-    }))
-  })
-  backdropLabels.setData({ type: "FeatureCollection", features: labelPoints })
+  if (!rivers || !provinces || !orders || !ends) return
 
   rivers.setData({
     type: "FeatureCollection",
@@ -775,6 +774,65 @@ function webglPaints(): boolean {
     return pixel[2] > 40 && pixel[3] > 200
   } catch {
     return false
+  }
+}
+
+function seaCollection(): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: SEA_GEOMETRY
+      ? [{ type: "Feature", id: "sea", properties: {}, geometry: SEA_GEOMETRY }]
+      : [],
+  }
+}
+
+function backdropCollection(): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: BACKDROP_REGIONS.filter((region) => geometryValid(region.geometry)).map((region) => ({
+      type: "Feature",
+      id: region.id,
+      properties: { id: region.id, name: region.name, owner: region.owner },
+      geometry: region.geometry,
+    })),
+  }
+}
+
+function countryBorderCollection(): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {},
+        geometry: COUNTRY_BORDERS,
+      },
+    ],
+  }
+}
+
+function countryLabelCollection(): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: COUNTRY_LABELS.flatMap((label) => {
+      const spots = label.labels?.length ? label.labels : [label.label]
+      return spots.map((coordinates) => ({
+        type: "Feature" as const,
+        properties: { name: label.name, owner: label.owner },
+        geometry: { type: "Point" as const, coordinates },
+      }))
+    }),
+  }
+}
+
+function stateLabelCollection(): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: BACKDROP_REGIONS.filter((region) => geometryValid(region.geometry)).map((region) => ({
+      type: "Feature" as const,
+      properties: { name: region.name, id: region.id },
+      geometry: { type: "Point" as const, coordinates: region.label },
+    })),
   }
 }
 

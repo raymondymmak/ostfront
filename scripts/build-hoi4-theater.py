@@ -14,6 +14,7 @@ without a basemap.
 from __future__ import annotations
 
 import colorsys
+import gzip
 import json
 import os
 import statistics
@@ -56,7 +57,12 @@ CREDIT = (
     "by Paradox Interactive."
 )
 
-# June 1915 Eastern Front. The other MapChart core states stay as backdrop.
+# June 1915 Eastern Front. Every other MapChart state is drawn the same way,
+# with playable set to false. To bring one into the game later, add its
+# MapChart id here and a ProvinceDef in lib/data/definitions.ts (name, units,
+# supply, controller). The polygon, owner_1914, and neighbors are already in
+# the built topology. Then run `npm run build:theater`. The game only moves
+# between ids in this set.
 PLAYABLE = {
     "Königsberg",
     "Ermland_Masuren",
@@ -584,6 +590,32 @@ def run_mapshaper(src: Path, dest: Path, args: list[str]):
         raise RuntimeError(result.stderr[-800:] or result.stdout[-800:])
 
 
+def run_mapshaper_topo(src: Path, dest: Path):
+    """Shared-arc TopoJSON. Quantization is finer than the 0.25 px snap.
+
+    Country borders are the shared edges whose owners differ, cut from the
+    same arcs as the state polygons. No simplification.
+    """
+    cmd = [
+        str(MAPSHAPER),
+        str(src),
+        "-rename-layers",
+        "states",
+        "-innerlines",
+        "where=A.owner_1914!=B.owner_1914",
+        "+",
+        "name=countryBorders",
+        "-o",
+        "target=states,countryBorders",
+        str(dest),
+        "format=topojson",
+        "quantization=1000000",
+    ]
+    result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr[-1200:] or result.stdout[-1200:])
+
+
 def to_deg(x, y):
     return (round((x - ORIGIN_X) * SCALE, 6), round((y - ORIGIN_Y) * SCALE, 6))
 
@@ -896,6 +928,16 @@ def main():
         )
         info["final"] = forced
         state_owners[state_id] = forced
+    owner_sources = {state_id: votes[state_id]["method"] for state_id in state_owners}
+    for state_id in FALLBACK_JUDGMENTS:
+        if state_id in owner_sources:
+            owner_sources[state_id] = "override"
+    for state_id in OWNER_OVERRIDES:
+        if state_id in owner_sources:
+            owner_sources[state_id] = "override"
+    for state_id in DE_JURE_OVERRIDES:
+        if state_id in owner_sources:
+            owner_sources[state_id] = "override"
     # Refresh a disagreement row if an override changed the owner that will be stored.
     for row in disagreements:
         row["finalOwner"] = state_owners[row["id"]]
@@ -914,75 +956,46 @@ def main():
         ),
     )
 
-    playable_geoms = {}
-    backdrop_features = []
+    # One feature per MapChart state. Backdrop states use this same snapped
+    # geometry: no dissolve, no extra simplify, no buffer.
+    states = []
+    used_slugs: dict[str, str] = {}
     for props, geom in snapped:
         state_id = props["id"]
-        owner = state_owners[state_id]
-        if state_id in PLAYABLE:
-            playable_geoms[slug(state_id)] = (state_id, geom)
-            continue
-        backdrop_features.append(
+        base = slug(state_id)
+        key = base
+        suffix = 2
+        while key in used_slugs:
+            key = f"{base}_{suffix}"
+            suffix += 1
+        used_slugs[key] = state_id
+        if geom.is_empty or geom.area <= 0:
+            raise SystemExit(f"State {state_id} has no area after the snap")
+        states.append(
             {
-                "type": "Feature",
-                "properties": {"owner": owner, "name": owner_label(owner)},
-                "geometry": mapping(geom),
+                "id": key,
+                "stateId": state_id,
+                "name": props.get("name") or state_id.replace("_", " "),
+                "owner": state_owners[state_id],
+                "playable": state_id in PLAYABLE,
+                "source": owner_sources.get(state_id, "fallback"),
+                "geom": geom,
             }
         )
-    if len(playable_geoms) != len(PLAYABLE):
-        raise SystemExit(f"Expected {len(PLAYABLE)} playable states, got {sorted(playable_geoms)}")
+    playable_states = [item for item in states if item["playable"]]
+    if len(playable_states) != len(PLAYABLE):
+        raise SystemExit(f"Expected {len(PLAYABLE)} playable states, got {len(playable_states)}")
+    if len(states) != len(snapped):
+        raise SystemExit(f"Expected {len(snapped)} states, got {len(states)}")
 
-    tagged_path = work / "backdrop-states.geojson"
-    tagged_path.write_text(json.dumps({"type": "FeatureCollection", "features": backdrop_features}))
-    dissolved_path = work / "backdrop-dissolved.geojson"
-    run_mapshaper(tagged_path, dissolved_path, ["-dissolve", "owner", "copy-fields=name"])
-    simple_path = work / "backdrop-simple.geojson"
-    run_mapshaper(
-        dissolved_path,
-        simple_path,
-        ["-simplify", "weighted", "interval=1.2", "planar", "keep-shapes"],
-    )
-    simplified = load_features(simple_path)
-    play_union = unary_union([geom for _key, (_state_id, geom) in playable_geoms.items()])
-    expanded = []
-    for props, geom in simplified:
-        if not geom.is_valid:
-            geom = geom.buffer(0)
-        grown = geom.buffer(0.45, resolution=1)
-        if grown.is_empty:
-            continue
-        expanded.append(
-            {
-                "type": "Feature",
-                "properties": {"owner": props["owner"], "name": props.get("name") or owner_label(props["owner"])},
-                "geometry": mapping(grown),
-            }
-        )
-    expanded_path = work / "backdrop-expanded.geojson"
-    expanded_path.write_text(json.dumps({"type": "FeatureCollection", "features": expanded}))
-    cleaned_path = work / "backdrop-cleaned.geojson"
-    run_mapshaper(
-        expanded_path,
-        cleaned_path,
-        ["-clean", "gap-width=0.45", "overlap-rule=max-area"],
-    )
-    backdrop = []
-    for props, geom in load_features(cleaned_path):
-        if not geom.is_valid:
-            geom = geom.buffer(0)
-        clipped = geom.difference(play_union)
-        if clipped.is_empty or clipped.area < 0.05:
-            continue
-        backdrop.append((props, clipped))
-    print("BACKDROP_MASSES", len(backdrop), "bytes_simple", simple_path.stat().st_size)
-
-    slugs = sorted(playable_geoms)
-    geoms = [playable_geoms[key][1] for key in slugs]
+    slugs = [item["id"] for item in states]
+    geoms = [item["geom"] for item in states]
     tree = STRtree(geoms)
     neighbors = {key: [] for key in slugs}
     overlap_left = []
     for i, geom in enumerate(geoms):
         for j in tree.query(geom.buffer(0.05)):
+            j = int(j)
             if j <= i:
                 continue
             other = geoms[j]
@@ -995,17 +1008,18 @@ def main():
             neighbors[slugs[j]].append(slugs[i])
     for key in neighbors:
         neighbors[key] = sorted(set(neighbors[key]))
-    print("PLAYABLE_OVERLAPS", overlap_left)
+    print("ADJACENT_PAIRS", sum(len(value) for value in neighbors.values()) // 2, "OVERLAPS", overlap_left[:8])
 
+    playable_ids = {item["id"] for item in playable_states}
     seen = set()
-    stack = [slugs[0]]
+    stack = [playable_states[0]["id"]]
     while stack:
         node = stack.pop()
         if node in seen:
             continue
         seen.add(node)
-        stack.extend(neighbors[node])
-    isolated = [key for key in slugs if key not in seen]
+        stack.extend(other for other in neighbors[node] if other in playable_ids)
+    isolated = sorted(playable_ids - seen)
     print("DISCONNECTED", isolated)
 
     city_hits = {}
@@ -1057,34 +1071,71 @@ def main():
         kept_rails.append([sa, sb])
     print("RAILS_DROPPED", json.dumps(dropped_rails))
 
-    polygons = {}
     centroids = {}
-    for key, (_state_id, geom) in playable_geoms.items():
-        polygons[key] = transform_geom(geom)
-        point = label_point(geom)
-        centroids[key] = list(to_deg(point.x, point.y))
+    for item in states:
+        point = label_point(item["geom"])
+        centroids[item["id"]] = list(to_deg(point.x, point.y))
 
     vx0, vy0 = from_deg(EASTERN_VIEW[0], EASTERN_VIEW[1])
     vx1, vy1 = from_deg(EASTERN_VIEW[2], EASTERN_VIEW[3])
     frame = box(min(vx0, vx1), min(vy0, vy1), max(vx0, vx1), max(vy0, vy1))
 
-    backdrop_out = []
-    for props, geom in backdrop:
+    # Country names only. Dissolving here is for the label point, not the fill.
+    by_owner: dict[str, list] = {}
+    for item in states:
+        if item["playable"]:
+            continue
+        by_owner.setdefault(item["owner"], []).append(item["geom"])
+    country_labels = []
+    for owner, parts in by_owner.items():
+        geom = unary_union(parts)
+        if not geom.is_valid:
+            geom = geom.buffer(0)
         spots = backdrop_label_points(geom, frame)
         if not spots:
             continue
-        primary = spots[0]
-        backdrop_out.append(
+        country_labels.append(
             {
-                "id": "bg-" + props["owner"].replace("_", "-"),
-                "name": props.get("name") or owner_label(props["owner"]),
-                "owner": props["owner"],
-                "label": list(to_deg(primary.x, primary.y)),
+                "owner": owner,
+                "name": owner_label(owner),
+                "label": list(to_deg(spots[0].x, spots[0].y)),
                 "labels": [list(to_deg(point.x, point.y)) for point in spots],
-                "geometry": transform_geom(geom),
             }
         )
-    backdrop_out.sort(key=lambda item: item["id"])
+    country_labels.sort(key=lambda item: item["owner"])
+
+    features = []
+    for item in states:
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "id": item["id"],
+                    "stateId": item["stateId"],
+                    "name": item["name"],
+                    "owner_1914": item["owner"],
+                    "playable": item["playable"],
+                    "source": item["source"],
+                },
+                "geometry": transform_geom(item["geom"]),
+            }
+        )
+    states_path = work / "states-deg.geojson"
+    states_path.write_text(json.dumps({"type": "FeatureCollection", "features": features}, separators=(",", ":")))
+    topo_path = work / "states.topojson"
+    run_mapshaper_topo(states_path, topo_path)
+    topology = json.loads(topo_path.read_text())
+    objects = topology.get("objects") or {}
+    if "states" not in objects or "countryBorders" not in objects:
+        raise SystemExit(f"TopoJSON layers missing: {sorted(objects)}")
+    state_geoms = objects["states"].get("geometries") or []
+    if len(state_geoms) != len(states):
+        raise SystemExit(f"TopoJSON kept {len(state_geoms)} states, expected {len(states)}")
+    tiny_ids = ("Hong_Kong", "Macau", "Gibraltar", "Singapore", "Luxembourg", "Malta", "Bahrain", "Danzig")
+    by_state_id = {item["stateId"]: item for item in states}
+    for state_id in tiny_ids:
+        item = by_state_id[state_id]
+        print(f"TINY {item['id']} area_px2={item['geom'].area:.4f} playable={item['playable']}")
 
     minx = min(geom.bounds[0] for _props, geom in snapped)
     miny = min(geom.bounds[1] for _props, geom in snapped)
@@ -1106,7 +1157,7 @@ def main():
         ],
     }
 
-    owners_used = sorted({item["owner"] for item in backdrop_out} | set(state_owners.values()))
+    owners_used = sorted({item["owner"] for item in states})
     owner_colors = {owner: muted_color(owner) for owner in owners_used}
     audit = {
         "states": len(snapped),
@@ -1138,7 +1189,7 @@ def main():
         "snap": {
             "intervalPx": SNAP_INTERVAL,
             "cleanGapWidthPx": SNAP_INTERVAL,
-            "backdropSimplifyPx": 1.2,
+            "quantization": 1000000,
             "before": before,
             "after": after,
             "maxRelativeAreaChange": round(worst[0][0], 4) if worst else None,
@@ -1150,18 +1201,21 @@ def main():
         "bbox": EASTERN_BBOX,
         "viewBbox": EASTERN_VIEW,
         "worldBbox": world_bbox,
-        "polygons": polygons,
+        "topology": topology,
         "centroids": centroids,
         "neighbors": neighbors,
-        "backdrop": backdrop_out,
+        "countryLabels": country_labels,
         "sea": sea,
         "rivers": [],
         "landPolygons": [],
         "seaPolygons": [sea["coordinates"][0]],
     }
-    OUT_PATH.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    OUT_PATH.write_text(raw)
+    gzipped = len(gzip.compress(raw.encode("utf-8"), compresslevel=9))
     print(
-        f"WROTE {OUT_PATH} bytes={OUT_PATH.stat().st_size} playable={len(polygons)} backdrop={len(backdrop_out)}"
+        f"WROTE {OUT_PATH} bytes={OUT_PATH.stat().st_size} gzip={gzipped} "
+        f"states={len(states)} playable={len(playable_states)} labels={len(country_labels)}"
     )
     report = {
         "fit": fit_summary,

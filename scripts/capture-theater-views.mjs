@@ -14,6 +14,7 @@ const views = [
   { name: "world-africa", query: "mapBounds=-8.5,-19.2,8.5,-3.6&mapPadding=12" },
   { name: "world-middle-east", query: "mapBounds=1.2,-10.4,12.2,-1.2&mapPadding=12" },
   { name: "world-east-asia", query: "mapBounds=12.8,-9.4,29.6,5.6&mapPadding=12" },
+  { name: "south-china-hong-kong", query: "mapLon=18.04&mapLat=-6.90&mapZoom=10.2" },
 ]
 
 const browser = await chromium.launch({

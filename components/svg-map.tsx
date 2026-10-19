@@ -5,9 +5,12 @@ import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
 import {
   BACKDROP_REGIONS,
+  COUNTRY_BORDERS,
+  COUNTRY_LABELS,
   RIVER_LINES,
   VIEW_BBOX,
   backdropColor,
+  eachCoord,
   geometryPolygons,
   geometryValid,
   type ProvinceGeometry,
@@ -54,6 +57,14 @@ export function SvgMap({
     () => new Map(provinces.map((province) => [province.id, province])),
     [provinces],
   )
+  const visibleStates = useMemo(
+    () => BACKDROP_REGIONS.filter((region) => geometryValid(region.geometry) && geometryOverlapsView(region.geometry)),
+    [],
+  )
+  const visibleCountryBorders = useMemo(
+    () => COUNTRY_BORDERS.coordinates.filter((line) => lineOverlapsView(line)),
+    [],
+  )
   const origin = originId ? byId.get(originId) : undefined
 
   function point(event: ReactMouseEvent<SVGSVGElement>) {
@@ -94,33 +105,45 @@ export function SvgMap({
         setPreview(null)
       }}
     >
-      {BACKDROP_REGIONS.map((region) => {
-        if (!geometryValid(region.geometry)) return null
-        return (
-          <g key={region.id} pointerEvents="none">
-            <path
-              d={geometryPath(region.geometry)}
-              fill={backdropColor(region.owner)}
-              fillOpacity={0.96}
-              fillRule="evenodd"
-              stroke="#5c6468"
-              strokeWidth={view.label * 0.06}
-              strokeOpacity={0.85}
-            />
-            <text
-              x={region.label[0]}
-              y={-region.label[1]}
-              textAnchor="middle"
-              fill="#4a5258"
-              fillOpacity={0.72}
-              fontSize={view.label * 0.85}
-              fontFamily="Georgia, serif"
-            >
-              {region.name}
-            </text>
-          </g>
-        )
-      })}
+      {visibleStates.map((region) => (
+        <path
+          key={region.id}
+          d={geometryPath(region.geometry)}
+          fill={backdropColor(region.owner)}
+          fillOpacity={0.96}
+          fillRule="evenodd"
+          stroke="#6a7278"
+          strokeWidth={view.label * 0.035}
+          strokeOpacity={0.9}
+          pointerEvents="none"
+        />
+      ))}
+      {visibleCountryBorders.map((line, index) => (
+        <polyline
+          key={`border-${index}`}
+          points={line.map(([lon, lat]) => `${lon},${-lat}`).join(" ")}
+          fill="none"
+          stroke="#2a3034"
+          strokeWidth={view.label * 0.07}
+          strokeOpacity={0.92}
+          pointerEvents="none"
+        />
+      ))}
+      {COUNTRY_LABELS.map((label) => (
+        <text
+          key={label.owner}
+          x={label.label[0]}
+          y={-label.label[1]}
+          textAnchor="middle"
+          fill="#4a5258"
+          fillOpacity={0.72}
+          fontSize={view.label * 0.85}
+          fontFamily="Georgia, serif"
+          pointerEvents="none"
+        >
+          {label.name}
+        </text>
+      ))}
       {RIVER_LINES.map((river) => (
         <polyline
           key={river.id}
@@ -245,6 +268,34 @@ function labelOffset(id: string): [number, number] {
   const angle = (hash % 360) * (Math.PI / 180)
   const radius = 0.04 + (hash % 7) * 0.01
   return [Math.cos(angle) * radius, Math.sin(angle) * radius]
+}
+
+function geometryOverlapsView(geometry: ProvinceGeometry): boolean {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  eachCoord(geometry, ([x, y]) => {
+    if (x < minX) minX = x
+    if (y < minY) minY = y
+    if (x > maxX) maxX = x
+    if (y > maxY) maxY = y
+  })
+  return maxX >= VIEW_BBOX[0] && minX <= VIEW_BBOX[2] && maxY >= VIEW_BBOX[1] && minY <= VIEW_BBOX[3]
+}
+
+function lineOverlapsView(line: number[][]): boolean {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const [x, y] of line) {
+    if (x < minX) minX = x
+    if (y < minY) minY = y
+    if (x > maxX) maxX = x
+    if (y > maxY) maxY = y
+  }
+  return maxX >= VIEW_BBOX[0] && minX <= VIEW_BBOX[2] && maxY >= VIEW_BBOX[1] && minY <= VIEW_BBOX[3]
 }
 
 function geometryPath(geometry: ProvinceGeometry): string {

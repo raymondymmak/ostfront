@@ -3,6 +3,14 @@ import type { Feature, LineString, MultiLineString, MultiPolygon, Polygon } from
 import theaterData from "@/lib/data/theater-geometry.json"
 import { PROVINCE_DEFS } from "@/lib/data/definitions"
 
+/**
+ * Every HOI4 state lives in one TopoJSON topology with a playable flag.
+ * To make another state playable later, add its MapChart id to PLAYABLE in
+ * scripts/build-hoi4-theater.py and a ProvinceDef in lib/data/definitions.ts,
+ * then rebuild. The polygon, owner_1914, and neighbors are already stored.
+ * buildTheater hands the game only the playable subgraph.
+ */
+
 /** A province or backdrop shape, holes included. Extra rings are lakes, not extra land. */
 export type ProvinceGeometry = Polygon | MultiPolygon
 
@@ -27,8 +35,52 @@ export type RiverLine = {
   coordinates: [number, number][]
 }
 
+export type StateSource = "name" | "fallback" | "override"
+
+export type WorldState = {
+  id: string
+  stateId: string
+  name: string
+  owner: string
+  playable: boolean
+  source: StateSource
+  geometry: ProvinceGeometry
+  centroid: [number, number]
+}
+
+export type CountryLabel = {
+  owner: string
+  name: string
+  label: [number, number]
+  labels: [number, number][]
+}
+
 export const THEATER_BBOX = theaterData.bbox as [number, number, number, number]
-const theaterMeta = theaterData as unknown as {
+type TopologyGeometry = {
+  type: string
+  arcs?: number[] | number[][] | number[][][]
+  geometries?: TopologyGeometry[]
+  properties?: {
+    id?: string
+    stateId?: string
+    name?: string
+    owner_1914?: string
+    playable?: boolean
+    source?: StateSource
+  }
+}
+
+type Topology = {
+  type: "Topology"
+  transform?: { scale: [number, number]; translate: [number, number] }
+  arcs: number[][][]
+  objects: {
+    states: { type: string; geometries: TopologyGeometry[] }
+    countryBorders: { type: string; geometries?: TopologyGeometry[]; arcs?: number[] | number[][] }
+  }
+}
+
+type TheaterFile = {
   viewBbox?: [number, number, number, number]
   worldBbox?: [number, number, number, number]
   sea?: ProvinceGeometry
@@ -41,15 +93,112 @@ const theaterMeta = theaterData as unknown as {
     disagreements: unknown[]
     unsure: unknown[]
   }
+  topology: Topology
+  centroids: Record<string, [number, number]>
+  neighbors: Record<string, string[]>
+  countryLabels: CountryLabel[]
+  rivers: RiverLine[]
+  source: string
 }
-export const VIEW_BBOX = theaterMeta.viewBbox ?? THEATER_BBOX
-export const WORLD_BBOX = theaterMeta.worldBbox ?? VIEW_BBOX
-export const SEA_GEOMETRY = theaterMeta.sea
-export const GEOMETRY_SOURCE = theaterData.source as string
-export const BACKDROP_REGIONS = theaterData.backdrop as BackdropRegion[]
-export const RIVER_LINES = theaterData.rivers as RiverLine[]
-export const STATE_OWNERS = theaterMeta.stateOwners ?? {}
-export const OWNER_AUDIT = theaterMeta.ownerAudit
+
+const theaterFile = theaterData as unknown as TheaterFile
+
+function decodeArcs(topology: Topology): number[][][] {
+  const scale = topology.transform?.scale ?? [1, 1]
+  const translate = topology.transform?.translate ?? [0, 0]
+  return topology.arcs.map((arc) => {
+    let x = 0
+    let y = 0
+    return arc.map((delta) => {
+      x += delta[0]
+      y += delta[1]
+      return [x * scale[0] + translate[0], y * scale[1] + translate[1]]
+    })
+  })
+}
+
+function lineCoordinates(arcs: number[][][], indexes: number[]): number[][] {
+  const coordinates: number[][] = []
+  for (const index of indexes) {
+    const reversed = index < 0
+    const arc = arcs[reversed ? ~index : index]
+    const points = reversed ? arc.slice().reverse() : arc
+    if (coordinates.length > 0) coordinates.pop()
+    for (const point of points) coordinates.push([point[0], point[1]])
+  }
+  return coordinates
+}
+
+function geometryFromObject(arcs: number[][][], object: TopologyGeometry): ProvinceGeometry | null {
+  if (object.type === "Polygon") {
+    const rings = (object.arcs as number[][]).map((ring) => lineCoordinates(arcs, ring))
+    return { type: "Polygon", coordinates: rings }
+  }
+  if (object.type === "MultiPolygon") {
+    const polygons = (object.arcs as number[][][]).map((rings) =>
+      rings.map((ring) => lineCoordinates(arcs, ring)),
+    )
+    return { type: "MultiPolygon", coordinates: polygons }
+  }
+  return null
+}
+
+function collectLines(arcs: number[][][], object: TopologyGeometry): number[][][] {
+  if (object.type === "LineString") return [lineCoordinates(arcs, object.arcs as number[])]
+  if (object.type === "MultiLineString") {
+    return (object.arcs as number[][]).map((line) => lineCoordinates(arcs, line))
+  }
+  if (object.type === "GeometryCollection") {
+    return (object.geometries ?? []).flatMap((geometry) => collectLines(arcs, geometry))
+  }
+  return []
+}
+
+const decodedArcs = decodeArcs(theaterFile.topology)
+const stateSources = new Set<StateSource>(["name", "fallback", "override"])
+
+export const WORLD_STATES: WorldState[] = theaterFile.topology.objects.states.geometries.flatMap((object) => {
+  const geometry = geometryFromObject(decodedArcs, object)
+  const props = object.properties
+  if (!geometry || !props?.id) return []
+  const source = stateSources.has(props.source as StateSource) ? (props.source as StateSource) : "fallback"
+  return [
+    {
+      id: props.id,
+      stateId: props.stateId ?? props.id,
+      name: props.name ?? props.id,
+      owner: props.owner_1914 ?? "",
+      playable: props.playable === true,
+      source,
+      geometry,
+      centroid: theaterFile.centroids[props.id] ?? [0, 0],
+    },
+  ]
+})
+
+const worldById = new Map(WORLD_STATES.map((state) => [state.id, state]))
+
+export const VIEW_BBOX = theaterFile.viewBbox ?? THEATER_BBOX
+export const WORLD_BBOX = theaterFile.worldBbox ?? VIEW_BBOX
+export const SEA_GEOMETRY = theaterFile.sea
+export const GEOMETRY_SOURCE = theaterFile.source
+export const ALL_NEIGHBORS = theaterFile.neighbors
+export const COUNTRY_LABELS = theaterFile.countryLabels
+export const COUNTRY_BORDERS: MultiLineString = {
+  type: "MultiLineString",
+  coordinates: collectLines(decodedArcs, theaterFile.topology.objects.countryBorders),
+}
+/** Non-playable states, one feature each. Fills use these. Country names are COUNTRY_LABELS. */
+export const BACKDROP_REGIONS: BackdropRegion[] = WORLD_STATES.filter((state) => !state.playable).map((state) => ({
+  id: state.id,
+  name: state.name,
+  owner: state.owner,
+  label: state.centroid,
+  geometry: state.geometry,
+}))
+export const RIVER_LINES = theaterFile.rivers
+export const STATE_OWNERS = theaterFile.stateOwners ?? {}
+export const OWNER_AUDIT = theaterFile.ownerAudit
 
 /** Neutral grey. Lightness tells owners apart. The cast is only a hint of warm or cool. */
 export function backdropColor(owner: string): string {
@@ -109,28 +258,20 @@ export function eachCoord(geometry: ProvinceGeometry, visit: (coord: [number, nu
   }
 }
 
-type TheaterFile = {
-  polygons: Record<string, ProvinceGeometry>
-  centroids: Record<string, [number, number]>
-  neighbors: Record<string, string[]>
-}
-
-const loaded = theaterData as unknown as TheaterFile
-
-/** Playable province polygons and adjacency from theater-geometry.json. */
+/** Playable province polygons and the playable-only adjacency subgraph. */
 export function buildTheater(
   defs: { id: string; lon: number; lat: number }[] = PROVINCE_DEFS,
 ): TheaterGraph {
+  const playable = new Set(defs.map((def) => def.id))
   const polygons: Record<string, ProvinceGeometry> = {}
   const centroids: Record<string, [number, number]> = {}
+  const neighbors: Record<string, string[]> = {}
 
   for (const def of defs) {
-    polygons[def.id] = loaded.polygons[def.id]
-    centroids[def.id] = loaded.centroids[def.id] ?? [def.lon, def.lat]
-  }
-  const neighbors: Record<string, string[]> = {}
-  for (const def of defs) {
-    neighbors[def.id] = [...(loaded.neighbors[def.id] ?? [])]
+    const state = worldById.get(def.id)
+    polygons[def.id] = state?.geometry ?? { type: "Polygon", coordinates: [] }
+    centroids[def.id] = state?.centroid ?? [def.lon, def.lat]
+    neighbors[def.id] = (ALL_NEIGHBORS[def.id] ?? []).filter((id) => playable.has(id)).sort()
   }
   return { neighbors, polygons, centroids }
 }
