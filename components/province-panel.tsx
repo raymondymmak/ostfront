@@ -26,7 +26,7 @@ export function ProvincePanel({
   if (!province) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        Select a province. The Kraków group is already on the Lemberg border.
+        Select a province. Lemberg is the Austrian depot. The Russian line is Lublin and Volhynia.
       </div>
     )
   }

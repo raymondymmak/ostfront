@@ -58,11 +58,11 @@ The situation is saved in `localStorage` under `ostfront-1915-v1`. Restarting th
 
 Each turn is a fortnight. The first date is 4 June 1915, two days after the recapture of Przemyśl.
 
-Warsaw is Russian-held and is Russia's depot. Königsberg is the German depot. Kraków, which now contains Tarnów, Rzeszów, and Przemyśl as one Hearts of Iron IV state, is the Austro-Hungarian depot and already borders Lemberg. Rovno, inside Volhynia, is the Russian forward railhead. A depot feeds only its own faction, and only while that faction controls it. Taking Warsaw starves Russia. It does not feed the Central Powers.
+Warsaw is Russian-held and is Russia's depot. Königsberg and Kraków are Central Powers depots, and Lemberg is the Austrian forward depot. Kraków still contains Tarnów, Rzeszów, and Przemyśl as one Hearts of Iron IV state. Rovno, inside Volhynia, is the Russian forward railhead. A depot feeds only its own faction, and only while that faction controls it. Taking Warsaw starves Russia. It does not feed the Central Powers.
 
-`owner` is the 1914 sovereign that holds most of the state, used for occupation unrest. `controller` is who holds the ground on 4 June 1915. Lemberg, Stanislav, and Bukovina are Austrian homeland under Russian control, so they start with unrest. Kraków, including Przemyśl, is Central Powers.
+`owner` is the 1914 sovereign that holds most of the state, used for occupation unrest. `controller` is who holds the ground on 4 June 1915. Katowice is German. Lemberg, Stanislav, and Bukovina are Austrian and already cleared, so they start at home with no unrest. The Russian line in the south is Lublin, Volhynia, and Podolia. These four corrections live in `OWNER_OVERRIDES` in `scripts/build-hoi4-theater.py` and in `lib/data/definitions.ts`.
 
-The Galicia hammer does not march: Mackensen's group, the Beskiden corps, and the Przemyśl assault group all start in Kraków, which shares a border with Lemberg. A typed order `Attack Lemberg.` commits that whole Kraków stack. The second axis is Kielce–Warsaw; Radom sits inside the Warsaw state. East Prussia is Königsberg plus Ermland-Masuren. Pomorze is the 1914 West Prussia state (the map source labels it Gdynia).
+Formations are spread along the front instead of stacked in one state. Kraków holds the garrison, the Beskiden corps, and the Przemyśl group. Mackensen's artillery and the Guard are in Lemberg. A typed order `Attack Lublin.` commits the best supplied neighbor. The second axis is Kielce–Warsaw; Radom sits in Kielce. East Prussia is Königsberg plus Ermland-Masuren. Pomorze is the 1914 West Prussia state (the map source labels it Gdynia).
 
 On the first fortnight the Russian staff only digs. Later they attack when local odds are at least 1.25, and they do not abandon the last unit on an enemy border.
 

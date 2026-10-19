@@ -30,15 +30,15 @@ describe("tier()", () => {
 
   it("marks critical when many attacks stack", () => {
     const state = createInitialState()
-    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    const lemberg = state.provinces.find((province) => province.id === "lwow")!
     const kielce = state.provinces.find((province) => province.id === "kielce")!
     const poznan = state.provinces.find((province) => province.id === "poznan")!
     const orders: PlayerOrder[] = [
       {
         type: "attack",
-        from: "krakow",
-        target: "lwow",
-        unitIds: krakow.units.slice(0, 4).map((unit) => unit.id),
+        from: "lwow",
+        target: "lublin",
+        unitIds: lemberg.units.slice(0, 4).map((unit) => unit.id),
       },
       {
         type: "attack",

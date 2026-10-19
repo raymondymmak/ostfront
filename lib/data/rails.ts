@@ -4,6 +4,9 @@
  */
 export const RAIL_PAIRS: [string, string][] = [
   ["konigsberg", "ermland_masuren"],
+  ["ermland_masuren", "gdynia"],
+  ["bialystok", "suduva"],
+  ["wolyn", "proskuriv"],
   ["danzig", "gdynia"],
   ["ermland_masuren", "plock"],
   ["ermland_masuren", "bialystok"],
@@ -22,6 +25,10 @@ export const RAIL_PAIRS: [string, string][] = [
   ["lublin", "wolyn"],
   ["kielce", "krakow"],
   ["krakow", "lwow"],
+  ["krakow", "katowice"],
+  ["katowice", "oberschlesien"],
+  ["poznan", "oberschlesien"],
+  ["lwow", "bucovina"],
   ["lwow", "stanislawow"],
   ["lwow", "proskuriv"],
   ["wolyn", "lwow"],

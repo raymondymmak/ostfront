@@ -120,8 +120,8 @@ describe("opening map counters", () => {
         expect(unit.strength).toBeGreaterThan(0)
       }
     }
-    expect(units).toBe(46)
-    expect(depots).toBe(4)
+    expect(units).toBe(51)
+    expect(depots).toBe(5)
     const unitIds = state.provinces.flatMap((province) => province.units.map((unit) => unit.id))
     expect(new Set(unitIds).size).toBe(unitIds.length)
   })

@@ -18,6 +18,8 @@ export type ProvinceDef = {
  * June 1915 Eastern Front, one Hearts of Iron IV state per province.
  * `lon`/`lat` are the label point in the flat pixel projection, not geographic degrees.
  * `owner` is the 1914 sovereign that holds most of the state. `controller` is the June front.
+ * Katowice, Lemberg, Stanislav and Bukovina are forced in OWNER_OVERRIDES
+ * (scripts/build-hoi4-theater.py): German or Austrian in 1914, Central Powers in June.
  */
 export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "konigsberg", name: "Königsberg", lon: 0.073, lat: 0.638, terrain: "urban", owner: "central", controller: "central", fort: 2, depot: "central", aliases: ["koenigsberg", "tilsit", "insterburg"] },
@@ -35,11 +37,11 @@ export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "lodz", name: "Łódź", lon: -0.409, lat: -0.157, terrain: "urban", owner: "russia", controller: "russia", fort: 0, aliases: ["lodz"] },
   { id: "kielce", name: "Kielce", lon: -0.113, lat: -0.385, terrain: "plains", owner: "russia", controller: "russia", fort: 0 },
   { id: "krakow", name: "Kraków", lon: -0.022, lat: -0.632, terrain: "urban", owner: "central", controller: "central", fort: 2, depot: "central", aliases: ["cracow", "krakau", "krakow", "tarnow", "tarnów", "rzeszow", "rzeszów", "przemysl", "przemyśl"] },
-  { id: "katowice", name: "Katowice", lon: -0.375, lat: -0.48, terrain: "plains", owner: "russia", controller: "russia", fort: 0 },
+  { id: "katowice", name: "Katowice", lon: -0.375, lat: -0.48, terrain: "plains", owner: "central", controller: "central", fort: 0 },
   { id: "lublin", name: "Lublin", lon: 0.344, lat: -0.282, terrain: "plains", owner: "russia", controller: "russia", fort: 2, aliases: ["chelm", "chełm", "brest", "brest litovsk"] },
   { id: "bialystok", name: "Białystok", lon: 0.35, lat: 0.237, terrain: "forest", owner: "russia", controller: "russia", fort: 1, aliases: ["bialystok", "grodno"] },
-  { id: "lwow", name: "Lemberg", lon: 0.809, lat: -0.728, terrain: "urban", owner: "central", controller: "russia", fort: 1, unrest: 22, aliases: ["lviv", "lwow", "lwów", "lemberg", "tarnopol"] },
-  { id: "stanislawow", name: "Stanislav", lon: 0.714, lat: -0.955, terrain: "mountain", owner: "central", controller: "russia", fort: 0, unrest: 14, aliases: ["stanislawow", "stanisławów", "stanislau", "stanislav"] },
+  { id: "lwow", name: "Lemberg", lon: 0.809, lat: -0.728, terrain: "urban", owner: "central", controller: "central", fort: 1, depot: "central", aliases: ["lviv", "lwow", "lwów", "lemberg", "tarnopol"] },
+  { id: "stanislawow", name: "Stanislav", lon: 0.714, lat: -0.955, terrain: "mountain", owner: "central", controller: "central", fort: 0, aliases: ["stanislawow", "stanisławów", "stanislau", "stanislav"] },
   { id: "wolyn", name: "Volhynia", lon: 0.896, lat: -0.441, terrain: "plains", owner: "russia", controller: "russia", fort: 0, depot: "russia", aliases: ["wolyn", "volhynia", "rovno", "rivne", "lutsk", "kovel"] },
   { id: "polesie", name: "Polesie", lon: 0.869, lat: -0.061, terrain: "marsh", owner: "russia", controller: "russia", fort: 0, aliases: ["pinsk"] },
   { id: "nowogrodek", name: "Nowogródek", lon: 0.834, lat: 0.28, terrain: "forest", owner: "russia", controller: "russia", fort: 0, aliases: ["nowogrodek", "navahrudak"] },
@@ -54,7 +56,7 @@ export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "minsk", name: "Minsk", lon: 1.511, lat: 0.421, terrain: "urban", owner: "russia", controller: "russia", fort: 1 },
   { id: "mozyr", name: "Mozyr", lon: 1.588, lat: -0.125, terrain: "marsh", owner: "russia", controller: "russia", fort: 0, aliases: ["mazyr"] },
   { id: "proskuriv", name: "Podolia", lon: 1.17, lat: -0.748, terrain: "plains", owner: "russia", controller: "russia", fort: 0, aliases: ["proskuriv", "kamenets", "podolia"] },
-  { id: "bucovina", name: "Bukovina", lon: 0.909, lat: -1.081, terrain: "mountain", owner: "central", controller: "russia", fort: 0, unrest: 10, aliases: ["bucovina", "bukovina", "czernowitz"] },
+  { id: "bucovina", name: "Bukovina", lon: 0.909, lat: -1.081, terrain: "mountain", owner: "central", controller: "central", fort: 0, aliases: ["bucovina", "bukovina", "czernowitz"] },
   { id: "eastern_slovakia", name: "Eastern Slovakia", lon: -0.024, lat: -0.876, terrain: "mountain", owner: "central", controller: "central", fort: 0, aliases: ["presov"] },
   { id: "tesinsko", name: "Teschen", lon: -0.489, lat: -0.702, terrain: "mountain", owner: "central", controller: "central", fort: 0, aliases: ["tesinsko", "cieszyn", "teschen"] },
   { id: "podkarpatska_rus", name: "Carpathian Ruthenia", lon: 0.407, lat: -0.995, terrain: "mountain", owner: "central", controller: "central", fort: 0, aliases: ["podkarpatska", "ruthenia", "uzhhorod"] },

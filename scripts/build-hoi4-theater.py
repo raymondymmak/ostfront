@@ -113,6 +113,17 @@ ANCHORS = {
     "Gdynia": (18.5300, 54.5189),
 }
 
+# Area sampling follows the 1936 state shapes. These four are wrong for 1914 and
+# are forced on every rebuild: Katowice is German, and Lemberg, Stanislav and
+# Bukovina are Austrian. The June 1915 controller (all Central Powers) lives in
+# lib/data/definitions.ts and is kept in step with this table.
+OWNER_OVERRIDES = {
+    "Katowice": "german_empire",
+    "Lwów": "austro_hungarian_empire",
+    "Stanisławów": "austro_hungarian_empire",
+    "Bucovina": "austro_hungarian_empire",
+}
+
 OWNER_LABEL = {
     "german_empire": "Germany",
     "austro_hungarian_empire": "Austria-Hungary",
@@ -592,6 +603,23 @@ def main():
     ]
     print("OWNERS_UNDER_80", json.dumps(close, ensure_ascii=False))
 
+    override_report = []
+    for state_id, forced in OWNER_OVERRIDES.items():
+        info = votes[state_id]
+        override_report.append(
+            {
+                "id": state_id,
+                "owner": forced,
+                "areaOwner": info["owner"],
+                "areaPct": info["pct"],
+            }
+        )
+        info["areaOwner"] = info["owner"]
+        info["areaPct"] = info["pct"]
+        info["owner"] = forced
+        info["override"] = True
+    print("OWNER_OVERRIDES", json.dumps(override_report, ensure_ascii=False))
+
     tagged_features = []
     for props, geom in snapped:
         state_id = props["id"]
@@ -808,6 +836,7 @@ def main():
             "after": after,
             "maxRelativeAreaChange": round(worst[0][0], 4) if worst else None,
         },
+        "ownerOverrides": override_report,
         "bbox": [round(v, 6) for v in bbox],
         "viewBbox": [round(v, 6) for v in view_bbox],
         "polygons": polygons,

@@ -13,19 +13,19 @@ import type {
 const FORTRESS = new Set([
   "warszawa",
   "lublin",
-  "lwow",
+  "wolyn",
+  "proskuriv",
   "suduva",
-  "krakow",
-  "konigsberg",
+  "wilno",
 ])
 
 const DIPLOMACY = [
-  "Berlin tells Vienna that the Kraków state already holds Przemyśl. Lemberg, the next state east, is the campaign.",
-  "Stavka warns the Warsaw depot that Galicia can be thinned if the Narew starts to bend.",
-  "Conrad wants the Kraków group kept massed on the Lemberg border before the Russians dig.",
+  "Berlin tells Vienna that Galicia is already in hand. Lemberg is the depot; Lublin and Volhynia are the next states.",
+  "Stavka has the 8th Army on the Podolia side of the Lemberg border and the 3rd Army in Lublin. Galicia will not be walked back this fortnight.",
+  "Conrad wants the Lemberg group kept up to strength before anyone crosses into Volhynia.",
   "Falkenhayn will send no fresh corps from the west. This fortnight is fought with the rails already in hand.",
-  "Bucharest stays noncommittal. Bukovina is watched, not entered. Romania is still neutral.",
-  "The heavy artillery is already with the Kraków group. Ammunition, not another march, is the constraint.",
+  "Bucharest stays noncommittal. Bukovina is Austrian and quiet. Romania is still neutral.",
+  "Mackensen's heavy artillery is in Lemberg. Ammunition, not another march, is the constraint.",
 ]
 
 export function mockAiTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
@@ -114,7 +114,7 @@ export function mockAiTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
   }
 
   if (state.turn % 2 === 0) {
-    for (const id of ["warszawa", "lublin", "lwow"]) {
+    for (const id of ["warszawa", "lublin", "wolyn"]) {
       const province = findProvince(state, id)
       if (
         province &&
