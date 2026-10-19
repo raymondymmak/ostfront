@@ -21,6 +21,7 @@ import {
 } from "@/lib/data/geometry"
 import { shortProvinceName } from "@/lib/map/labels"
 import { applyMarkerFace, type MarkerFace } from "@/lib/map/marker-face"
+import { applyProvinceLabelOpacity } from "@/lib/map/province-label-zoom"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
 
@@ -426,6 +427,7 @@ export function WarMap({
       }
 
       loadedRef.current = true
+      map.on("zoom", () => paintProvinceLabels(map, markersRef.current))
       syncMap(map, propsRef.current, markersRef.current, fittedRef)
       map.once("idle", () => blitMap(map, blitRef.current))
     })
@@ -679,6 +681,7 @@ function syncMap(
     fitted.current = true
     map.resize()
   }
+  paintProvinceLabels(map, markers)
 }
 
 function readMapViewFromUrl(): {
@@ -709,6 +712,11 @@ function readMapViewFromUrl(): {
     }
   }
   return {}
+}
+
+function paintProvinceLabels(map: maplibregl.Map, markers: Map<string, maplibregl.Marker>) {
+  const zoom = map.getZoom()
+  for (const marker of markers.values()) applyProvinceLabelOpacity(marker, zoom)
 }
 
 function markerFace(province: MapProvince, selectedId: string | null): MarkerFace {
