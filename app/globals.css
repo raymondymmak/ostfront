@@ -133,6 +133,9 @@
 }
 
 .map-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
   text-align: center;
   color: #241c14;
   text-shadow: 0 1px 0 rgba(255, 248, 230, 0.75);
