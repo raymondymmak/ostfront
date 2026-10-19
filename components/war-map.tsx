@@ -6,7 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css"
 import { SvgMap } from "@/components/svg-map"
 import { MapLegend } from "@/components/map-legend"
 import { BACKDROP_REGIONS, RIVER_LINES, THEATER_BBOX } from "@/lib/data/geometry"
-import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
+import { labelRank, shortProvinceName } from "@/lib/map/labels"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
 
@@ -196,10 +196,7 @@ export function WarMap({
         layout: {
           "text-field": ["to-string", ["get", "strength"]],
           "text-size": ["interpolate", ["linear"], ["zoom"], 5, 8.5, 8, 11.5],
-          "text-offset": [
-            ["get", "strengthOffsetX"],
-            ["get", "strengthOffsetY"],
-          ] as unknown as maplibregl.DataDrivenPropertyValueSpecification<[number, number]>,
+          "text-offset": [0, 1.05],
           "text-anchor": "top",
           "text-font": ["Open Sans Bold", "Arial Unicode MS Regular"],
           "text-allow-overlap": false,
@@ -223,7 +220,7 @@ export function WarMap({
         id: "province-labels",
         type: "symbol",
         source: "province-labels",
-        filter: ["<=", ["get", "labelRank"], ["step", ["zoom"], 1, 5.2, 2, 6.4, 3, 7.4, 4]],
+        filter: ["<=", ["get", "labelRank"], ["step", ["zoom"], 4, 7.2, 5]],
         layout: {
           "text-field": ["get", "label"],
           "text-size": ["interpolate", ["linear"], ["zoom"], 5, 9.5, 7.5, 12.5, 9, 14],
@@ -529,7 +526,7 @@ function syncMap(
   if (!backdrop || !backdropLabels || !rivers || !provinces || !orders || !ends || !provinceLabels) return
 
   const backdropFeatures: GeoJSON.Feature[] = BACKDROP_REGIONS.map((region) => {
-    if (region.polygon.length < 4) return null
+    if (region.name === "Baltic Sea" || region.polygon.length < 4) return null
     const ring = region.polygon
     return {
       type: "Feature",
@@ -604,8 +601,6 @@ function syncMap(
             labelRank: labelRank(province),
             strength,
             controller: province.controller,
-            strengthOffsetX: strengthLabelOffset(province.id)[0],
-            strengthOffsetY: strengthLabelOffset(province.id)[1],
           },
           geometry: { type: "Point", coordinates: province.centroid },
         }

@@ -210,7 +210,7 @@ export function SvgMap({
         />
       )}
       {provinces
-        .filter((province) => province.polygon.length >= 4 && labelRank(province) <= 2)
+        .filter((province) => province.polygon.length >= 4)
         .map((province) => {
         const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
         const x = province.centroid[0]

@@ -35,7 +35,7 @@ type TheaterFile = {
 
 const loaded = theaterData as unknown as TheaterFile
 
-/** Playable province polygons and grid-derived adjacency (Natural Earth land clip). */
+/** Playable province polygons and adjacency from theater-geometry.json. */
 export function buildTheater(
   defs: { id: string; lon: number; lat: number }[] = PROVINCE_DEFS,
 ): TheaterGraph {
