@@ -396,6 +396,10 @@ export function WarMap({
         if (typeof id === "string") propsRef.current.onSelect(id)
       })
 
+      if (typeof window !== "undefined") {
+        ;(window as Window & { __ostfrontMap?: maplibregl.Map }).__ostfrontMap = map
+      }
+
       loadedRef.current = true
       syncMap(map, propsRef.current, fittedRef)
       map.once("idle", () => blitMap(map, blitRef.current))
@@ -414,6 +418,9 @@ export function WarMap({
       if (blitFrameRef.current !== null) cancelAnimationFrame(blitFrameRef.current)
       loadedRef.current = false
       fittedRef.current = false
+      if (typeof window !== "undefined") {
+        delete (window as Window & { __ostfrontMap?: maplibregl.Map }).__ostfrontMap
+      }
       map.remove()
       mapRef.current = null
     }

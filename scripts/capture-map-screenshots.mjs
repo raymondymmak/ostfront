@@ -1,21 +1,22 @@
 import { chromium } from "playwright"
-import { mkdirSync, readFileSync } from "node:fs"
-
-const theater = JSON.parse(readFileSync(new URL("../lib/data/theater-geometry.json", import.meta.url), "utf8"))
+import { mkdirSync } from "node:fs"
 
 const base = process.env.MAP_URL ?? "http://127.0.0.1:3000"
 const outDir = "/opt/cursor/artifacts/screenshots"
-const THEATER_BBOX = [15.8, 48.35, 28.8, 56.35]
-const TARNOW = theater.centroids.tarnow
+const TARNOW = [21.0, 50.01]
 mkdirSync(outDir, { recursive: true })
 
-function lngLatToCanvasPoint(lon, lat, box, padding = 32) {
-  const [minLon, minLat, maxLon, maxLat] = THEATER_BBOX
-  const width = box.width - padding * 2
-  const height = box.height - padding * 2
-  const x = box.x + padding + ((lon - minLon) / (maxLon - minLon)) * width
-  const y = box.y + padding + ((maxLat - lat) / (maxLat - minLat)) * height
-  return { x, y }
+async function projectOnMap(page, lon, lat) {
+  return page.evaluate(
+    ([longitude, latitude]) => {
+      const map = window.__ostfrontMap
+      if (!map) return null
+      const projected = map.project([longitude, latitude])
+      const rect = map.getCanvas().getBoundingClientRect()
+      return { x: rect.left + projected.x, y: rect.top + projected.y }
+    },
+    [lon, lat],
+  )
 }
 
 const browser = await chromium.launch({
@@ -42,16 +43,15 @@ async function mapCanvas(page) {
 await capture("map-desktop-1440x900", 1440, 900)
 await capture("map-portrait-390x844", 390, 844)
 await capture("map-desktop-selection-tarnow", 1440, 900, async (page) => {
-  const box = await mapCanvas(page)
-  if (!box) return
-  const { x, y } = lngLatToCanvasPoint(TARNOW[0], TARNOW[1], box)
-  await page.mouse.click(x, y)
+  const point = await projectOnMap(page, TARNOW[0], TARNOW[1])
+  if (!point) return
+  await page.mouse.click(point.x, point.y)
   await page.waitForTimeout(600)
 })
 await capture("map-desktop-east-prussia", 1440, 900, async (page) => {
-  const box = await mapCanvas(page)
-  if (!box) return
-  const { x, y } = lngLatToCanvasPoint(20.45, 54.72, box)
+  const point = await projectOnMap(page, 20.45, 54.72)
+  if (!point) return
+  const { x, y } = point
   await page.mouse.move(x, y)
   for (let i = 0; i < 3; i++) {
     await page.mouse.click(x, y, { clickCount: 2 })
