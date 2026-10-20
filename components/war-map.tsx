@@ -42,19 +42,23 @@ export type MapProvince = Province & {
 
 type Overlay = "none" | "supply" | "unrest"
 
-type Snapshot = {
+type MapInput = {
   provinces: MapProvince[]
   selectedId: string | null
   overlay: Overlay
   orders: QueuedOrder[]
   orderMode: boolean
-  showRails: boolean
   onSelect: (id: string) => void
   onDraw: (from: string, to: string, commitAll?: boolean) => void
 }
 
-type WarMapProps = Snapshot & {
+/** Props the game screen passes. The rail toggle lives inside the map. */
+type WarMapProps = MapInput & {
   flashIds: string[]
+}
+
+type Snapshot = MapInput & {
+  showRails: boolean
 }
 
 export function WarMap({
