@@ -1,7 +1,7 @@
 import { attackerPower, defenderPower } from "@/lib/engine/combat"
 import { fightingUnits, formationStrength, independentFormations } from "@/lib/engine/echelon"
 import { canAfford, RECRUIT, recruitmentYard, spendable } from "@/lib/engine/economy"
-import { findProvince } from "@/lib/engine/turn"
+import { combinedEngagementOdds, findProvince } from "@/lib/engine/turn"
 import { scenarioSpec } from "@/lib/data/objectives"
 import type {
   Difficulty,
@@ -14,16 +14,28 @@ import type {
   UnitKind,
 } from "@/lib/types"
 
-const THRESHOLD: Record<Difficulty, number> = {
-  easy: 1.4,
-  normal: 1.2,
-  hard: 1.05,
+/** Odds before the d6. Quiet-front attacks into Central Powers soil use these. */
+export const STAVKA_THRESHOLD: Record<Difficulty, number> = {
+  easy: 1.55,
+  normal: 1.28,
+  hard: 1.08,
 }
 
 const ATTACK_CAP: Record<Difficulty, number> = {
   easy: 1,
   normal: 2,
   hard: 3,
+}
+
+/**
+ * Once the Central Powers own a Russian province, Stavka seals that breach
+ * instead of opening a second front into Galicia or Silesia.
+ * Hard still raids home soil, but only at a higher bar than a field battle.
+ */
+const HOME_WHILE_BREACH: Record<Difficulty, number> = {
+  easy: Number.POSITIVE_INFINITY,
+  normal: 2.35,
+  hard: 2.15,
 }
 
 const DIPLOMACY = [
@@ -39,9 +51,10 @@ export function stavkaTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
   const difficulty = state.difficulty ?? "normal"
   const proposals: Proposal[] = []
   const used = new Set<string>()
-  const attacks = planAttacks(state, difficulty, used)
+  const opening = state.turn === 0 && difficulty !== "hard"
+  const attacks = opening ? [] : planAttacks(state, difficulty, used)
   proposals.push(...attacks)
-  if (difficulty !== "easy" || state.turn % 2 === 0) {
+  if (!opening && (difficulty !== "easy" || state.turn % 2 === 0)) {
     proposals.push(...planReserveMoves(state, difficulty, used))
   }
   const fortify = planFortify(state)
@@ -65,7 +78,7 @@ function planAttacks(
   difficulty: Difficulty,
   used: Set<string>,
 ): Proposal[] {
-  const threshold = THRESHOLD[difficulty]
+  const breach = centralHoldsRussianSoil(state)
   const candidates: { score: number; from: string; target: string; units: string[] }[] = []
   for (const province of russianProvinces(state)) {
     if (province.supply < 30) continue
@@ -75,7 +88,9 @@ function planAttacks(
     for (const neighborId of [...province.neighbors].sort()) {
       const target = findProvince(state, neighborId)
       if (!target || target.controller !== "central") continue
-      const chosen = enoughToAttack(spare, province, target, threshold)
+      const threshold = attackThreshold(difficulty, breach, target)
+      if (!Number.isFinite(threshold)) continue
+      const chosen = committedProng(spare, province, target, threshold)
       if (!chosen.length) continue
       candidates.push({
         score: targetScore(state, target, chosen, province),
@@ -88,22 +103,89 @@ function planAttacks(
   candidates.sort(
     (a, b) => b.score - a.score || a.target.localeCompare(b.target) || a.from.localeCompare(b.from),
   )
-  const takenTargets = new Set<string>()
+  const takenFrom = new Set<string>()
   const attacks: Proposal[] = []
-  for (const candidate of candidates) {
-    if (attacks.length >= ATTACK_CAP[difficulty]) break
-    if (takenTargets.has(candidate.target)) continue
-    if (candidate.units.some((id) => used.has(id))) continue
-    attacks.push({
-      type: "attack",
-      from: candidate.from,
-      target: candidate.target,
-      units: candidate.units,
-    })
-    takenTargets.add(candidate.target)
-    for (const id of candidate.units) used.add(id)
+  const cap = ATTACK_CAP[difficulty]
+  const maxProngs = difficulty === "hard" ? 3 : difficulty === "easy" ? 1 : 2
+
+  const free = () =>
+    candidates.filter(
+      (candidate) => !takenFrom.has(candidate.from) && candidate.units.every((id) => !used.has(id)),
+    )
+
+  const operation = (allowPartner: boolean) => {
+    const pool = free()
+    for (const primary of pool) {
+      const target = findProvince(state, primary.target)
+      if (!target) continue
+      const threshold = attackThreshold(difficulty, breach, target)
+      const alone = prongRatio(state, [primary])
+      if (!allowPartner) {
+        if (alone >= threshold) return [primary]
+        continue
+      }
+      if (alone >= threshold) continue
+      const prongs = [primary]
+      const mayPinch = target.owner === "russia" || difficulty === "hard"
+      while (mayPinch && prongs.length < maxProngs && attacks.length + prongs.length < cap) {
+        if (prongRatio(state, prongs) >= threshold) break
+        const current = prongRatio(state, prongs)
+        const partner = pool
+          .filter(
+            (candidate) =>
+              candidate.target === primary.target &&
+              !prongs.some((prong) => prong.from === candidate.from),
+          )
+          .map((candidate) => ({
+            candidate,
+            ratio: prongRatio(state, [...prongs, candidate]),
+          }))
+          .filter((item) => item.ratio > current)
+          .sort((a, b) => b.ratio - a.ratio || a.candidate.from.localeCompare(b.candidate.from))[0]
+        if (!partner) break
+        prongs.push(partner.candidate)
+      }
+      const pinchBar = difficulty === "hard" ? threshold : Math.max(threshold, 1.45)
+      if (prongs.length > 1 && prongRatio(state, prongs) >= pinchBar) return prongs
+    }
+    return null
+  }
+
+  while (attacks.length < cap) {
+    const picked = operation(false) ?? operation(true)
+    if (!picked) break
+    for (const prong of picked) {
+      attacks.push({
+        type: "attack",
+        from: prong.from,
+        target: prong.target,
+        units: prong.units,
+      })
+      takenFrom.add(prong.from)
+      for (const id of prong.units) used.add(id)
+    }
   }
   return attacks
+}
+
+function prongRatio(
+  state: GameState,
+  prongs: { from: string; target: string; units: string[] }[],
+): number {
+  const preview = combinedEngagementOdds(
+    state,
+    prongs[0].target,
+    prongs.map((prong) => ({ fromId: prong.from, unitIds: prong.units })),
+  )
+  if (!preview) return 0
+  return preview.ratio
+}
+
+/** Every spare formation, so a weak neighbor can still join a concentric attack. */
+function committedProng(spare: Unit[], from: Province, target: Province, threshold: number): Unit[] {
+  const enough = enoughToAttack(spare, from, target, threshold)
+  if (enough.length) return enough
+  return [...spare].sort((a, b) => b.strength - a.strength || a.id.localeCompare(b.id))
 }
 
 function enoughToAttack(
@@ -121,6 +203,19 @@ function enoughToAttack(
   return []
 }
 
+function attackThreshold(difficulty: Difficulty, breach: boolean, target: Province): number {
+  if (target.owner === "central") {
+    return breach ? HOME_WHILE_BREACH[difficulty] : STAVKA_THRESHOLD[difficulty]
+  }
+  return Math.max(1, STAVKA_THRESHOLD[difficulty] - 0.12)
+}
+
+function centralHoldsRussianSoil(state: GameState): boolean {
+  return state.provinces.some(
+    (province) => province.owner === "russia" && province.controller === "central",
+  )
+}
+
 function planReserveMoves(
   state: GameState,
   difficulty: Difficulty,
@@ -128,7 +223,7 @@ function planReserveMoves(
 ): Proposal[] {
   const goal = mostThreatened(state)
   if (!goal) return []
-  const cap = difficulty === "easy" ? 1 : 2
+  const cap = difficulty === "easy" ? 1 : difficulty === "hard" ? 3 : 2
   const movers: { id: string; from: string; step: string; distance: number }[] = []
   for (const province of russianProvinces(state)) {
     if (province.supply < 30 || province.id === goal.id) continue
@@ -163,7 +258,7 @@ function planFortify(state: GameState): Proposal | null {
     .filter((province) => garrisonUnits(province).length > 0)
     .sort((a, b) => threatRatio(state, b) - threatRatio(state, a) || a.id.localeCompare(b.id))
   const province = threatened[0]
-  if (!province || threatRatio(state, province) <= 0) return null
+  if (!province || threatRatio(state, province) < 0.95) return null
   return { type: "fortify", province: province.id }
 }
 
@@ -178,6 +273,9 @@ function planRecruit(state: GameState, attacking: Set<string>): Proposal | null 
     .filter((province) => recruitmentYard(province, "russia"))
     .filter((province) => !state.queue.some((job) => job.provinceId === province.id && job.faction === "russia"))
     .sort((a, b) => {
+      // A corps is not stood up in a city the enemy is already touching.
+      const exposed = Number(bordersEnemy(state, a)) - Number(bordersEnemy(state, b))
+      if (exposed) return exposed
       const da = goal ? distance(state, a.id, goal.id) : 0
       const db = goal ? distance(state, b.id, goal.id) : 0
       return da - db || a.id.localeCompare(b.id)
@@ -197,17 +295,34 @@ function narrate(state: GameState, orders: PlayerOrder[], proposals: Proposal[])
     ? `On ${state.date} the Central Powers directive reaches the staff: “${directive.slice(0, 320)}” Arrows and named orders are plotted; prose that names no province stays a wish.`
     : `On ${state.date} the Central Powers issue no written directive. Formations without an arrow hold their trenches.`
   const attacks = proposals.filter((proposal) => proposal.type === "attack")
-  const names = attacks
-    .map((proposal) => (proposal.type === "attack" ? findProvince(state, proposal.target)?.name : undefined))
+  const prongsByTarget = new Map<string, number>()
+  for (const proposal of attacks) {
+    if (proposal.type !== "attack") continue
+    prongsByTarget.set(proposal.target, (prongsByTarget.get(proposal.target) ?? 0) + 1)
+  }
+  const names = [...prongsByTarget.entries()]
+    .map(([id, count]) => {
+      const name = findProvince(state, id)?.name
+      if (!name) return undefined
+      if (count === 2) return `a two-pronged attack at ${name}`
+      if (count > 2) return `a concentric attack at ${name}`
+      return name
+    })
     .filter((name): name is string => !!name)
   const recruit = proposals.find((proposal) => proposal.type === "recruit")
   const raising =
     recruit && recruit.type === "recruit"
       ? ` The yards at ${findProvince(state, recruit.province)?.name ?? "the depot"} start another formation.`
       : ""
-  const second = names.length
-    ? `Stavka commits ${names.length === 1 ? "an attack" : "attacks"} at ${list(names)}. Garrisons stay behind, and the dice still belong to the engine.${raising}`
-    : `Stavka declines a general offensive and shifts reserves toward the threatened fortresses.${raising}`
+  const second = !names.length
+    ? `Stavka declines a general offensive and shifts reserves toward the threatened fortresses.${raising}`
+    : `${
+        names.length === 1 && names[0].startsWith("a ")
+          ? `Stavka commits ${names[0]}`
+          : names.length === 1
+            ? `Stavka commits an attack at ${names[0]}`
+            : `Stavka commits attacks at ${list(names)}`
+      }. Garrisons stay behind, and the dice still belong to the engine.${raising}`
   return `${opening}\n\n${second}`
 }
 
@@ -217,6 +332,10 @@ function reactiveEvents(state: GameState): GMTurn["events"] {
     .sort((a, b) => b.unrest - a.unrest || a.id.localeCompare(b.id))[0]
   if (!restless) return []
   return [{ type: "partisans", province: restless.id, note: "The occupation is not quiet." }]
+}
+
+function bordersEnemy(state: GameState, province: Province): boolean {
+  return province.neighbors.some((id) => findProvince(state, id)?.controller === "central")
 }
 
 function russianProvinces(state: GameState): Province[] {
@@ -230,13 +349,17 @@ function garrisonUnits(province: Province): Unit[] {
 }
 
 function spareUnits(state: GameState, province: Province, units: Unit[]): Unit[] {
-  if (!mustKeepGarrison(state, province) || units.length <= 1) {
-    return mustKeepGarrison(state, province) ? [] : units
-  }
+  const keep =
+    mustKeepGarrison(state, province)
+      ? province.depot === "russia" && state.difficulty === "hard"
+        ? 2
+        : 1
+      : 0
+  if (units.length <= keep) return []
   const sorted = [...units].sort(
     (a, b) => formationStrength(province.units, b) - formationStrength(province.units, a) || a.id.localeCompare(b.id),
   )
-  return sorted.slice(0, -1)
+  return sorted.slice(0, units.length - keep)
 }
 
 function mustKeepGarrison(state: GameState, province: Province): boolean {
@@ -253,18 +376,24 @@ function odds(attackers: Unit[], from: Province, target: Province): number {
   const attackBodies = fightingUnits(from.units, attackers)
   const defenseBodies = fightingUnits(target.units.filter((unit) => unit.faction === target.controller))
   if (!defenseBodies.length) return Number.POSITIVE_INFINITY
-  const attack = attackerPower(attackBodies, from.supply, target.terrain)
+  const attack = attackerPower(attackBodies, from.supply, target.terrain, target.fort)
   const defense = defenderPower(defenseBodies, target.supply, target.terrain, target.fort)
   return attack / Math.max(8, defense)
 }
 
 function targetScore(state: GameState, target: Province, attackers: Unit[], from: Province): number {
   const spec = scenarioSpec(state.scenario)
+  const breach = centralHoldsRussianSoil(state)
   const home = spec.objectives.find((item) => item.id === target.id && item.side === "home")
+  const retake = target.owner === "russia"
   let score = Math.min(odds(attackers, from, target), 4) * 5
-  if (home) score += 40 + home.vp * 20
-  if (target.depot === "central") score += 35
-  if (!target.units.some((unit) => unit.faction === "central")) score += 24
+  if (retake) score += 80
+  if (home && !breach) score += 40 + home.vp * 20
+  else if (home) score += 8
+  if (target.depot === "central" && !breach) score += 30
+  if (!target.units.some((unit) => unit.faction === "central")) score += retake ? 30 : 8
+  const objective = spec.objectives.find((item) => item.id === target.id && item.side === "eastern")
+  if (objective && retake) score += objective.vp * 12
   return score
 }
 
@@ -274,7 +403,7 @@ function threatRatio(state: GameState, province: Province): number {
     const neighbor = findProvince(state, neighborId)
     if (!neighbor || neighbor.controller !== "central") continue
     const enemy = neighbor.units.filter((unit) => unit.faction === "central")
-    threat = Math.max(threat, attackerPower(enemy, neighbor.supply, province.terrain))
+    threat = Math.max(threat, attackerPower(enemy, neighbor.supply, province.terrain, province.fort))
   }
   const defense = defenderPower(
     garrisonUnits(province),

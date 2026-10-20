@@ -21,11 +21,16 @@ export const HEAL_SUPPLY = 50
 const MORALE_GAIN = 5
 const MORALE_TARGET = 80
 
-const DIFFICULTY_INCOME: Record<Difficulty, number> = {
-  easy: 0.8,
-  normal: 1,
-  hard: 1.25,
+/** Scales Russian income only. Easy is short of shells and men; Hard is not. */
+export const DIFFICULTY_INCOME: Record<Difficulty, number> = {
+  easy: 0.62,
+  normal: 0.82,
+  hard: 1.18,
 }
+
+/** Russia has the men. The Central Powers have the guns. Both are milder than a raw headcount. */
+export const RUSSIAN_MP_SCALE = 1.12
+export const RUSSIAN_IP_SCALE = 0.55
 
 export function canAfford(purse: Purse, kind: UnitKind): boolean {
   const cost = RECRUIT[kind]
@@ -68,8 +73,8 @@ export function projectIncome(state: GameState, faction: Faction): Purse {
   }
   if (faction === "central") ip *= 1.3
   else {
-    mp *= 1.4
-    ip *= 0.6
+    mp *= RUSSIAN_MP_SCALE
+    ip *= RUSSIAN_IP_SCALE
     const modifier = DIFFICULTY_INCOME[state.difficulty ?? "normal"]
     mp *= modifier
     ip *= modifier

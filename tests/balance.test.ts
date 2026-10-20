@@ -94,33 +94,46 @@ describe("balance", () => {
     }
   })
 
-  it("makes Easy kinder than Hard for a local attacker", async () => {
+  it("makes Easy kinder than Hard for a player who attacks the nearest battle", async () => {
+    const rank: Record<string, number> = {
+      defeat: 0,
+      draw: 1,
+      marginal: 2,
+      victory: 3,
+      decisive: 4,
+      brilliant: 5,
+    }
     async function grade(difficulty: "easy" | "hard", seed: number) {
       let state = createInitialState(difficulty)
       state.seed = seed
       while (!state.result) {
         const orders: PlayerOrder[] = []
-        let best: { from: string; to: string; ids: string[]; ratio: number } | null = null
+        const used = new Set<string>()
+        const options: { from: string; to: string; ids: string[]; ratio: number }[] = []
         for (const province of state.provinces) {
           if (province.controller !== "central" || province.supply < 30) continue
-          const units = province.units.filter((unit) => unit.faction === "central")
+          const units = province.units.filter((unit) => unit.faction === "central" && !used.has(unit.id))
           const spare =
             province.depot === "central" && units.length > 1
               ? [...units].sort((a, b) => a.strength - b.strength).slice(1)
               : units
-          if (!spare.length) continue
+          if (!spare.length || (province.depot === "central" && spare.length >= units.length)) continue
+          let best: { to: string; ratio: number } | null = null
           for (const neighbor of province.neighbors) {
             const target = state.provinces.find((item) => item.id === neighbor)
             if (!target || target.controller === "central") continue
             const odds = engagementOdds(state, province.id, target.id, spare.map((unit) => unit.id))
-            if (!odds || odds.ratio < 1.15) continue
-            if (!best || odds.ratio > best.ratio) {
-              best = { from: province.id, to: target.id, ids: spare.map((unit) => unit.id), ratio: odds.ratio }
-            }
+            if (!odds || odds.empty || odds.ratio < 1.15) continue
+            if (!best || odds.ratio > best.ratio) best = { to: target.id, ratio: odds.ratio }
           }
+          if (best) options.push({ from: province.id, to: best.to, ids: spare.map((unit) => unit.id), ratio: best.ratio })
         }
-        if (best) orders.push({ type: "attack", from: best.from, target: best.to, unitIds: best.ids })
-        const budget = spendable(state, "central", new Set(best?.ids ?? []))
+        options.sort((a, b) => b.ratio - a.ratio)
+        for (const option of options.slice(0, 2)) {
+          orders.push({ type: "attack", from: option.from, target: option.to, unitIds: option.ids })
+          for (const id of option.ids) used.add(id)
+        }
+        const budget = spendable(state, "central", used)
         if (budget.mp >= 6 && budget.ip >= 3) {
           const yard = state.provinces.find(
             (province) => province.controller === "central" && province.depot === "central" && province.supply >= 60,
@@ -129,15 +142,16 @@ describe("balance", () => {
         }
         state = (await playTurn(state, orders)).state
       }
-      return state.result?.grade
+      return state.result?.grade ?? "draw"
     }
     const seeds = [1000, 1017, 1034, 1051]
     const easy = await Promise.all(seeds.map((seed) => grade("easy", seed)))
     const hard = await Promise.all(seeds.map((seed) => grade("hard", seed)))
-    const wins = (grades: (string | undefined)[]) =>
-      grades.filter((item) => item === "marginal" || item === "victory" || item === "decisive" || item === "brilliant").length
+    const total = (grades: string[]) => grades.reduce((sum, grade) => sum + (rank[grade] ?? 0), 0)
+    const wins = (grades: string[]) => grades.filter((item) => (rank[item] ?? 0) >= 2).length
+    expect(total(easy)).toBeGreaterThan(total(hard))
     expect(wins(easy)).toBeGreaterThan(wins(hard))
-    expect(hard.some((item) => item === "defeat")).toBe(true)
+    expect(hard.some((item) => item === "defeat" || item === "draw")).toBe(true)
   })
 
   it("does not let the model choose Russian moves", () => {

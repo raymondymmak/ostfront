@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT } from "@/lib/engine/economy"
-import { engagementOdds, findProvince } from "@/lib/engine/turn"
+import { combinedEngagementOdds, engagementOdds, findProvince, type EngagementPreview } from "@/lib/engine/turn"
 import { KIND_LABEL } from "@/lib/format"
 import { interpretOrders } from "@/lib/gm/interpret"
 import type { QueuedOrder } from "@/lib/orders"
@@ -85,7 +85,7 @@ export function OrderPanel({
         {parsed.proposals.length > 0 && (
           <ul className="text-sm text-muted-foreground">
             {parsed.proposals.map((proposal, index) => (
-              <li key={index}>{describeProposal(state, proposal)}</li>
+              <li key={index}>{describeProposal(state, proposal, parsed.proposals)}</li>
             ))}
           </ul>
         )}
@@ -104,9 +104,7 @@ export function OrderPanel({
             const from = findProvince(state, order.from)
             const to = order.to ? findProvince(state, order.to) : undefined
             const odds =
-              order.kind === "attack" && order.to
-                ? engagementOdds(state, order.from, order.to, order.unitIds)
-                : null
+              order.kind === "attack" && order.to ? queuedAttackOdds(state, queue, order) : null
             return (
               <li key={order.id} className="rounded-lg border border-border p-2.5">
                 <div className="flex items-start justify-between gap-2">
@@ -131,10 +129,8 @@ export function OrderPanel({
                   </Button>
                 </div>
                 {odds && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {odds.empty
-                      ? "Undefended, before the dice."
-                      : `About ${odds.ratio.toFixed(2)} : 1 before the dice.`}
+                  <p className="mt-1 text-xs text-muted-foreground" data-testid="attack-odds">
+                    {describeOdds(odds)}
                     {from && from.supply < 30 ? " Supply is too low to march." : ""}
                   </p>
                 )}
@@ -229,9 +225,36 @@ function emptiesDepot(state: GameState, order: QueuedOrder): boolean {
   return held.length > 0 && held.every((unit) => departing.has(unit.id))
 }
 
+function queuedAttackOdds(
+  state: GameState,
+  queue: QueuedOrder[],
+  order: QueuedOrder,
+): EngagementPreview | null {
+  if (!order.to) return null
+  const mates = queue.filter((item) => item.kind === "attack" && item.to === order.to)
+  if (mates.length < 2) return engagementOdds(state, order.from, order.to, order.unitIds)
+  return combinedEngagementOdds(
+    state,
+    order.to,
+    mates.map((item) => ({ fromId: item.from, unitIds: item.unitIds })),
+  )
+}
+
+function describeOdds(odds: EngagementPreview): string {
+  if (odds.empty && odds.origins < 2) return "Undefended, before the dice."
+  const ratio = odds.empty ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
+  if (odds.origins >= 2) {
+    const shape = odds.origins === 2 ? "Two-pronged" : "Concentric"
+    const ring = odds.encircled ? ", and the defender is surrounded" : ""
+    return `${shape}, about ${ratio} before the dice${ring}.`
+  }
+  return `About ${ratio} before the dice.`
+}
+
 function describeProposal(
   state: GameState,
   proposal: ReturnType<typeof interpretOrders>["proposals"][number],
+  proposals: ReturnType<typeof interpretOrders>["proposals"],
 ): string {
   if (proposal.type === "fortify") {
     return `Will entrench ${findProvince(state, proposal.province)?.name ?? proposal.province}.`
@@ -245,11 +268,24 @@ function describeProposal(
     }.`
   }
   if (proposal.type === "attack") {
-    const odds = engagementOdds(state, proposal.from, proposal.target, proposal.units)
-    const ratio = !odds || odds.empty ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
+    const mates = proposals.filter(
+      (item) => item.type === "attack" && item.target === proposal.target,
+    )
+    const odds =
+      mates.length > 1
+        ? combinedEngagementOdds(
+            state,
+            proposal.target,
+            mates.map((item) =>
+              item.type === "attack" ? { fromId: item.from, unitIds: item.units } : { fromId: "", unitIds: [] },
+            ),
+          )
+        : engagementOdds(state, proposal.from, proposal.target, proposal.units)
+    const ratio = !odds ? "unknown odds" : odds.empty ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
+    const shape = odds && odds.origins > 1 ? (odds.origins === 2 ? "two-pronged " : "concentric ") : ""
     return `Will attack ${findProvince(state, proposal.target)?.name ?? proposal.target} from ${
       findProvince(state, proposal.from)?.name ?? proposal.from
-    } (${ratio} before the dice).`
+    } (${shape}${ratio} before the dice).`
   }
   return "Staff note."
 }

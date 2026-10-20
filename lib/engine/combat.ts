@@ -2,14 +2,32 @@ import type { Terrain, Unit, UnitKind } from "@/lib/types"
 
 export const TERRAIN_DEFENSE: Record<Terrain, number> = {
   plains: 1,
-  forest: 1.25,
-  urban: 1.3,
-  marsh: 1.4,
-  mountain: 1.55,
+  forest: 1.2,
+  urban: 1.18,
+  marsh: 1.35,
+  mountain: 1.48,
 }
 
-export function attackKindMod(kind: UnitKind, terrain: Terrain): number {
-  if (kind === "artillery") return 1.12
+/** Each fort level the defender already has. Guns, not rifles, crack that. */
+export const ARTILLERY_FORT_BONUS = 0.1
+
+/**
+ * Extra attack power when several provinces strike one target together.
+ * Two directions is a flank. Three is a concentric attack. Four or more
+ * does not grow past the cap.
+ */
+export function flankMultiplier(prongs: number): number {
+  if (prongs <= 1) return 1
+  if (prongs === 2) return 1.12
+  if (prongs === 3) return 1.22
+  return 1.3
+}
+
+/** Added to the defender's loss fraction when a multi-prong attack leaves no exit. */
+export const ENCIRCLEMENT_DEFENDER_LOSS = 0.18
+
+export function attackKindMod(kind: UnitKind, terrain: Terrain, fort = 0): number {
+  if (kind === "artillery") return 1.16 + Math.max(0, fort) * ARTILLERY_FORT_BONUS
   if (kind === "cavalry") {
     if (terrain === "plains") return 1.1
     if (terrain === "forest" || terrain === "marsh" || terrain === "mountain") {
@@ -29,12 +47,13 @@ export function attackerPower(
   units: Unit[],
   supply: number,
   terrain: Terrain,
+  fort = 0,
 ): number {
   const supplyFactor = Math.max(0.15, supply / 100)
   const base = units.reduce(
     (sum, unit) =>
       sum +
-      unit.strength * (unit.morale / 100) * attackKindMod(unit.kind, terrain),
+      unit.strength * (unit.morale / 100) * attackKindMod(unit.kind, terrain, fort),
     0,
   )
   return base * supplyFactor
@@ -46,13 +65,13 @@ export function defenderPower(
   terrain: Terrain,
   fort: number,
 ): number {
-  const supplyFactor = Math.max(0.45, supply / 100)
+  const supplyFactor = Math.max(0.3, supply / 100)
   const base = units.reduce(
     (sum, unit) =>
       sum + unit.strength * (unit.morale / 100) * defendKindMod(unit.kind),
     0,
   )
-  return base * TERRAIN_DEFENSE[terrain] * (1 + fort * 0.22) * supplyFactor
+  return base * TERRAIN_DEFENSE[terrain] * (1 + fort * 0.14) * supplyFactor
 }
 
 export type CombatOutcome = {
@@ -95,8 +114,8 @@ export function resolveCombat(
   const attackerWins = ratio >= 1
 
   if (attackerWins) {
-    const defenderLoss = clampFraction(0.35 + (ratio - 1) * 0.25, 0.35, 0.85)
-    const attackerLoss = clampFraction(0.28 / ratio, 0.08, 0.28)
+    const defenderLoss = clampFraction(0.4 + (ratio - 1) * 0.28, 0.4, 0.82)
+    const attackerLoss = clampFraction(0.16 / ratio, 0.04, 0.18)
     return {
       roll,
       attack,
@@ -116,8 +135,8 @@ export function resolveCombat(
     defense,
     ratio,
     attackerWins: false,
-    attackerLossFraction: clampFraction(0.3 + (1 - ratio) * 0.35, 0.25, 0.7),
-    defenderLossFraction: clampFraction(0.12 * ratio, 0.05, 0.22),
+    attackerLossFraction: clampFraction(0.22 + (1 - ratio) * 0.28, 0.16, 0.55),
+    defenderLossFraction: clampFraction(0.14 * ratio, 0.06, 0.24),
     attackerMoraleDelta: -12,
     defenderMoraleDelta: 4,
   }

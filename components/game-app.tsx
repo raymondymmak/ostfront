@@ -326,6 +326,7 @@ export function GameApp() {
                 onFortify={fortify}
                 onRecruit={recruit}
                 onCancelRecruit={cancelRecruit}
+                queue={queue}
               />
             </TabsContent>
             <TabsContent value="chronicle" className="min-h-0 flex-1 lg:hidden">
@@ -400,9 +401,9 @@ export function GameApp() {
             <div className="flex flex-wrap gap-2" data-testid="difficulty">
               {(
                 [
-                  ["easy", "Easy", "Russia ×0.8 income, attacks at 1.4"],
-                  ["normal", "Normal", "Full income, attacks at 1.2"],
-                  ["hard", "Hard", "Russia ×1.25 income, attacks at 1.05"],
+                  ["easy", "Easy", "Thinner Russian corps, Stavka stays cautious"],
+                  ["normal", "Normal", "The June 1915 line, and a real breakthrough"],
+                  ["hard", "Hard", "Fuller Russian corps, and Stavka hits back"],
                 ] as const
               ).map(([id, title, copy]) => (
                 <button
