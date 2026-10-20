@@ -7,6 +7,7 @@ import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, findProvince, type EngagementPreview } from "@/lib/engine/turn"
 import { KIND_LABEL } from "@/lib/format"
+import { ordersLocked } from "@/lib/finale"
 import { interpretOrders } from "@/lib/gm/interpret"
 import type { QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
@@ -38,9 +39,11 @@ export function OrderPanel({
   onEndTurn,
   onSelect,
 }: OrderPanelProps) {
-  const parsed = directive.trim()
-    ? interpretOrders(state, [{ type: "text", text: directive }])
-    : { proposals: [], notes: [] }
+  const closed = ordersLocked(Boolean(state.result))
+  const parsed =
+    !closed && directive.trim()
+      ? interpretOrders(state, [{ type: "text", text: directive }])
+      : { proposals: [], notes: [] }
   const forces = state.provinces.flatMap((province) =>
     province.units
       .filter((unit) => unit.faction === "central")
@@ -57,13 +60,19 @@ export function OrderPanel({
             size="sm"
             variant={orderMode ? "default" : "outline"}
             aria-pressed={orderMode}
-            onClick={() => onOrderMode(!orderMode)}
+            disabled={closed}
+            onClick={() => {
+              if (closed) return
+              onOrderMode(!orderMode)
+            }}
           >
             {orderMode ? "Drawing arrows" : "Draw arrows"}
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Drag between provinces, click a neighbor, or write an order. Ctrl+Enter closes the fortnight.
+          {closed
+            ? "Orders are closed. Pan and zoom the map, open a province, or read the chronicle."
+            : "Drag between provinces, click a neighbor, or write an order. Ctrl+Enter closes the fortnight."}
         </p>
         {hint && (
           <p className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-2 text-sm" role="status">
@@ -77,10 +86,14 @@ export function OrderPanel({
           id="directive"
           data-testid="directive"
           value={directive}
-          onChange={(event) => onDirective(event.target.value)}
-          placeholder="Attack Lemberg. Fortify Kraków."
+          disabled={closed}
+          onChange={(event) => {
+            if (closed) return
+            onDirective(event.target.value)
+          }}
+          placeholder={closed ? "Orders are closed." : "Attack Lemberg. Fortify Kraków."}
           rows={3}
-          className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
         />
         {parsed.proposals.length > 0 && (
           <ul className="text-sm text-muted-foreground">
@@ -123,7 +136,11 @@ export function OrderPanel({
                     type="button"
                     size="xs"
                     variant="ghost"
-                    onClick={() => onQueue(queue.filter((item) => item.id !== order.id))}
+                    disabled={closed}
+                    onClick={() => {
+                      if (closed) return
+                      onQueue(queue.filter((item) => item.id !== order.id))
+                    }}
                   >
                     Remove
                   </Button>
@@ -157,7 +174,9 @@ export function OrderPanel({
                               <input
                                 type="checkbox"
                                 checked={on}
+                                disabled={closed}
                                 onChange={() => {
+                                  if (closed) return
                                   const unitIds = on
                                     ? order.unitIds.filter((id) => id !== unit.id)
                                     : [...order.unitIds, unit.id]
@@ -186,7 +205,7 @@ export function OrderPanel({
         <Button
           type="button"
           data-testid="end-turn"
-          disabled={busy || !!state.result}
+          disabled={busy || closed}
           onClick={onEndTurn}
           className="w-full"
           size="lg"

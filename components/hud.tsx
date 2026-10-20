@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { listedStrength } from "@/lib/engine/echelon"
 import { projectIncome } from "@/lib/engine/economy"
-import { gradeLabel, standing } from "@/lib/engine/victory"
+import { standing } from "@/lib/engine/victory"
+import { statusLabel } from "@/lib/finale"
 import { scenarioSpec } from "@/lib/data/objectives"
 import { FACTION_LABEL } from "@/lib/format"
 import type { GameState } from "@/lib/types"
@@ -28,7 +29,7 @@ export function Hud({ state, overlay, onOverlay, armReset, onReset }: HudProps) 
   const board = standing(state)
   const income = projectIncome(state, "central")
   const purse = state.treasury.central
-  const shown = state.result?.grade ?? board.grade
+  const shown = statusLabel(Boolean(state.result), state.result?.grade ?? board.grade)
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-3 py-2.5 sm:px-4">
@@ -87,13 +88,13 @@ export function Hud({ state, overlay, onOverlay, armReset, onReset }: HudProps) 
         <span>
           ★ {board.captured}/{board.available}
         </span>
-        <span data-testid="grade">{gradeLabel(shown)}</span>
-        {board.next && (
+        <span data-testid="grade">{shown}</span>
+        {!state.result && board.next ? (
           <span>
             {board.next.name} by {board.next.date}
             {board.next.overdue ? " · overdue" : ""}
           </span>
-        )}
+        ) : null}
       </div>
     </header>
   )

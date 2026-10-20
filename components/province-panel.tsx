@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { objectiveValue } from "@/lib/data/objectives"
+import { ordersLocked } from "@/lib/finale"
 import { RECRUIT, recruitmentYard } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, type EngagementPreview } from "@/lib/engine/turn"
 import type { QueuedOrder } from "@/lib/orders"
@@ -44,6 +45,7 @@ export function ProvincePanel({
 
   const occupied = province.controller !== province.owner
   const friendly = province.controller === "central"
+  const closed = ordersLocked(Boolean(state.result))
 
   return (
     <ScrollArea className="h-full">
@@ -73,7 +75,7 @@ export function ProvincePanel({
             ? " · formations here cannot advance"
             : ""}
         </p>
-        {friendly && (
+        {friendly && !closed ? (
           <Button
             type="button"
             variant="secondary"
@@ -81,8 +83,8 @@ export function ProvincePanel({
           >
             Fortify {province.name}
           </Button>
-        )}
-        {friendly && recruitmentYard(province, "central") && (
+        ) : null}
+        {friendly && !closed && recruitmentYard(province, "central") ? (
           <div data-testid="recruit-panel" className="flex flex-col gap-2">
             <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Raise troops</h3>
             <p className="text-sm text-muted-foreground">
@@ -117,7 +119,7 @@ export function ProvincePanel({
                 </div>
               ))}
           </div>
-        )}
+        ) : null}
         <Separator />
         <div>
           <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Formations</h3>
@@ -149,7 +151,7 @@ export function ProvincePanel({
               const neighbor = state.provinces.find((item) => item.id === id)
               if (!neighbor) return null
               const attack =
-                friendly && neighbor.controller !== "central"
+                !closed && friendly && neighbor.controller !== "central"
                   ? previewNeighbor(state, province, neighbor.id, queue)
                   : null
               return (
@@ -157,7 +159,7 @@ export function ProvincePanel({
                   <button
                     type="button"
                     onClick={() => {
-                      if (friendly) onOrder(province.id, neighbor.id)
+                      if (!closed && friendly) onOrder(province.id, neighbor.id)
                       else onSelect(neighbor.id)
                     }}
                     className="flex w-full items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-left text-sm hover:bg-muted"
@@ -173,11 +175,11 @@ export function ProvincePanel({
                       </span>
                     </span>
                     <span className="text-xs text-primary">
-                      {friendly
-                        ? neighbor.controller === "central"
+                      {closed || !friendly
+                        ? "Open"
+                        : neighbor.controller === "central"
                           ? "Move"
-                          : "Attack"
-                        : "Open"}
+                          : "Attack"}
                     </span>
                   </button>
                 </li>
