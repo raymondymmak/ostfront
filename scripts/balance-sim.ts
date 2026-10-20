@@ -3,7 +3,7 @@ import { projectIncome, spendable, RECRUIT } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds } from "@/lib/engine/turn"
 import { playTurn } from "@/lib/gm"
 import { scenarioSpec } from "@/lib/data/objectives"
-import type { Difficulty, GameState, PlayerOrder, ScenarioId, UnitKind } from "@/lib/types"
+import type { Difficulty, GameState, PlayerOrder, UnitKind } from "@/lib/types"
 
 delete process.env.LLM_API_KEY
 
@@ -45,13 +45,15 @@ export function greedy(state: GameState): PlayerOrder[] {
   return orders
 }
 
+const AXIS = ["lwow", "lublin", "wolyn"]
+
 /**
  * Simple attacker: each stack fights the best defended neighbor at 1.15 or
  * better. An objective within a small odds gap wins the tie. Depots are not
  * emptied, and empty marsh is not preferred to a battle.
  */
-export function frontier(scenario: ScenarioId): (state: GameState) => PlayerOrder[] {
-  const axis = new Set(AXIS[scenario])
+export function frontier(): (state: GameState) => PlayerOrder[] {
+  const axis = new Set(AXIS)
   return (state) => {
     const orders: PlayerOrder[] = []
     const used = new Set<string>()
@@ -73,7 +75,7 @@ export function frontier(scenario: ScenarioId): (state: GameState) => PlayerOrde
       choices.sort((a, b) => b.ratio - a.ratio)
       const along = choices
         .filter((choice) => axis.has(choice.to) && choice.ratio >= 1.35)
-        .sort((a, b) => AXIS[scenario].indexOf(a.to) - AXIS[scenario].indexOf(b.to))
+        .sort((a, b) => AXIS.indexOf(a.to) - AXIS.indexOf(b.to))
       const pick = along[0] ?? choices[0]
       options.push({ from: source.id, to: pick.to, ids, ratio: pick.ratio })
     }
@@ -90,14 +92,9 @@ export function frontier(scenario: ScenarioId): (state: GameState) => PlayerOrde
   }
 }
 
-const AXIS: Record<ScenarioId, string[]> = {
-  gorlice: ["kielce", "lublin", "wolyn"],
-  "campaign-1915": ["kielce", "lodz", "lublin", "warszawa", "bialystok"],
-}
-
 /** Stack on the historical axis, leave depots held, then attack. */
-export function sensible(scenario: ScenarioId): (state: GameState) => PlayerOrder[] {
-  const axis = AXIS[scenario]
+export function sensible(): (state: GameState) => PlayerOrder[] {
+  const axis = AXIS
   return (state) => {
     const orders: PlayerOrder[] = []
     const used = new Set<string>()
@@ -123,7 +120,7 @@ export function sensible(scenario: ScenarioId): (state: GameState) => PlayerOrde
     const attacks: { from: string; to: string; ids: string[]; priority: number; ratio: number }[] = []
     for (const source of state.provinces) {
       if (source.controller !== "central" || source.supply < 30) continue
-      const depotKeep = source.id === "krakow" ? 1 : 2
+      const depotKeep = source.id === "krakow" || source.id === "lwow" ? 1 : 2
       let ids = spareIds(state, source.id, used, depotKeep)
       if (!ids.length) continue
       if (axis.includes(source.id) && source.depot !== "central" && ids.length > 1) {
@@ -236,13 +233,12 @@ function stepToward(state: GameState, fromId: string, goalId: string): string | 
 }
 
 async function play(
-  scenario: ScenarioId,
   difficulty: Difficulty,
   strategy: (state: GameState) => PlayerOrder[],
   seed: number,
   trace = false,
 ) {
-  let state = createScenario(scenario, difficulty)
+  let state = createScenario("gorlice", difficulty)
   state.seed = seed
   while (!state.result) {
     const orders = strategy(state)
@@ -257,59 +253,47 @@ async function play(
     }
     state = played.state
   }
-  const warsaw = state.capturedOn.warszawa
-  const held = scenarioSpec(scenario)
+  const held = scenarioSpec("gorlice")
     .objectives.filter((item) => item.side === "eastern" && province(state, item.id).controller === "central")
     .map((item) => item.id)
-  const homes = scenarioSpec(scenario)
+  const homes = scenarioSpec("gorlice")
     .objectives.filter((item) => item.side === "home" && province(state, item.id).controller === "russia")
     .map((item) => item.id)
   return {
     grade: state.result?.grade ?? "open",
     vp: state.result?.captured ?? 0,
     turn: state.turn,
-    warsaw,
     held,
     homes,
   }
 }
 
 async function main() {
-  for (const scenario of ["gorlice", "campaign-1915"] as const) {
-    const state = createScenario(scenario, "normal")
-    console.log(
-      scenario,
-      "income",
-      JSON.stringify(projectIncome(state, "central")),
-      JSON.stringify(projectIncome(state, "russia")),
-    )
-  }
-  const strategies: { name: string; fn: (scenario: ScenarioId) => (state: GameState) => PlayerOrder[] }[] = [
+  const state = createScenario("gorlice", "normal")
+  console.log(
+    "gorlice",
+    "income",
+    JSON.stringify(projectIncome(state, "central")),
+    JSON.stringify(projectIncome(state, "russia")),
+  )
+  const strategies: { name: string; fn: () => (state: GameState) => PlayerOrder[] }[] = [
     { name: "greedy", fn: () => greedy },
-    { name: "frontier", fn: (scenario) => frontier(scenario) },
-    { name: "sensible", fn: (scenario) => sensible(scenario) },
+    { name: "frontier", fn: () => frontier() },
+    { name: "sensible", fn: () => sensible() },
   ]
-  for (const scenario of ["gorlice", "campaign-1915"] as const) {
-    for (const strategy of strategies) {
-      console.log(`\n## ${scenario} ${strategy.name}`)
-      for (const difficulty of DIFFICULTIES) {
-        const rows = []
-        for (const seed of SEEDS) rows.push(await play(scenario, difficulty, strategy.fn(scenario), seed))
-        const grades = rows.map((row) => row.grade)
-        const wins = grades.filter((grade) => WINS.has(grade)).length
-        const warsaw = rows.map((row) => (row.warsaw === undefined ? "-" : String(row.warsaw))).join(",")
-        const vp = rows.map((row) => row.vp).join(",")
-        const homes = rows.map((row) => (row.homes.length ? row.homes.join("+") : "-")).join(",")
-        const warsawHeld = rows.filter((row) => row.held.includes("warszawa")).length
-        console.log(
-          `${difficulty.padEnd(7)} ${wins}/6  ${grades.join(" ")}  vp ${vp}  warsawTurn ${warsaw}  warsawHeld ${warsawHeld}/6  lost ${homes}`,
-        )
-        if (difficulty === "normal" && strategy.name === "sensible") {
-          console.log(
-            "  sample",
-            JSON.stringify({ held: rows[0].held, homes: rows[0].homes, warsaw: rows[0].warsaw, turn: rows[0].turn }),
-          )
-        }
+  for (const strategy of strategies) {
+    console.log(`\n## gorlice ${strategy.name}`)
+    for (const difficulty of DIFFICULTIES) {
+      const rows = []
+      for (const seed of SEEDS) rows.push(await play(difficulty, strategy.fn(), seed))
+      const grades = rows.map((row) => row.grade)
+      const wins = grades.filter((grade) => WINS.has(grade)).length
+      const vp = rows.map((row) => row.vp).join(",")
+      const held = rows.map((row) => (row.held.length ? row.held.join("+") : "-")).join(" | ")
+      const homes = rows.map((row) => (row.homes.length ? row.homes.join("+") : "-")).join(",")
+      console.log(`${difficulty.padEnd(7)} ${wins}/6  ${grades.join(" ")}  vp ${vp}  held ${held}  lost ${homes}`)
+      if (difficulty === "normal" && strategy.name === "sensible") {
+        console.log("  sample", JSON.stringify({ held: rows[0].held, homes: rows[0].homes, turn: rows[0].turn }))
       }
     }
   }

@@ -37,7 +37,7 @@ export function ProvincePanel({
   if (!province) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        Select a province. Lemberg is the Austrian depot. The Russian line is Lublin and Volhynia.
+        Select a province. Lemberg is Austrian soil, held by the Russian 3rd Army. Rovno is the Russian depot.
       </div>
     )
   }
@@ -195,7 +195,7 @@ export function ProvincePanel({
               Two or more neighbors attacking the same province in one fortnight fight as one battle, with a flanking bonus. If no friendly exit remains, the defender is surrounded.
             </li>
             <li>The game master may ask for unrest or supply shifts of at most 20.</li>
-            <li>Depots feed only their own side: Königsberg and Kraków; Warsaw and Volhynia (Rovno).</li>
+            <li>Depots feed only their own side, and only while that side holds them: Königsberg, Kraków and Lemberg; Warsaw and Volhynia (Rovno).</li>
           </ul>
         </details>
       </div>

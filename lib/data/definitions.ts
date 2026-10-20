@@ -19,11 +19,15 @@ export type ProvinceDef = {
 }
 
 /**
- * June 1915 Eastern Front, one Hearts of Iron IV state per province.
+ * Eastern Front provinces, one Hearts of Iron IV state each.
  * `lon`/`lat` are the label point in the flat pixel projection, not geographic degrees.
- * `owner` is the 1914 sovereign that holds most of the state. `controller` is the June front.
- * Katowice, Lemberg, Stanislav and Bukovina are forced in OWNER_OVERRIDES
- * (scripts/build-hoi4-theater.py): German or Austrian in 1914, Central Powers in June.
+ * `owner` is the 1914 sovereign that holds most of the state. `controller` is who holds
+ * it when Gorlice–Tarnów opens on 2 May 1915. Lemberg is Austrian soil under Russian
+ * occupation (held since 3 September 1914). Its depot stays Austrian and does not feed
+ * Russia. Katowice stays German. Stanislav and Bukovina stay Austro-Hungarian and
+ * Central Powers-held: Bukovina was Austrian again from 17 February, Stanislav was
+ * historically still Russian (4 March–8 June) and is left that way on purpose.
+ * The 1914 owners are forced in OWNER_OVERRIDES (scripts/build-hoi4-theater.py).
  */
 export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "konigsberg", name: "Königsberg", mp: 2, ip: 2, lon: 0.073, lat: 0.638, terrain: "urban", owner: "central", controller: "central", fort: 2, depot: "central", aliases: ["koenigsberg", "tilsit", "insterburg"] },
@@ -44,7 +48,7 @@ export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "katowice", name: "Katowice", mp: 1, ip: 3, lon: -0.375, lat: -0.48, terrain: "plains", owner: "central", controller: "central", fort: 0 },
   { id: "lublin", name: "Lublin", mp: 2, ip: 1, lon: 0.344, lat: -0.282, terrain: "plains", owner: "russia", controller: "russia", fort: 2, aliases: ["chelm", "chełm", "brest", "brest litovsk"] },
   { id: "bialystok", name: "Białystok", mp: 1, ip: 0, lon: 0.35, lat: 0.237, terrain: "forest", owner: "russia", controller: "russia", fort: 1, aliases: ["bialystok", "grodno"] },
-  { id: "lwow", name: "Lemberg", mp: 2, ip: 2, lon: 0.809, lat: -0.728, terrain: "urban", owner: "central", controller: "central", fort: 1, depot: "central", aliases: ["lviv", "lwow", "lwów", "lemberg", "tarnopol"] },
+  { id: "lwow", name: "Lemberg", mp: 2, ip: 2, lon: 0.809, lat: -0.728, terrain: "urban", owner: "central", controller: "russia", fort: 1, depot: "central", unrest: 16, aliases: ["lviv", "lwow", "lwów", "lemberg", "tarnopol"] },
   { id: "stanislawow", name: "Stanislav", mp: 1, ip: 0, lon: 0.714, lat: -0.955, terrain: "mountain", owner: "central", controller: "central", fort: 0, aliases: ["stanislawow", "stanisławów", "stanislau", "stanislav"] },
   { id: "wolyn", name: "Volhynia", mp: 2, ip: 1, lon: 0.896, lat: -0.441, terrain: "plains", owner: "russia", controller: "russia", fort: 0, depot: "russia", aliases: ["wolyn", "volhynia", "rovno", "rivne", "lutsk", "kovel"] },
   { id: "polesie", name: "Polesie", mp: 1, ip: 0, lon: 0.869, lat: -0.061, terrain: "marsh", owner: "russia", controller: "russia", fort: 0, aliases: ["pinsk"] },

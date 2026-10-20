@@ -78,7 +78,7 @@ export function OrderPanel({
           data-testid="directive"
           value={directive}
           onChange={(event) => onDirective(event.target.value)}
-          placeholder="Attack Lublin. Fortify Lemberg."
+          placeholder="Attack Lemberg. Fortify Kraków."
           rows={3}
           className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />

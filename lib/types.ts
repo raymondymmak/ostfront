@@ -25,7 +25,7 @@ export type Unit = {
   maxStrength?: number
 }
 
-export type ScenarioId = "campaign-1915" | "gorlice"
+export type ScenarioId = "gorlice"
 
 export type Difficulty = "easy" | "normal" | "hard"
 

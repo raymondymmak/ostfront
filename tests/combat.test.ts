@@ -37,7 +37,7 @@ function state(provinces: Province[]): GameState {
     ...blankCampaign(),
     version: 1,
     turn: 0,
-    date: "4 June 1915",
+    date: "2 May 1915",
     seed: 1,
     provinces,
   }

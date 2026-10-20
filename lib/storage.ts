@@ -5,7 +5,7 @@ import type { Difficulty, GameState, Province, SaveGame, ScenarioId } from "@/li
 
 const KEY = "ostfront-1915-v1"
 
-export function freshGame(scenario: ScenarioId = "campaign-1915", difficulty: Difficulty = "normal"): SaveGame {
+export function freshGame(scenario: ScenarioId = "gorlice", difficulty: Difficulty = "normal"): SaveGame {
   return { version: 2, state: createScenario(scenario, difficulty), log: [] }
 }
 
@@ -70,6 +70,8 @@ export function loadGame(): SaveGame | null {
     const parsed = JSON.parse(raw) as { version?: number; state?: GameState; log?: SaveGame["log"] }
     if ((parsed?.version !== 1 && parsed?.version !== 2) || !parsed.state?.provinces) return null
     const state = parsed.state
+    // The June campaign is gone. Only a Gorlice save still matches this ruleset.
+    if (state.scenario !== "gorlice") return null
     const save = state.provinces.length !== PROVINCE_COUNT ? migrateSave({ state, log: parsed.log }) : {
       version: 2 as const,
       log: parsed.log ?? [],

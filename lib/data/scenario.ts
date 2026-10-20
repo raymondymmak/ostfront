@@ -4,7 +4,8 @@ import { computeSupply } from "@/lib/engine/supply"
 import { scenarioDate } from "@/lib/format"
 import type { Difficulty, Echelon, Faction, GameState, ScenarioId, Unit, UnitKind } from "@/lib/types"
 
-const START_SEED = 19150604
+/** Opening day of Gorlice–Tarnów, 2 May 1915. Combat dice derive from this seed. */
+const START_SEED = 19150502
 
 type Placement = {
   id: string
@@ -18,64 +19,58 @@ type Placement = {
   parentId?: string
 }
 
+/**
+ * 2 May 1915, at the scale of these provinces.
+ *
+ * Kraków is the Dunajec concentration: Gorlice, Tarnów, Rzeszów and, inside the
+ * same state, Przemyśl. The fortress was Russian until 3 June, but the polygon
+ * cannot be split, so Kraków stays the Central Powers base. Mackensen's 11th
+ * Army (the army counter stands for X Corps, XLI Reserve Corps, the Combined
+ * Corps and Arz's Austro-Hungarian VI Corps) is there with the Guard and the
+ * heavy guns. Archduke Joseph Ferdinand's 4th Army is the northern wing.
+ *
+ * Lemberg is Russian, as it had been since 3 September 1914. The 3rd Army
+ * stands in the city because the map has no province between the Dunajec and
+ * Lemberg. The old Lemberg garrison is Borojević's 3rd Army, in the Carpathians.
+ * Katowice stays German. Stanislav and Bukovina stay Austro-Hungarian.
+ */
 const PLACEMENTS: Placement[] = [
-  { id: "cp-kon-inf", name: "I Reserve Corps", faction: "central", kind: "infantry", strength: 52, morale: 78, province: "konigsberg" },
-  { id: "cp-kon-art", name: "Königsberg Foot Artillery", faction: "central", kind: "artillery", strength: 30, morale: 74, province: "konigsberg" },
-  { id: "cp-all-inf", name: "XX Corps", faction: "central", kind: "infantry", strength: 44, morale: 72, province: "ermland_masuren" },
-  { id: "cp-ins-cav", name: "1st Cavalry Division", faction: "central", kind: "cavalry", strength: 24, morale: 80, province: "ermland_masuren" },
-  { id: "cp-til-inf", name: "Tilsit Landwehr", faction: "central", kind: "infantry", strength: 20, morale: 62, province: "ermland_masuren" },
-  { id: "cp-dan-inf", name: "Danzig Garrison", faction: "central", kind: "infantry", strength: 40, morale: 64, province: "danzig" },
-  { id: "cp-hin-inf", name: "Pomeranian Landwehr", faction: "central", kind: "infantry", strength: 36, morale: 60, province: "hinterpommern" },
-  { id: "cp-gra-inf", name: "Graudenz Brigade", faction: "central", kind: "infantry", strength: 34, morale: 64, province: "gdynia" },
-  { id: "cp-tho-inf", name: "Thorn Fortress Brigade", faction: "central", kind: "infantry", strength: 36, morale: 68, province: "gdynia" },
-  { id: "cp-tho-art", name: "Thorn Heavy Batteries", faction: "central", kind: "artillery", strength: 18, morale: 70, province: "gdynia" },
-  { id: "cp-pos-inf", name: "V Corps", faction: "central", kind: "infantry", strength: 54, morale: 70, province: "poznan" },
-  { id: "cp-bro-cav", name: "Posen Cavalry", faction: "central", kind: "cavalry", strength: 28, morale: 62, province: "poznan" },
-  { id: "cp-obs-inf", name: "Upper Silesia Landwehr", faction: "central", kind: "infantry", strength: 96, morale: 66, province: "oberschlesien" },
-  { id: "cp-kat-inf", name: "Silesian Corps", faction: "central", kind: "infantry", strength: 62, morale: 74, province: "katowice" },
-  { id: "cp-kat-art", name: "Katowice Batteries", faction: "central", kind: "artillery", strength: 28, morale: 72, province: "katowice" },
-  { id: "cp-kra-inf", name: "Kraków Garrison", faction: "central", kind: "infantry", strength: 36, morale: 68, province: "krakow" },
-  { id: "cp-rze-inf", name: "Beskiden Corps", faction: "central", kind: "infantry", strength: 36, morale: 74, province: "krakow" },
-  { id: "cp-prz-inf", name: "Przemyśl Assault Group", faction: "central", kind: "infantry", strength: 26, morale: 72, province: "krakow" },
-  { id: "cp-tar-inf", name: "Guard Corps", faction: "central", kind: "infantry", strength: 36, morale: 86, province: "lwow" },
-  { id: "cp-tar-res", name: "XLI Reserve Corps", faction: "central", kind: "infantry", strength: 28, morale: 76, province: "lwow" },
-  { id: "cp-tar-art", name: "Mackensen's Heavy Artillery", faction: "central", kind: "artillery", strength: 26, morale: 82, province: "lwow" },
-  { id: "cp-rze-cav", name: "Austrian Cavalry Corps", faction: "central", kind: "cavalry", strength: 60, morale: 76, province: "stanislawow" },
-  { id: "cp-buc-inf", name: "Bukovina Brigade", faction: "central", kind: "infantry", strength: 48, morale: 68, province: "bucovina" },
-  { id: "ru-war-inf", name: "Grenadier Corps", faction: "russia", kind: "infantry", strength: 28, morale: 74, province: "warszawa" },
-  { id: "ru-war-gar", name: "Warsaw Garrison", faction: "russia", kind: "infantry", strength: 18, morale: 64, province: "warszawa" },
-  { id: "ru-war-art", name: "Warsaw Fortress Artillery", faction: "russia", kind: "artillery", strength: 19, morale: 74, province: "warszawa" },
-  { id: "ru-lod-inf", name: "II Corps", faction: "russia", kind: "infantry", strength: 44, morale: 68, province: "lodz" },
-  { id: "ru-sie-inf", name: "IV Corps", faction: "russia", kind: "infantry", strength: 26, morale: 66, province: "lodz" },
-  { id: "ru-mla-inf", name: "1st Army", faction: "russia", kind: "infantry", strength: 46, morale: 68, province: "plock" },
-  { id: "ru-mla-cav", name: "Narew Cossacks", faction: "russia", kind: "cavalry", strength: 26, morale: 74, province: "plock" },
-  { id: "ru-plo-inf", name: "Novogeorgievsk Screen", faction: "russia", kind: "infantry", strength: 18, morale: 64, province: "plock" },
-  { id: "ru-kie-inf", name: "Kielce Screen", faction: "russia", kind: "infantry", strength: 40, morale: 58, province: "kielce" },
-  { id: "ru-rad-inf", name: "Radom Detachment", faction: "russia", kind: "infantry", strength: 36, morale: 58, province: "kielce" },
-  { id: "ru-lub-inf", name: "3rd Army", faction: "russia", kind: "infantry", strength: 36, morale: 66, province: "lublin" },
-  { id: "ru-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 24, morale: 66, province: "lublin" },
-  { id: "ru-bre-inf", name: "Brest-Litovsk Garrison", faction: "russia", kind: "infantry", strength: 22, morale: 70, province: "lublin" },
-  { id: "ru-che-inf", name: "Chełm Detachment", faction: "russia", kind: "infantry", strength: 17, morale: 62, province: "lublin" },
-  { id: "ru-bia-inf", name: "Narew Group", faction: "russia", kind: "infantry", strength: 42, morale: 66, province: "bialystok" },
-  { id: "ru-gro-inf", name: "Grodno Fortress Troops", faction: "russia", kind: "infantry", strength: 33, morale: 66, province: "bialystok" },
-  { id: "ru-suw-inf", name: "Suwałki Brigade", faction: "russia", kind: "infantry", strength: 48, morale: 62, province: "suduva" },
-  { id: "ru-kov-inf", name: "Kovno Garrison", faction: "russia", kind: "infantry", strength: 49, morale: 64, province: "suduva" },
-  { id: "ru-tar-inf", name: "XI Corps", faction: "russia", kind: "infantry", strength: 38, morale: 68, province: "wolyn" },
-  { id: "ru-lut-cav", name: "South-West Cavalry", faction: "russia", kind: "cavalry", strength: 24, morale: 72, province: "wolyn" },
-  { id: "ru-rov-inf", name: "Rovno Railhead Guard", faction: "russia", kind: "infantry", strength: 20, morale: 64, province: "wolyn" },
-  { id: "ru-lem-art", name: "South-West Batteries", faction: "russia", kind: "artillery", strength: 18, morale: 70, province: "wolyn" },
-  { id: "ru-lem-inf", name: "8th Army", faction: "russia", kind: "infantry", strength: 48, morale: 70, province: "proskuriv" },
-  { id: "ru-sta-inf", name: "Dniester Group", faction: "russia", kind: "infantry", strength: 36, morale: 60, province: "proskuriv" },
-  { id: "ru-vil-cav", name: "1st Cavalry Corps", faction: "russia", kind: "cavalry", strength: 35, morale: 76, province: "wilno" },
-  { id: "ru-pin-inf", name: "Pinsk Guard", faction: "russia", kind: "infantry", strength: 18, morale: 56, province: "polesie" },
-  { id: "ru-kvl-inf", name: "Polesie Brigade", faction: "russia", kind: "infantry", strength: 22, morale: 58, province: "polesie" },
-  { id: "ru-min-inf", name: "Minsk Reserve", faction: "russia", kind: "infantry", strength: 30, morale: 62, province: "minsk" },
+  { id: "g-kra-11", name: "German 11th Army (Mackensen)", faction: "central", kind: "infantry", strength: 64, morale: 80, province: "krakow", echelon: "army" },
+  { id: "g-kra-x", name: "Austro-Hungarian 4th Army (Joseph Ferdinand)", faction: "central", kind: "infantry", strength: 58, morale: 78, province: "krakow" },
+  { id: "g-kra-grd", name: "Guard Corps (von Plettenberg)", faction: "central", kind: "infantry", strength: 44, morale: 84, province: "krakow" },
+  { id: "g-kra-art", name: "Mackensen's Heavy Artillery", faction: "central", kind: "artillery", strength: 34, morale: 82, province: "krakow" },
+  { id: "g-lwow-inf", name: "Austro-Hungarian 3rd Army (Borojević)", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "podkarpatska_rus" },
+  { id: "g-lwow-art", name: "Carpathian Artillery", faction: "central", kind: "artillery", strength: 18, morale: 72, province: "podkarpatska_rus" },
+  { id: "g-kon-inf", name: "8th Army (von Below)", faction: "central", kind: "infantry", strength: 40, morale: 72, province: "konigsberg" },
+  { id: "g-erm-inf", name: "XX Corps", faction: "central", kind: "infantry", strength: 28, morale: 70, province: "ermland_masuren" },
+  { id: "g-pos-inf", name: "9th Army (Prince Leopold)", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "poznan" },
+  { id: "g-obs-inf", name: "Landwehr Corps Woyrsch", faction: "central", kind: "infantry", strength: 32, morale: 66, province: "oberschlesien" },
+  { id: "g-kat-inf", name: "Silesian Landwehr", faction: "central", kind: "infantry", strength: 30, morale: 72, province: "katowice" },
+  { id: "g-dan-inf", name: "Danzig Garrison", faction: "central", kind: "infantry", strength: 22, morale: 64, province: "danzig" },
+  { id: "g-gdy-inf", name: "Thorn Fortress Brigade", faction: "central", kind: "infantry", strength: 26, morale: 66, province: "gdynia" },
+  { id: "g-sta-cav", name: "Cavalry Corps Hauer", faction: "central", kind: "cavalry", strength: 24, morale: 74, province: "stanislawow" },
+  { id: "g-buc-inf", name: "Group Pflanzer-Baltin", faction: "central", kind: "infantry", strength: 20, morale: 66, province: "bucovina" },
+  { id: "g-kie-inf", name: "X Corps", faction: "russia", kind: "infantry", strength: 36, morale: 64, province: "kielce" },
+  { id: "g-lub-inf", name: "3rd Army (Radko Dimitriev)", faction: "russia", kind: "infantry", strength: 62, morale: 64, province: "lwow" },
+  { id: "g-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 20, morale: 60, province: "lwow" },
+  { id: "g-pol-inf", name: "XXI Corps", faction: "russia", kind: "infantry", strength: 44, morale: 62, province: "lwow" },
+  { id: "g-min-inf", name: "XXIV Corps", faction: "russia", kind: "infantry", strength: 58, morale: 66, province: "lublin" },
+  { id: "g-wol-inf", name: "III Caucasian Corps", faction: "russia", kind: "infantry", strength: 96, morale: 70, province: "wolyn" },
+  { id: "g-war-inf", name: "Grenadier Corps", faction: "russia", kind: "infantry", strength: 36, morale: 70, province: "warszawa" },
+  { id: "g-war-art", name: "Warsaw Fortress Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 72, province: "warszawa" },
+  { id: "g-lod-inf", name: "2nd Army", faction: "russia", kind: "infantry", strength: 34, morale: 68, province: "lodz" },
+  { id: "g-plo-inf", name: "1st Army", faction: "russia", kind: "infantry", strength: 30, morale: 66, province: "plock" },
+  { id: "g-bia-inf", name: "10th Army", faction: "russia", kind: "infantry", strength: 28, morale: 64, province: "bialystok" },
+  { id: "g-sud-inf", name: "Kovno Garrison", faction: "russia", kind: "infantry", strength: 26, morale: 64, province: "suduva" },
+  { id: "g-wil-cav", name: "1st Cavalry Corps", faction: "russia", kind: "cavalry", strength: 20, morale: 74, province: "wilno" },
+  { id: "g-pro-inf", name: "8th Army (Brusilov)", faction: "russia", kind: "infantry", strength: 56, morale: 70, province: "proskuriv" },
 ]
 
 export const BRIEFING = [
-  "4 June 1915. Galicia is already Central Powers ground. Przemyśl sits in the Kraków state, and Lemberg is the Austrian forward depot, with Stanislav and Bukovina held behind it.",
-  "The Russian line is Lublin, Volhynia and Podolia. Warsaw is Stavka's depot. Your depots are Königsberg, Kraków and Lemberg. Rovno, in Volhynia, is the Russian forward railhead.",
-  "A depot feeds only its own side, and only while they hold it. Provinces in supply pay manpower and industry, less where unrest is high and half as much in occupied ground. Raise troops at a depot or a home city; they arrive when the fortnight closes. The campaign ends on 31 December 1915.",
+  "2 May 1915. Generaloberst August von Mackensen's German 11th Army and Archduke Joseph Ferdinand's Austro-Hungarian 4th Army are concentrated in the Kraków province, on the Dunajec. Gorlice and Tarnów are in that state. Przemyśl is too: the fortress was Russian from 22 March until 3 June, but the map cannot split it from Kraków, so the province stays your base. The Guard Corps is in the line, and the heavy artillery Falkenhayn assembled for the blow is with them. The 11th Army counter also stands for X Corps, XLI Reserve Corps, the Combined Corps and Arz's VI Corps.",
+  "Radko Dimitriev's Russian 3rd Army holds Lemberg, Russian since 3 September 1914. XXI Corps and the army's guns are in the city with him. X Corps holds Kielce. XXIV Corps stands at Lublin, and the III Caucasian Corps is in reserve at Rovno. Ivanov has refused a withdrawal to the San. The yards are short of shells. Brusilov's 8th Army is on Podolia.",
+  "Lemberg is Austrian soil. Its depot does not feed the Russians, and it is yours again when the city falls. Katowice is German. Bukovina is Austro-Hungarian, under Pflanzer-Baltin, as it had been since 17 February. Stanislav is left Austro-Hungarian on this map as well; historically the Russians still held it, until 8 June. Borojević's 3rd Army is in Carpathian Ruthenia, off the Dunajec. The 8th and 9th Armies with Woyrsch hold East Prussia and the Polish salient. They are not the offensive.",
+  "You have six fortnights, through 11 July. Take Lemberg by the fortnight of 13 June. The pursuit is Lublin, and Rovno by the fortnight of 27 June if the breakthrough stays on time. Rovno did not fall in 1915. Do not lose Kraków. Depots and cities raise troops; they arrive when the fortnight closes.",
 ].join(" ")
 
 /**
@@ -104,79 +99,30 @@ function toUnit(placement: Placement, difficulty: Difficulty): Unit {
   }
 }
 
-/**
- * 2 May 1915. Mackensen's 11th Army is massed in the Kraków state
- * (Gorlice, Tarnów, and the San gateway). Lemberg stays the Austrian depot.
- * The Russian 3rd Army is a thin cordon on Kielce and Lublin.
- */
-const GORLICE_PLACEMENTS: Placement[] = [
-  { id: "g-kra-11", name: "German 11th Army (Mackensen)", faction: "central", kind: "infantry", strength: 64, morale: 80, province: "krakow", echelon: "army" },
-  { id: "g-kra-x", name: "X Corps", faction: "central", kind: "infantry", strength: 58, morale: 78, province: "krakow" },
-  { id: "g-kra-grd", name: "Guard Corps", faction: "central", kind: "infantry", strength: 44, morale: 84, province: "krakow" },
-  { id: "g-kra-art", name: "Mackensen's Heavy Artillery", faction: "central", kind: "artillery", strength: 34, morale: 82, province: "krakow" },
-  { id: "g-lwow-inf", name: "Lemberg Garrison", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "lwow" },
-  { id: "g-lwow-art", name: "Lemberg Artillery", faction: "central", kind: "artillery", strength: 18, morale: 72, province: "lwow" },
-  { id: "g-kon-inf", name: "I Reserve Corps", faction: "central", kind: "infantry", strength: 40, morale: 72, province: "konigsberg" },
-  { id: "g-erm-inf", name: "XX Corps", faction: "central", kind: "infantry", strength: 28, morale: 70, province: "ermland_masuren" },
-  { id: "g-pos-inf", name: "V Corps", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "poznan" },
-  { id: "g-obs-inf", name: "Upper Silesia Landwehr", faction: "central", kind: "infantry", strength: 32, morale: 66, province: "oberschlesien" },
-  { id: "g-kat-inf", name: "Silesian Corps", faction: "central", kind: "infantry", strength: 30, morale: 72, province: "katowice" },
-  { id: "g-dan-inf", name: "Danzig Garrison", faction: "central", kind: "infantry", strength: 22, morale: 64, province: "danzig" },
-  { id: "g-gdy-inf", name: "Thorn Fortress Brigade", faction: "central", kind: "infantry", strength: 26, morale: 66, province: "gdynia" },
-  { id: "g-sta-cav", name: "Austrian Cavalry Corps", faction: "central", kind: "cavalry", strength: 24, morale: 74, province: "stanislawow" },
-  { id: "g-buc-inf", name: "Bukovina Brigade", faction: "central", kind: "infantry", strength: 20, morale: 66, province: "bucovina" },
-  { id: "g-kie-inf", name: "3rd Army Screen", faction: "russia", kind: "infantry", strength: 26, morale: 62, province: "kielce" },
-  { id: "g-lub-inf", name: "3rd Army", faction: "russia", kind: "infantry", strength: 44, morale: 66, province: "lublin" },
-  { id: "g-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 64, province: "lublin" },
-  { id: "g-wol-inf", name: "Rovno Reserve", faction: "russia", kind: "infantry", strength: 50, morale: 68, province: "wolyn" },
-  { id: "g-war-inf", name: "Warsaw Garrison", faction: "russia", kind: "infantry", strength: 36, morale: 70, province: "warszawa" },
-  { id: "g-war-art", name: "Warsaw Fortress Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 72, province: "warszawa" },
-  { id: "g-lod-inf", name: "II Corps", faction: "russia", kind: "infantry", strength: 34, morale: 68, province: "lodz" },
-  { id: "g-plo-inf", name: "1st Army", faction: "russia", kind: "infantry", strength: 30, morale: 66, province: "plock" },
-  { id: "g-bia-inf", name: "Narew Group", faction: "russia", kind: "infantry", strength: 28, morale: 64, province: "bialystok" },
-  { id: "g-sud-inf", name: "Kovno Garrison", faction: "russia", kind: "infantry", strength: 26, morale: 64, province: "suduva" },
-  { id: "g-wil-cav", name: "1st Cavalry Corps", faction: "russia", kind: "cavalry", strength: 20, morale: 74, province: "wilno" },
-  { id: "g-pro-inf", name: "8th Army", faction: "russia", kind: "infantry", strength: 40, morale: 70, province: "proskuriv" },
-  { id: "g-min-inf", name: "Minsk Reserve", faction: "russia", kind: "infantry", strength: 22, morale: 62, province: "minsk" },
-  { id: "g-pol-inf", name: "Polesie Brigade", faction: "russia", kind: "infantry", strength: 16, morale: 58, province: "polesie" },
-]
-
-export const GORLICE_BRIEFING = [
-  "2 May 1915. Mackensen's 11th Army is concentrated in the Kraków state, the ground of Gorlice and Tarnów, with the San gateway at Przemyśl behind the same border.",
-  "Lemberg is already the Austrian depot and stays so. The Russian 3rd Army is thin on Kielce and only a little stronger at Lublin. Rovno, in Volhynia, is the rail behind that line.",
-  "You have six fortnights. Take Kielce, Lublin and Volhynia, and do not lose Kraków or Lemberg. Depots and cities raise troops; they arrive when the fortnight closes.",
-].join(" ")
-
 export function createInitialState(difficulty: Difficulty = "normal"): GameState {
-  return assemble("campaign-1915", difficulty, PLACEMENTS, START_SEED)
+  return assemble(difficulty)
 }
 
-export function createScenario(id: ScenarioId, difficulty: Difficulty = "normal"): GameState {
-  if (id === "gorlice") return assemble("gorlice", difficulty, GORLICE_PLACEMENTS, 19150502)
-  return createInitialState(difficulty)
+export function createScenario(id: ScenarioId = "gorlice", difficulty: Difficulty = "normal"): GameState {
+  const state = createInitialState(difficulty)
+  state.scenario = id
+  return state
 }
 
-function assemble(
-  scenario: ScenarioId,
-  difficulty: Difficulty,
-  placements: Placement[],
-  seed: number,
-): GameState {
+function assemble(difficulty: Difficulty): GameState {
   const provinces = CATALOG.map((entry) => {
     const province = blankProvince(entry)
-    province.units = placements
-      .filter((unit) => unit.province === entry.id)
-      .map((unit) => toUnit(unit, difficulty))
+    province.units = PLACEMENTS.filter((unit) => unit.province === entry.id).map((unit) => toUnit(unit, difficulty))
     return province
   })
   const state: GameState = {
     version: 1,
     turn: 0,
-    date: scenarioDate(scenario, 0),
-    seed,
+    date: scenarioDate("gorlice", 0),
+    seed: START_SEED,
     provinces,
     ...blankCampaign(difficulty),
-    scenario,
+    scenario: "gorlice",
   }
   applySupply(state)
   return state
@@ -218,12 +164,11 @@ export function linksOf(
 }
 
 export function rebindState(state: GameState): GameState {
-  const scenario = state.scenario ?? "campaign-1915"
   const live = new Map(state.provinces.map((province) => [province.id, province]))
-  const rebound = createScenario(scenario, state.difficulty ?? "normal")
+  const rebound = createInitialState(state.difficulty ?? "normal")
   rebound.turn = state.turn
-  rebound.date = scenarioDate(scenario, state.turn)
-  rebound.seed = state.seed || (scenario === "gorlice" ? 19150502 : START_SEED)
+  rebound.date = scenarioDate("gorlice", state.turn)
+  rebound.seed = state.seed || START_SEED
   rebound.treasury = {
     central: { ...(state.treasury?.central ?? rebound.treasury.central) },
     russia: { ...(state.treasury?.russia ?? rebound.treasury.russia) },

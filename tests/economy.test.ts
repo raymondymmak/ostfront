@@ -54,12 +54,12 @@ describe("economy", () => {
 
   it("refits a formation that did not attack and bills manpower", () => {
     const state = createInitialState()
-    const unit = state.provinces.flatMap((province) => province.units).find((item) => item.id === "cp-kra-inf")!
+    const unit = state.provinces.flatMap((province) => province.units).find((item) => item.id === "g-kra-11")!
     unit.strength = 20
     unit.maxStrength = 36
     state.treasury.central.mp = 4
     const played = resolveTurn(state, { narration: "", proposals: [], events: [], diplomacy: [] })
-    const after = played.state.provinces.flatMap((province) => province.units).find((item) => item.id === "cp-kra-inf")!
+    const after = played.state.provinces.flatMap((province) => province.units).find((item) => item.id === "g-kra-11")!
     expect(after.strength).toBe(28)
     expect(played.state.treasury.central.mp).toBeLessThan(4 + projectIncome(state, "central").mp)
   })
@@ -85,12 +85,16 @@ describe("economy", () => {
     )).toHaveLength(2)
   })
 
-  it("keeps Lemberg with the Central Powers in both scenarios", () => {
-    for (const scenario of ["campaign-1915", "gorlice"] as const) {
-      const lemberg = createScenario(scenario).provinces.find((province) => province.id === "lwow")!
-      expect(lemberg.controller).toBe("central")
-      expect(lemberg.owner).toBe("central")
-      expect(lemberg.depot).toBe("central")
+  it("keeps Katowice, Stanislav and Bukovina with the Central Powers and Lemberg Austrian-owned", () => {
+    const state = createScenario("gorlice")
+    for (const id of ["katowice", "stanislawow", "bucovina"] as const) {
+      const province = state.provinces.find((item) => item.id === id)!
+      expect(province.controller).toBe("central")
+      expect(province.owner).toBe("central")
     }
+    const lemberg = state.provinces.find((province) => province.id === "lwow")!
+    expect(lemberg.owner).toBe("central")
+    expect(lemberg.controller).toBe("russia")
+    expect(lemberg.depot).toBe("central")
   })
 })

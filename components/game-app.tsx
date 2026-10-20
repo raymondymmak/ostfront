@@ -8,20 +8,19 @@ import { TimelinePanel } from "@/components/timeline-panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
-import { BRIEFING, GORLICE_BRIEFING } from "@/lib/data/scenario"
+import { BRIEFING } from "@/lib/data/scenario"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
 import { gradeLabel } from "@/lib/engine/victory"
 import { leaveDepotGarrison, type QueuedOrder } from "@/lib/orders"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
-import type { Difficulty, GameState, PlayerOrder, SaveGame, ScenarioId, TurnRecord, UnitKind } from "@/lib/types"
+import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
 import { WarMap, type MapProvince } from "@/components/war-map"
 
 export function GameApp() {
   const [game, setGame] = useState<SaveGame>(() => loadGame() ?? freshGame())
   const [setupOpen, setSetupOpen] = useState(() => loadGame() === null)
-  const [choice, setChoice] = useState<ScenarioId>("campaign-1915")
   const [difficulty, setDifficulty] = useState<Difficulty>("normal")
   const [selectedId, setSelectedId] = useState("krakow")
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
@@ -150,9 +149,9 @@ export function GameApp() {
     })
   }
 
-  function begin(scenario: ScenarioId, nextDifficulty: Difficulty) {
+  function begin(nextDifficulty: Difficulty) {
     clearGame()
-    setGame(freshGame(scenario, nextDifficulty))
+    setGame(freshGame("gorlice", nextDifficulty))
     setQueue([])
     setDirective("")
     setFlash([])
@@ -334,7 +333,7 @@ export function GameApp() {
               log={game.log}
               active={game.log.length ? activeLog : 0}
               onActive={setLogIndex}
-              briefing={game.state.scenario === "gorlice" ? GORLICE_BRIEFING : BRIEFING}
+              briefing={BRIEFING}
             />
           </TabsContent>
           </Tabs>
@@ -345,7 +344,7 @@ export function GameApp() {
               log={game.log}
               active={game.log.length ? activeLog : 0}
               onActive={setLogIndex}
-              briefing={game.state.scenario === "gorlice" ? GORLICE_BRIEFING : BRIEFING}
+              briefing={BRIEFING}
             />
           </div>
         </section>
@@ -365,7 +364,7 @@ export function GameApp() {
               Score {game.state.result.score} · ★ {game.state.result.captured}/{game.state.result.available} victory points
             </p>
             <Button type="button" className="mt-5" onClick={() => setSetupOpen(true)}>
-              Choose another scenario
+              Play again
             </Button>
           </div>
         </div>
@@ -374,35 +373,23 @@ export function GameApp() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4" data-testid="scenario-picker">
           <div className="flex w-full max-w-xl flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-lg">
             <div>
-              <p className="font-display text-3xl leading-none">Choose a scenario</p>
+              <p className="text-xs tracking-wide text-muted-foreground uppercase">Eastern Front, 1915</p>
+              <p className="mt-1 font-display text-3xl leading-none">Gorlice–Tarnów</p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Lemberg starts in Central Powers hands in both. Nothing happens while you are away. Every order resolves when the fortnight closes.
+                Nothing happens while you are away. Every order resolves when the fortnight closes.
               </p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {(
-                [
-                  ["campaign-1915", "1915 Campaign", "4 June – 31 December. Sixteen fortnights. Take Warsaw and the eastern cities. Hold Lemberg, Kraków and Königsberg."],
-                  ["gorlice", "Gorlice–Tarnów", "2 May – 11 July. Six fortnights. Mackensen's 11th Army breaks the thin Russian 3rd Army toward Kielce, Lublin and Rovno."],
-                ] as const
-              ).map(([id, title, copy]) => (
-                <button
-                  key={id}
-                  type="button"
-                  data-testid={`scenario-${id}`}
-                  onClick={() => setChoice(id)}
-                  className={`rounded-lg border p-3 text-left ${choice === id ? "border-primary bg-primary/10" : "border-border"}`}
-                >
-                  <span className="font-display text-xl leading-none">{title}</span>
-                  <span className="mt-2 block text-sm text-muted-foreground">{copy}</span>
-                </button>
-              ))}
+            <div className="rounded-lg border border-primary bg-primary/10 p-3" data-testid="scenario-gorlice">
+              <span className="font-display text-xl leading-none">2 May – 11 July</span>
+              <span className="mt-2 block text-sm text-muted-foreground">
+                Six fortnights. Mackensen&apos;s 11th Army and the Austro-Hungarian 4th Army break Radko Dimitriev&apos;s 3rd Army at Lemberg. The pursuit is Lublin and Rovno. Hold Kraków.
+              </span>
             </div>
             <div className="flex flex-wrap gap-2" data-testid="difficulty">
               {(
                 [
                   ["easy", "Easy", "Thinner Russian corps, Stavka stays cautious"],
-                  ["normal", "Normal", "The June 1915 line, and a real breakthrough"],
+                  ["normal", "Normal", "The 2 May line, and a real breakthrough"],
                   ["hard", "Hard", "Fuller Russian corps, and Stavka hits back"],
                 ] as const
               ).map(([id, title, copy]) => (
@@ -418,8 +405,8 @@ export function GameApp() {
                 </button>
               ))}
             </div>
-            <Button type="button" data-testid="begin-scenario" onClick={() => begin(choice, difficulty)}>
-              Begin
+            <Button type="button" data-testid="begin-scenario" onClick={() => begin(difficulty)}>
+              Begin the offensive
             </Button>
           </div>
         </div>

@@ -18,7 +18,7 @@ const fraunces = Fraunces({
 export const metadata: Metadata = {
   title: "Ostfront 1915",
   description:
-    "A map-first World War I operational game. The map is the rules; the game master only narrates.",
+    "Gorlice–Tarnów, 2 May 1915. A map-first World War I operational game. The map is the rules; the staff only narrates.",
 }
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

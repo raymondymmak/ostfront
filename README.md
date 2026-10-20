@@ -1,7 +1,7 @@
 
 # Ostfront 1915
 
-A map-first weekend prototype of the Eastern Front in June 1915. You command the Central Powers. Russia is played by a game master that narrates the fortnight and proposes structured changes. The map is the source of truth: a deterministic rules engine accepts or rejects every proposal, then resolves movement, combat, supply, and unrest.
+A map-first operational game of the Gorlice–Tarnów offensive, 2 May to 11 July 1915. You command the Central Powers. Russia is played by a staff that narrates the fortnight and proposes structured changes. The map is the source of truth: a deterministic rules engine accepts or rejects every proposal, then resolves movement, combat, supply, and unrest.
 
 ## Run
 
@@ -54,15 +54,17 @@ The model may narrate and propose Russian moves, attacks, fortifications, unrest
 
 The situation is saved in `localStorage` under `ostfront-1915-v1`. Restarting the campaign clears it. A save whose province ids no longer match the catalog is discarded; otherwise units and state are rebound to the current borders and rails.
 
-## Opening, 4 June 1915
+## Opening, 2 May 1915
 
-Each turn is a fortnight. The first date is 4 June 1915, two days after the recapture of Przemyśl.
+Each turn is a fortnight. The first date is 2 May 1915, the morning Mackensen's bombardment opened on the Dunajec. The offensive ends with the fortnight of 11 July, before Warsaw fell in August.
 
-Warsaw is Russian-held and is Russia's depot. Königsberg and Kraków are Central Powers depots, and Lemberg is the Austrian forward depot. Kraków still contains Tarnów, Rzeszów, and Przemyśl as one Hearts of Iron IV state. Rovno, inside Volhynia, is the Russian forward railhead. A depot feeds only its own faction, and only while that faction controls it. Taking Warsaw starves Russia. It does not feed the Central Powers.
+You are the Central Powers on the Dunajec. The German 11th Army (Mackensen) and the Austro-Hungarian 4th Army (Archduke Joseph Ferdinand) start in the Kraków province, which on this map also holds Gorlice, Tarnów, Rzeszów and Przemyśl. The Guard Corps and Mackensen's heavy artillery are separate counters. The 11th Army counter stands for the rest of that army: X Corps, XLI Reserve Corps, the Combined Corps and Arz's VI Corps. Radko Dimitriev's Russian 3rd Army holds Lemberg, with XXI Corps and the army artillery. X Corps is on Kielce. XXIV Corps is at Lublin. The III Caucasian Corps is the reserve at Rovno, in Volhynia. Brusilov's 8th Army is on Podolia.
 
-`owner` is the 1914 sovereign that holds most of the state, used for occupation unrest. `controller` is who holds the ground on 4 June 1915. Katowice is German. Lemberg, Stanislav, and Bukovina are Austrian and already cleared, so they start at home with no unrest. The Russian line in the south is Lublin, Volhynia, and Podolia. These four corrections live in `OWNER_OVERRIDES` in `scripts/build-hoi4-theater.py` and in `lib/data/definitions.ts`.
+Warsaw is Russian-held and is Russia's depot. Königsberg, Kraków and Lemberg are Central Powers depots. Lemberg starts under Russian occupation, so its depot does not feed Russia; recapture turns the railhead back on. Rovno, inside Volhynia, is the Russian forward railhead. A depot feeds only its own faction, and only while that faction controls it. The Carpathian flank rail runs Kraków–Stanislav–Bukovina, because the old hub at Lemberg is in Russian hands.
 
-Formations are spread along the front instead of stacked in one state. Kraków holds the garrison, the Beskiden corps, and the Przemyśl group. Mackensen's artillery and the Guard are in Lemberg. A typed order `Attack Lublin.` commits the best supplied neighbor. The second axis is Kielce–Warsaw; Radom sits in Kielce. East Prussia is Königsberg plus Ermland-Masuren. Pomorze is the 1914 West Prussia state (the map source labels it Gdynia).
+`owner` is the 1914 sovereign, used for occupation unrest. `controller` is who holds the province when the offensive opens. Lemberg's owner stays Austro-Hungarian and its controller is Russian, with unrest already raised. Katowice stays German. Bukovina stays Austro-Hungarian: Austrian troops had retaken it on 17 February 1915 and held it into 1916. Stanislav stays Austro-Hungarian on this map too, which is wrong for 2 May 1915 — the Russians held the city from 4 March until 8 June — and is left that way on purpose. Przemyśl was Russian from 22 March until 3 June, but it is an alias inside the Kraków state, and flipping Kraków would hand Russia the Dunajec army. The 1914 owners live in `OWNER_OVERRIDES` in `scripts/build-hoi4-theater.py`. Controllers live in `lib/data/definitions.ts`.
+
+Lemberg is an eastern objective, worth the campaign on its own, and must be held by the fortnight of 13 June to count toward a Brilliant (the city fell on 22 June). Lublin is the pursuit. Rovno counts toward a Brilliant only if already held by the fortnight of 27 June: the city did not fall in 1915, and taking it later is still a victory. Kielce is the Russian shoulder, not an objective. Kraków is the home city: still Russian at the last fortnight, the campaign is a defeat. A second home city is not drawn. Teschen, where the Austro-Hungarian high command sat, is reachable from Kielce through Katowice, and a raid there would throw away a Galician victory. A typed order `Attack Lemberg.` commits the best supplied neighbor. The northern armies are a holding front, not a second offensive: the German 8th Army in East Prussia, the 9th Army and Woyrsch's Landwehr opposite the Polish salient, Thorn and Danzig as fortresses. Opposite them are the Russian 1st, 2nd and 10th Armies, the Grenadier Corps at Warsaw and the Kovno garrison. Borojević's 3rd Army is in Carpathian Ruthenia. Cavalry Corps Hauer screens Stanislav. Group Pflanzer-Baltin holds Bukovina. East Prussia is Königsberg plus Ermland-Masuren. Pomorze is the 1914 West Prussia state (the map source labels it Gdynia).
 
 On Easy and Normal the first fortnight is the player's: Stavka digs and raises troops, and does not attack or redeploy. Hard Stavka is already in motion. After that they attack when local odds are good, keep a garrison on victory cities and depots, and once the front is broken they try to seal the breach instead of invading Galicia and Silesia at the same time. A second Russian province joins an attack only when no single province already has the odds. On Normal that pair has to be clearly over the line, and only to retake Russian soil. They do not abandon the last unit on an enemy border. On Hard a Russian depot keeps two formations behind.
 
@@ -78,7 +80,7 @@ On Easy and Normal the first fortnight is the player's: Stavka digs and raises t
 - Supply is a multi-source Dijkstra to your own controlled depots. Rail edges cost 1. A road costs the terrain of the province entered: urban 2, plains 3, forest 4, mountain 5, marsh 6. Supply is `100 − path cost × 11`, plus the modifier, clamped to 0–100. Unreachable provinces are at 0.
 - At the end of the turn, unrest rises by 5 where the controller is not the owner, and falls by 3 at home. Supply below 25 adds 4 unrest. Unrest of 85 or more costs 4 strength. Units under strength 5, or at morale 0, are removed.
 
-Combat dice use a seeded mulberry32 generator (`19150604 + turn × 9973`), so the same orders replay the same battles.
+Combat dice use a seeded mulberry32 generator (`19150502 + turn × 9973`), so the same orders replay the same battles.
 
 ## Architecture
 
@@ -99,10 +101,10 @@ The map is MapLibre, with a blank style and no remote tiles. Its worker is serve
 
 Map geometry: MapChart.net (CC BY-SA 4.0), based on Hearts of Iron IV by Paradox Interactive.
 
-1914 owners are assigned by area from the WorldOS 1914 map, which is an input to the build and is not committed. Regenerate with the sources available locally:
+1914 owners are sampled from a local political map (a GeoJSON with an `owner_1914` property). That file is an input to the build and is not committed. Regenerate with the sources available locally:
 
 ```bash
-HOI4_DIR=/path/to/mapchart-hoi4 WORLDOS_REGIONS=/path/to/ww1-1914-regions.geojson npm run build:theater
+HOI4_DIR=/path/to/mapchart-hoi4 OWNER_1914_GEOJSON=/path/to/1914-regions.geojson npm run build:theater
 ```
 
 The raw SVG and the full state geojson are not committed. The script snaps shared borders, dissolves non-playable states by 1914 owner, and writes only the theater file.
@@ -136,7 +138,7 @@ After deploy, open the production URL and play a fortnight with no env vars to c
 ## Add a province
 
 1. Add a `ProvinceDef` in `lib/data/definitions.ts`: `id`, `name`, `lon`, `lat`, `terrain`, `owner`, `controller`, `fort`, and optionally `depot`, `unrest`, and `aliases`.
-2. Regenerate `lib/data/theater-geometry.json` with `npm run build:theater` (needs `HOI4_DIR` and `WORLDOS_REGIONS`) and commit the result.
+2. Regenerate `lib/data/theater-geometry.json` with `npm run build:theater` (needs `HOI4_DIR` and `OWNER_1914_GEOJSON`) and commit the result.
 3. Add rail pairs in `lib/data/rails.ts`. A pair is kept only when the two provinces share a border. `npm run map` lists gaps.
-4. Place units in `PLACEMENTS` in `lib/data/scenario.ts`.
+4. Place units in `PLACEMENTS` in `lib/data/scenario.ts`. The only scenario is Gorlice–Tarnów.
 5. Run `npm test` and `npm run map`.

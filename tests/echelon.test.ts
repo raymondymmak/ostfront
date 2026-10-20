@@ -29,7 +29,7 @@ function state(): GameState {
     ...blankCampaign(),
     version: 1,
     turn: 0,
-    date: "4 June 1915",
+    date: "2 May 1915",
     seed: 1,
     provinces: [
       {
@@ -69,11 +69,14 @@ function state(): GameState {
 
 describe("echelon", () => {
   it("treats today's formations as armies and keeps the Mackensen name", () => {
-    const campaign = createScenario("campaign-1915")
-    expect(campaign.provinces.every((province) => province.units.every((item) => item.echelon === "army" && !item.parentId))).toBe(true)
     const gorlice = createScenario("gorlice")
+    expect(gorlice.provinces.every((province) => province.units.every((item) => item.echelon === "army" && !item.parentId))).toBe(true)
     const eleventh = gorlice.provinces.flatMap((province) => province.units).find((item) => item.id === "g-kra-11")
     expect(eleventh?.name).toBe("German 11th Army (Mackensen)")
+    const fourth = gorlice.provinces.flatMap((province) => province.units).find((item) => item.id === "g-kra-x")
+    expect(fourth?.name).toBe("Austro-Hungarian 4th Army (Joseph Ferdinand)")
+    const third = gorlice.provinces.flatMap((province) => province.units).find((item) => item.id === "g-lub-inf")
+    expect(third?.name).toBe("3rd Army (Radko Dimitriev)")
     expect(eleventh?.echelon).toBe("army")
     expect(echelonOf(unit({ id: "old" }))).toBe("army")
   })

@@ -1,6 +1,8 @@
 /**
  * Rail pairs contracted from the old city network onto states that still share a border.
  * A city-to-city link whose ends fell in the same state, or in states that do not touch, is omitted.
+ * Kraków–Stanislav and Stanislav–Bukovina keep the Carpathian flank supplied once Lemberg,
+ * the old rail hub, starts under Russian control.
  */
 export const RAIL_PAIRS: [string, string][] = [
   ["konigsberg", "ermland_masuren"],
@@ -25,11 +27,13 @@ export const RAIL_PAIRS: [string, string][] = [
   ["lublin", "wolyn"],
   ["kielce", "krakow"],
   ["krakow", "lwow"],
+  ["krakow", "stanislawow"],
   ["krakow", "katowice"],
   ["katowice", "oberschlesien"],
   ["poznan", "oberschlesien"],
   ["lwow", "bucovina"],
   ["lwow", "stanislawow"],
+  ["stanislawow", "bucovina"],
   ["lwow", "proskuriv"],
   ["wolyn", "lwow"],
   ["polesie", "wolyn"],
