@@ -33,11 +33,19 @@ describe("Gorlice–Tarnów, 2 May 1915", () => {
     expect(rovno.depot).toBe("russia")
     expect(rovno.supply).toBe(100)
     expect(lemberg.owner).toBe("central")
-    expect(lemberg.controller).toBe("central")
+    expect(lemberg.controller).toBe("russia")
     expect(lemberg.depot).toBe("central")
-    expect(lemberg.supply).toBe(100)
-    expect(lemberg.unrest).toBe(0)
+    expect(lemberg.supply).toBe(89)
+    expect(lemberg.unrest).toBe(16)
+    expect(lemberg.units.every((unit) => unit.faction === "russia")).toBe(true)
+    expect(lemberg.units.map((unit) => unit.name)).toEqual(
+      expect.arrayContaining(["3rd Army (Radko Dimitriev)", "XXI Corps"]),
+    )
     expect(krakow.neighbors).toContain("lwow")
+    expect(krakow.units.every((unit) => unit.faction === "central")).toBe(true)
+    expect(
+      state.provinces.find((province) => province.id === "podkarpatska_rus")?.units.map((unit) => unit.id),
+    ).toEqual(expect.arrayContaining(["g-lwow-inf", "g-lwow-art"]))
 
     for (const id of ["katowice", "stanislawow", "bucovina"] as const) {
       const province = state.provinces.find((item) => item.id === id)!
@@ -46,7 +54,6 @@ describe("Gorlice–Tarnów, 2 May 1915", () => {
       expect(province.unrest).toBe(0)
       expect(province.units.every((unit) => unit.faction === "central")).toBe(true)
     }
-    expect(lemberg.units.every((unit) => unit.faction === "central")).toBe(true)
     expect(lemberg.units.length).toBeGreaterThan(0)
     const stanislav = state.provinces.find((province) => province.id === "stanislawow")!
     const bukovina = state.provinces.find((province) => province.id === "bucovina")!
@@ -60,16 +67,16 @@ describe("Gorlice–Tarnów, 2 May 1915", () => {
     expect(TurnRequestSchema.safeParse({ state, orders: [] }).success).toBe(true)
   })
 
-  it("reads an attack on Lublin and resolves a mock fortnight", async () => {
+  it("reads an attack on Lemberg and resolves a mock fortnight", async () => {
     const state = createInitialState()
     const interpreted = interpretOrders(state, [
-      { type: "text", text: "Attack Lublin." },
+      { type: "text", text: "Attack Lemberg." },
     ])
     const attack = interpreted.proposals.find((proposal) => proposal.type === "attack")
-    expect(attack).toMatchObject({ type: "attack", target: "lublin" })
+    expect(attack).toMatchObject({ type: "attack", target: "lwow" })
 
     const played = await playTurn(state, [
-      { type: "text", text: "Attack Lublin." },
+      { type: "text", text: "Attack Lemberg." },
     ])
     expect(played.record.gmSource).toBe("mock")
     expect(played.record.narration.length).toBeGreaterThan(40)

@@ -25,26 +25,28 @@ export type ScenarioSpec = {
 
 /**
  * Gorlice–Tarnów, six fortnights from 2 May 1915 through 11 July.
- * The Dunajec blow is inside the Kraków province. The first Russian provinces
- * on the playable axis are Kielce, then Lublin (the pursuit toward the Bug),
- * then Rovno in Volhynia. Lemberg and Kraków start in Central Powers hands
- * and must be held.
+ * The Dunajec blow is inside the Kraków province. Lemberg starts Russian
+ * (held since 3 September 1914) and is the prize: historically retaken 22 June,
+ * inside the fortnight of 13 June. Kielce is the northern shoulder, Lublin the
+ * pursuit toward the Bug. Rovno counts toward a Brilliant only when already
+ * held by the fortnight of 27 June.
+ * Kraków is the home city. Przemyśl fell on 3 June but sits inside Kraków,
+ * which was never Russian, so it is not its own objective.
  */
 const GORLICE: ScenarioSpec = {
   id: "gorlice",
   name: "Gorlice–Tarnów",
   kicker: "2 May – 11 July 1915",
   summary:
-    "Six fortnights. The 11th Army and the Austro-Hungarian 4th Army are concentrated at Kraków. Break Radko Dimitriev's 3rd Army at Kielce, reach Lublin, and take Rovno in Volhynia. Hold Lemberg and Kraków.",
+    "Six fortnights. The 11th Army and the Austro-Hungarian 4th Army are concentrated at Kraków. Radko Dimitriev's 3rd Army holds Lemberg. Take the city, then Lublin and Rovno. Hold Kraków.",
   length: 6,
-  decisive: 5,
+  decisive: 7,
   victory: 4,
   marginal: 2,
   objectives: [
-    { id: "kielce", vp: 2, side: "eastern", parTurn: 2 },
-    { id: "lublin", vp: 3, side: "eastern", parTurn: 4 },
-    { id: "wolyn", vp: 2, side: "eastern", parTurn: 5 },
-    { id: "lwow", vp: 2, side: "home" },
+    { id: "lwow", vp: 4, side: "eastern", parTurn: 3 },
+    { id: "lublin", vp: 2, side: "eastern", parTurn: 5 },
+    { id: "wolyn", vp: 3, side: "eastern", parTurn: 4 },
     { id: "krakow", vp: 2, side: "home" },
   ],
 }

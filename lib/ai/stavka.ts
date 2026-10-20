@@ -39,7 +39,7 @@ const HOME_WHILE_BREACH: Record<Difficulty, number> = {
 }
 
 const DIPLOMACY = [
-  "Dimitriev asked to fall back to the San. Ivanov refused. The 3rd Army will stand.",
+  "Dimitriev asked to fall back to the San. Ivanov refused. The 3rd Army will stand at Lemberg.",
   "Ivanov asks for shells. The yards at Warsaw and Rovno answer with men before guns.",
   "The Grand Duke will not uncover Warsaw to feed the breakthrough. Garrisons stay on the fortresses.",
   "Falkenhayn has sent Mackensen and will send no more from the west. This fortnight is fought with the rails already in Galicia.",

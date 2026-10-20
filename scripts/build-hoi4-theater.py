@@ -128,9 +128,9 @@ ANCHORS = {
 
 # Area sampling follows the 1936 state shapes. These four are wrong for 1914 and
 # are forced on every rebuild: Katowice is German, and Lemberg, Stanislav and
-# Bukovina are Austrian. The 2 May 1915 controller (all Central Powers) lives in
-# lib/data/definitions.ts and is kept in step with this table. The province scale
-# cannot draw the historical front west of Lemberg, so those states stay home ground.
+# Bukovina are Austrian. The 1914 owner is not the 2 May 1915 controller.
+# Lemberg's controller is Russian in lib/data/definitions.ts. Stanislav and
+# Bukovina stay Central Powers-held there. Przemyśl is an alias of Kraków.
 OWNER_OVERRIDES = {
     "Katowice": "german_empire",
     "Lwów": "austro_hungarian_empire",

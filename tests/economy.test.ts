@@ -85,13 +85,16 @@ describe("economy", () => {
     )).toHaveLength(2)
   })
 
-  it("keeps Katowice, Lemberg, Stanislav and Bukovina with the Central Powers", () => {
+  it("keeps Katowice, Stanislav and Bukovina with the Central Powers and Lemberg Austrian-owned", () => {
     const state = createScenario("gorlice")
-    for (const id of ["katowice", "lwow", "stanislawow", "bucovina"] as const) {
+    for (const id of ["katowice", "stanislawow", "bucovina"] as const) {
       const province = state.provinces.find((item) => item.id === id)!
       expect(province.controller).toBe("central")
       expect(province.owner).toBe("central")
     }
-    expect(state.provinces.find((province) => province.id === "lwow")?.depot).toBe("central")
+    const lemberg = state.provinces.find((province) => province.id === "lwow")!
+    expect(lemberg.owner).toBe("central")
+    expect(lemberg.controller).toBe("russia")
+    expect(lemberg.depot).toBe("central")
   })
 })

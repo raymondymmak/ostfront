@@ -10,7 +10,7 @@ const GameApp = dynamic(
       <main className="flex min-h-dvh flex-col items-center justify-center bg-[#14110e] px-6 text-center text-[#ebe4d4]">
         <p className="font-serif text-4xl italic text-[#c6a15a]">Ostfront</p>
         <p className="mt-3 max-w-md text-sm text-[#b3a48f]">
-          Opening the situation map for 2 May 1915. Mackensen is on the Dunajec. The Russian 3rd Army holds Kielce and Lublin.
+          Opening the situation map for 2 May 1915. Mackensen is on the Dunajec. The Russian 3rd Army holds Lemberg.
         </p>
       </main>
     ),

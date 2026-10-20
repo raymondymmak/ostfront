@@ -45,7 +45,7 @@ export function greedy(state: GameState): PlayerOrder[] {
   return orders
 }
 
-const AXIS = ["kielce", "lublin", "wolyn"]
+const AXIS = ["lwow", "lublin", "wolyn"]
 
 /**
  * Simple attacker: each stack fights the best defended neighbor at 1.15 or
@@ -120,7 +120,7 @@ export function sensible(): (state: GameState) => PlayerOrder[] {
     const attacks: { from: string; to: string; ids: string[]; priority: number; ratio: number }[] = []
     for (const source of state.provinces) {
       if (source.controller !== "central" || source.supply < 30) continue
-      const depotKeep = source.id === "krakow" ? 1 : 2
+      const depotKeep = source.id === "krakow" || source.id === "lwow" ? 1 : 2
       let ids = spareIds(state, source.id, used, depotKeep)
       if (!ids.length) continue
       if (axis.includes(source.id) && source.depot !== "central" && ids.length > 1) {

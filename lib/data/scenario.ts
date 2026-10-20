@@ -22,25 +22,25 @@ type Placement = {
 /**
  * 2 May 1915, at the scale of these provinces.
  *
- * Kraków is the Dunajec concentration: Gorlice, Tarnów and, inside the same
- * Hearts of Iron IV state, the San gateway at Przemyśl. Mackensen's 11th Army
- * (the army counter stands for X Corps, XLI Reserve Corps, the Combined Corps
- * and Arz's Austro-Hungarian VI Corps) is there with the Guard and the heavy
- * guns. Archduke Joseph Ferdinand's 4th Army is the northern wing of the same
- * province. Strength and morale are the balanced Gorlice values; only the
- * names changed.
+ * Kraków is the Dunajec concentration: Gorlice, Tarnów, Rzeszów and, inside the
+ * same state, Przemyśl. The fortress was Russian until 3 June, but the polygon
+ * cannot be split, so Kraków stays the Central Powers base. Mackensen's 11th
+ * Army (the army counter stands for X Corps, XLI Reserve Corps, the Combined
+ * Corps and Arz's Austro-Hungarian VI Corps) is there with the Guard and the
+ * heavy guns. Archduke Joseph Ferdinand's 4th Army is the northern wing.
  *
- * The historical front that morning still lay west of Lemberg. These provinces
- * cannot draw that line, so Lemberg, Stanislav and Bukovina stay Austro-Hungarian
- * and Central Powers-held, and Katowice stays German.
+ * Lemberg is Russian, as it had been since 3 September 1914. The 3rd Army
+ * stands in the city because the map has no province between the Dunajec and
+ * Lemberg. The old Lemberg garrison is Borojević's 3rd Army, in the Carpathians.
+ * Katowice stays German. Stanislav and Bukovina stay Austro-Hungarian.
  */
 const PLACEMENTS: Placement[] = [
   { id: "g-kra-11", name: "German 11th Army (Mackensen)", faction: "central", kind: "infantry", strength: 64, morale: 80, province: "krakow", echelon: "army" },
   { id: "g-kra-x", name: "Austro-Hungarian 4th Army (Joseph Ferdinand)", faction: "central", kind: "infantry", strength: 58, morale: 78, province: "krakow" },
   { id: "g-kra-grd", name: "Guard Corps (von Plettenberg)", faction: "central", kind: "infantry", strength: 44, morale: 84, province: "krakow" },
   { id: "g-kra-art", name: "Mackensen's Heavy Artillery", faction: "central", kind: "artillery", strength: 34, morale: 82, province: "krakow" },
-  { id: "g-lwow-inf", name: "Lemberg Garrison", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "lwow" },
-  { id: "g-lwow-art", name: "Lemberg Artillery", faction: "central", kind: "artillery", strength: 18, morale: 72, province: "lwow" },
+  { id: "g-lwow-inf", name: "Austro-Hungarian 3rd Army (Borojević)", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "podkarpatska_rus" },
+  { id: "g-lwow-art", name: "Carpathian Artillery", faction: "central", kind: "artillery", strength: 18, morale: 72, province: "podkarpatska_rus" },
   { id: "g-kon-inf", name: "8th Army (von Below)", faction: "central", kind: "infantry", strength: 40, morale: 72, province: "konigsberg" },
   { id: "g-erm-inf", name: "XX Corps", faction: "central", kind: "infantry", strength: 28, morale: 70, province: "ermland_masuren" },
   { id: "g-pos-inf", name: "9th Army (Prince Leopold)", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "poznan" },
@@ -50,10 +50,12 @@ const PLACEMENTS: Placement[] = [
   { id: "g-gdy-inf", name: "Thorn Fortress Brigade", faction: "central", kind: "infantry", strength: 26, morale: 66, province: "gdynia" },
   { id: "g-sta-cav", name: "Cavalry Corps Hauer", faction: "central", kind: "cavalry", strength: 24, morale: 74, province: "stanislawow" },
   { id: "g-buc-inf", name: "Group Pflanzer-Baltin", faction: "central", kind: "infantry", strength: 20, morale: 66, province: "bucovina" },
-  { id: "g-kie-inf", name: "X Corps", faction: "russia", kind: "infantry", strength: 26, morale: 62, province: "kielce" },
-  { id: "g-lub-inf", name: "3rd Army (Radko Dimitriev)", faction: "russia", kind: "infantry", strength: 44, morale: 66, province: "lublin" },
-  { id: "g-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 64, province: "lublin" },
-  { id: "g-wol-inf", name: "III Caucasian Corps", faction: "russia", kind: "infantry", strength: 50, morale: 68, province: "wolyn" },
+  { id: "g-kie-inf", name: "X Corps", faction: "russia", kind: "infantry", strength: 36, morale: 64, province: "kielce" },
+  { id: "g-lub-inf", name: "3rd Army (Radko Dimitriev)", faction: "russia", kind: "infantry", strength: 62, morale: 64, province: "lwow" },
+  { id: "g-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 20, morale: 60, province: "lwow" },
+  { id: "g-pol-inf", name: "XXI Corps", faction: "russia", kind: "infantry", strength: 44, morale: 62, province: "lwow" },
+  { id: "g-min-inf", name: "XXIV Corps", faction: "russia", kind: "infantry", strength: 58, morale: 66, province: "lublin" },
+  { id: "g-wol-inf", name: "III Caucasian Corps", faction: "russia", kind: "infantry", strength: 96, morale: 70, province: "wolyn" },
   { id: "g-war-inf", name: "Grenadier Corps", faction: "russia", kind: "infantry", strength: 36, morale: 70, province: "warszawa" },
   { id: "g-war-art", name: "Warsaw Fortress Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 72, province: "warszawa" },
   { id: "g-lod-inf", name: "2nd Army", faction: "russia", kind: "infantry", strength: 34, morale: 68, province: "lodz" },
@@ -61,16 +63,14 @@ const PLACEMENTS: Placement[] = [
   { id: "g-bia-inf", name: "10th Army", faction: "russia", kind: "infantry", strength: 28, morale: 64, province: "bialystok" },
   { id: "g-sud-inf", name: "Kovno Garrison", faction: "russia", kind: "infantry", strength: 26, morale: 64, province: "suduva" },
   { id: "g-wil-cav", name: "1st Cavalry Corps", faction: "russia", kind: "cavalry", strength: 20, morale: 74, province: "wilno" },
-  { id: "g-pro-inf", name: "8th Army (Brusilov)", faction: "russia", kind: "infantry", strength: 40, morale: 70, province: "proskuriv" },
-  { id: "g-min-inf", name: "Minsk Reserve", faction: "russia", kind: "infantry", strength: 22, morale: 62, province: "minsk" },
-  { id: "g-pol-inf", name: "Polesie Brigade", faction: "russia", kind: "infantry", strength: 16, morale: 58, province: "polesie" },
+  { id: "g-pro-inf", name: "8th Army (Brusilov)", faction: "russia", kind: "infantry", strength: 56, morale: 70, province: "proskuriv" },
 ]
 
 export const BRIEFING = [
-  "2 May 1915. Generaloberst August von Mackensen's German 11th Army and Archduke Joseph Ferdinand's Austro-Hungarian 4th Army are concentrated in the Kraków province, on the Dunajec. Gorlice and Tarnów are in that state, and so is the San gateway at Przemyśl. The Guard Corps is in the line, and the heavy artillery Falkenhayn assembled for the blow is with them. The 11th Army counter also stands for X Corps, XLI Reserve Corps, the Combined Corps and Arz's VI Corps.",
-  "Radko Dimitriev's Russian 3rd Army is thin. X Corps holds Kielce, the first Russian province across the border. The army itself stands at Lublin, and the III Caucasian Corps is in reserve at Rovno in Volhynia. Ivanov has refused a withdrawal to the San. The yards are short of shells.",
-  "Lemberg, Stanislav and Bukovina are Austro-Hungarian and already in your hands: the province scale cannot draw the historical front, which this morning still lay west of Lemberg. Katowice is German. Boroević's 3rd Army is the cavalry on the Stanislav flank, Pflanzer-Baltin holds Bukovina, and the 8th and 9th Armies with Woyrsch hold East Prussia and the Polish salient. They are not the offensive.",
-  "You have six fortnights, through 11 July. Break Kielce, take Lublin, and reach Rovno. Do not lose Kraków or Lemberg. Depots and cities raise troops; they arrive when the fortnight closes.",
+  "2 May 1915. Generaloberst August von Mackensen's German 11th Army and Archduke Joseph Ferdinand's Austro-Hungarian 4th Army are concentrated in the Kraków province, on the Dunajec. Gorlice and Tarnów are in that state. Przemyśl is too: the fortress was Russian from 22 March until 3 June, but the map cannot split it from Kraków, so the province stays your base. The Guard Corps is in the line, and the heavy artillery Falkenhayn assembled for the blow is with them. The 11th Army counter also stands for X Corps, XLI Reserve Corps, the Combined Corps and Arz's VI Corps.",
+  "Radko Dimitriev's Russian 3rd Army holds Lemberg, Russian since 3 September 1914. XXI Corps and the army's guns are in the city with him. X Corps holds Kielce. XXIV Corps stands at Lublin, and the III Caucasian Corps is in reserve at Rovno. Ivanov has refused a withdrawal to the San. The yards are short of shells. Brusilov's 8th Army is on Podolia.",
+  "Lemberg is Austrian soil. Its depot does not feed the Russians, and it is yours again when the city falls. Katowice is German. Bukovina is Austro-Hungarian, under Pflanzer-Baltin, as it had been since 17 February. Stanislav is left Austro-Hungarian on this map as well; historically the Russians still held it, until 8 June. Borojević's 3rd Army is in Carpathian Ruthenia, off the Dunajec. The 8th and 9th Armies with Woyrsch hold East Prussia and the Polish salient. They are not the offensive.",
+  "You have six fortnights, through 11 July. Take Lemberg by the fortnight of 13 June. The pursuit is Lublin, and Rovno by the fortnight of 27 June if the breakthrough stays on time. Rovno did not fall in 1915. Do not lose Kraków. Depots and cities raise troops; they arrive when the fortnight closes.",
 ].join(" ")
 
 /**

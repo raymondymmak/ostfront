@@ -382,7 +382,7 @@ export function GameApp() {
             <div className="rounded-lg border border-primary bg-primary/10 p-3" data-testid="scenario-gorlice">
               <span className="font-display text-xl leading-none">2 May – 11 July</span>
               <span className="mt-2 block text-sm text-muted-foreground">
-                Six fortnights. Mackensen&apos;s 11th Army and the Austro-Hungarian 4th Army break Radko Dimitriev&apos;s 3rd Army. Take Kielce, Lublin and Rovno. Hold Kraków and Lemberg.
+                Six fortnights. Mackensen&apos;s 11th Army and the Austro-Hungarian 4th Army break Radko Dimitriev&apos;s 3rd Army at Lemberg. The pursuit is Lublin and Rovno. Hold Kraków.
               </span>
             </div>
             <div className="flex flex-wrap gap-2" data-testid="difficulty">

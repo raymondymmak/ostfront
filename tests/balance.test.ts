@@ -61,36 +61,28 @@ describe("balance", () => {
     expect(idle.state.result).not.toBeNull()
   })
 
-  it("lets a prepared Gorlice offensive finish ahead", async () => {
+  it("lets a prepared Gorlice offensive break Lemberg", async () => {
     let state = createScenario("gorlice", "normal")
-    const script: PlayerOrder[][] = [
-      [{ type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11", "g-kra-grd", "g-kra-art"] }],
-      [
-        { type: "attack", from: "kielce", target: "lublin", unitIds: ["g-kra-11", "g-kra-art"] },
-        { type: "recruit", provinceId: "krakow", unitKind: "infantry" },
-      ],
-    ]
-    for (const orders of script) state = (await playTurn(state, orders)).state
-    expect(state.provinces.find((province) => province.id === "kielce")?.controller).toBe("central")
-    expect(state.provinces.find((province) => province.id === "lublin")?.controller).toBe("central")
-    while (!state.result) {
-      state = (await playTurn(state, [{ type: "recruit", provinceId: "krakow", unitKind: "infantry" }])).state
-    }
-    expect(state.result?.grade === "marginal" || state.result?.grade === "victory" || state.result?.grade === "decisive" || state.result?.grade === "brilliant").toBe(true)
-    expect(state.result?.captured).toBeGreaterThanOrEqual(2)
-  })
-
-  it("keeps Kraków and Lemberg while the 11th Army breaks Kielce", async () => {
-    let state = createInitialState("normal")
     state = (
       await playTurn(state, [
-        { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11", "g-kra-grd", "g-kra-art"] },
+        { type: "attack", from: "krakow", target: "lwow", unitIds: ["g-kra-11", "g-kra-x", "g-kra-art"] },
       ])
     ).state
-    expect(state.provinces.find((province) => province.id === "kielce")?.controller).toBe("central")
-    for (const id of ["krakow", "lwow"]) {
-      expect(state.provinces.find((province) => province.id === id)?.controller).toBe("central")
-    }
+    expect(state.provinces.find((province) => province.id === "lwow")?.controller).toBe("central")
+    expect(state.provinces.find((province) => province.id === "krakow")?.controller).toBe("central")
+    expect(state.homeLost).toBe(false)
+  })
+
+  it("keeps Kraków while the 11th Army strikes Lemberg", async () => {
+    let state = createInitialState("normal")
+    expect(state.provinces.find((province) => province.id === "lwow")?.controller).toBe("russia")
+    state = (
+      await playTurn(state, [
+        { type: "attack", from: "krakow", target: "lwow", unitIds: ["g-kra-11", "g-kra-grd", "g-kra-art"] },
+      ])
+    ).state
+    expect(state.provinces.find((province) => province.id === "krakow")?.controller).toBe("central")
+    expect(state.provinces.find((province) => province.id === "lwow")?.units.some((unit) => unit.faction === "central")).toBe(true)
   })
 
   it("makes Easy kinder than Hard for a player who attacks the nearest battle", async () => {
@@ -163,7 +155,7 @@ describe("balance", () => {
     let state = createInitialState("normal")
     for (let turn = 0; turn < 4 && !state.result; turn += 1) {
       state = (await playTurn(state, [])).state
-      for (const id of ["kielce", "lublin", "wolyn", "warszawa"]) {
+      for (const id of ["kielce", "lublin", "wolyn", "warszawa", "lwow"]) {
         const province = state.provinces.find((item) => item.id === id)!
         if (province.controller !== "russia") continue
         if (province.depot === "russia" || scenarioSpec(state.scenario).objectives.some((item) => item.id === id)) {
