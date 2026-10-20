@@ -19,11 +19,13 @@ export type ProvinceDef = {
 }
 
 /**
- * June 1915 Eastern Front, one Hearts of Iron IV state per province.
+ * Eastern Front provinces, one Hearts of Iron IV state each.
  * `lon`/`lat` are the label point in the flat pixel projection, not geographic degrees.
- * `owner` is the 1914 sovereign that holds most of the state. `controller` is the June front.
- * Katowice, Lemberg, Stanislav and Bukovina are forced in OWNER_OVERRIDES
- * (scripts/build-hoi4-theater.py): German or Austrian in 1914, Central Powers in June.
+ * `owner` is the 1914 sovereign that holds most of the state. `controller` is who holds
+ * it when Gorlice–Tarnów opens on 2 May 1915. The states are too coarse for the historical
+ * front west of Lemberg, so Lemberg, Stanislav and Bukovina stay Austro-Hungarian and
+ * Central Powers-held, and Katowice stays German. Those four are forced in OWNER_OVERRIDES
+ * (scripts/build-hoi4-theater.py).
  */
 export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "konigsberg", name: "Königsberg", mp: 2, ip: 2, lon: 0.073, lat: 0.638, terrain: "urban", owner: "central", controller: "central", fort: 2, depot: "central", aliases: ["koenigsberg", "tilsit", "insterburg"] },

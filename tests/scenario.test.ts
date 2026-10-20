@@ -5,14 +5,15 @@ import { playTurn } from "@/lib/gm"
 import { interpretOrders } from "@/lib/gm/interpret"
 import { TurnRequestSchema } from "@/lib/schema"
 
-describe("June 1915 scenario", () => {
+describe("Gorlice–Tarnów, 2 May 1915", () => {
   beforeEach(() => {
     delete process.env.LLM_API_KEY
   })
-  it("builds the HOI4 front, connected rails, and a Russian-held Warsaw", () => {
+  it("builds the Dunajec front, connected rails, and a Russian-held Kielce", () => {
     const state = createInitialState()
     expect(state.provinces).toHaveLength(39)
-    expect(state.date).toBe("4 June 1915")
+    expect(state.scenario).toBe("gorlice")
+    expect(state.date).toBe("2 May 1915")
     expect(RAIL_GAPS).toEqual([])
 
     const warsaw = state.provinces.find((province) => province.id === "warszawa")!
@@ -73,7 +74,7 @@ describe("June 1915 scenario", () => {
     expect(played.record.gmSource).toBe("mock")
     expect(played.record.narration.length).toBeGreaterThan(40)
     expect(played.state.turn).toBe(1)
-    expect(played.state.date).toBe("18 June 1915")
+    expect(played.state.date).toBe("16 May 1915")
     expect(
       played.record.resolutions.some(
         (item) => item.proposal.type === "attack" && item.status === "applied",

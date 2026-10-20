@@ -55,7 +55,7 @@ describe("balance", () => {
     const hard = projectIncome(createInitialState("hard"), "russia")
     expect(easy.mp).toBeLessThan(normal.mp)
     expect(normal.mp).toBeLessThan(hard.mp)
-    const idle = await sit(start, scenarioSpec("campaign-1915").length)
+    const idle = await sit(start, scenarioSpec("gorlice").length)
     expect(idle.state.treasury.central.mp).toBeLessThan(2000)
     expect(idle.state.treasury.russia.mp).toBeLessThan(2000)
     expect(idle.state.result).not.toBeNull()
@@ -80,16 +80,15 @@ describe("balance", () => {
     expect(state.result?.captured).toBeGreaterThanOrEqual(2)
   })
 
-  it("can take Łódź in the long campaign without giving up the home depots", async () => {
+  it("keeps Kraków and Lemberg while the 11th Army breaks Kielce", async () => {
     let state = createInitialState("normal")
-    state = (await playTurn(state, [{ type: "move", unitId: "cp-obs-inf", to: "katowice" }])).state
-    const ids = state.provinces
-      .find((province) => province.id === "katowice")!
-      .units.filter((unit) => unit.faction === "central" && unit.kind !== "artillery")
-      .map((unit) => unit.id)
-    state = (await playTurn(state, [{ type: "attack", from: "katowice", target: "lodz", unitIds: ids }])).state
-    expect(state.provinces.find((province) => province.id === "lodz")?.controller).toBe("central")
-    for (const id of ["krakow", "lwow", "konigsberg"]) {
+    state = (
+      await playTurn(state, [
+        { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11", "g-kra-grd", "g-kra-art"] },
+      ])
+    ).state
+    expect(state.provinces.find((province) => province.id === "kielce")?.controller).toBe("central")
+    for (const id of ["krakow", "lwow"]) {
       expect(state.provinces.find((province) => province.id === id)?.controller).toBe("central")
     }
   })
@@ -164,7 +163,7 @@ describe("balance", () => {
     let state = createInitialState("normal")
     for (let turn = 0; turn < 4 && !state.result; turn += 1) {
       state = (await playTurn(state, [])).state
-      for (const id of ["warszawa", "lublin", "wilno", "lodz", "bialystok", "wolyn"]) {
+      for (const id of ["kielce", "lublin", "wolyn", "warszawa"]) {
         const province = state.provinces.find((item) => item.id === id)!
         if (province.controller !== "russia") continue
         if (province.depot === "russia" || scenarioSpec(state.scenario).objectives.some((item) => item.id === id)) {

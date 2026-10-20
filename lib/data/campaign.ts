@@ -17,7 +17,7 @@ export function blankCampaign(difficulty: Difficulty = "normal"): Pick<
   | "cpStrengthLost"
 > {
   return {
-    scenario: "campaign-1915",
+    scenario: "gorlice",
     difficulty,
     treasury: {
       central: { ...OPENING_PURSE.central },

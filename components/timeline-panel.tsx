@@ -59,7 +59,7 @@ export function TimelinePanel({ log, active, onActive, briefing = BRIEFING }: Ti
           viewportRef={entryRef}
         >
           <div className="p-4">
-            <p className="font-display text-lg">4 June 1915, two days after Przemyśl</p>
+            <p className="font-display text-lg">2 May 1915, Gorlice–Tarnów</p>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{briefing}</p>
           </div>
         </ScrollArea>

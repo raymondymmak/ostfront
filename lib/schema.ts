@@ -59,7 +59,7 @@ export const GameStateSchema = z.object({
   date: z.string(),
   seed: z.number(),
   provinces: z.array(ProvinceSchema).min(1),
-  scenario: z.enum(["campaign-1915", "gorlice"]).default("campaign-1915"),
+  scenario: z.enum(["gorlice"]).default("gorlice"),
   difficulty: z.enum(["easy", "normal", "hard"]).default("normal"),
   treasury: z
     .object({ central: PurseSchema, russia: PurseSchema })

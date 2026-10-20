@@ -39,12 +39,12 @@ const HOME_WHILE_BREACH: Record<Difficulty, number> = {
 }
 
 const DIPLOMACY = [
-  "Stavka will not trade a fortress for a field. Garrisons stay on the victory cities.",
+  "Dimitriev asked to fall back to the San. Ivanov refused. The 3rd Army will stand.",
   "Ivanov asks for shells. The yards at Warsaw and Rovno answer with men before guns.",
-  "The Grand Duke wants the line held until the Central Powers outrun their depots.",
-  "Falkenhayn still refuses a corps from the west. This fortnight is fought with what the rails already carry.",
-  "Bucharest stays neutral. The southern flank is the 8th Army's problem, not a new front.",
-  "Alekseev would rather lose ground than a corps. Empty provinces are a gift he intends to take.",
+  "The Grand Duke will not uncover Warsaw to feed the breakthrough. Garrisons stay on the fortresses.",
+  "Falkenhayn has sent Mackensen and will send no more from the west. This fortnight is fought with the rails already in Galicia.",
+  "Bucharest stays neutral. Brusilov's 8th Army keeps the Dniester without a new front.",
+  "Alekseev would rather lose a field than a corps. Empty ground is a gift he means to take back.",
 ]
 
 export function stavkaTurn(state: GameState, orders: PlayerOrder[]): GMTurn {

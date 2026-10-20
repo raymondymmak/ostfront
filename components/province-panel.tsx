@@ -195,7 +195,7 @@ export function ProvincePanel({
               Two or more neighbors attacking the same province in one fortnight fight as one battle, with a flanking bonus. If no friendly exit remains, the defender is surrounded.
             </li>
             <li>The game master may ask for unrest or supply shifts of at most 20.</li>
-            <li>Depots feed only their own side: Königsberg and Kraków; Warsaw and Volhynia (Rovno).</li>
+            <li>Depots feed only their own side: Königsberg, Kraków and Lemberg; Warsaw and Volhynia (Rovno).</li>
           </ul>
         </details>
       </div>

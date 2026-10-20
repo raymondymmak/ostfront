@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build the Eastern Front theater from MapChart Hearts of Iron IV states.
 
-Reads the MapChart SVG derivative and the WorldOS 1914 owner map from outside
-the repo (HOI4_DIR and WORLDOS_REGIONS). Writes only the cleaned theater
+Reads the MapChart SVG derivative and a local 1914 owner map from outside
+the repo (HOI4_DIR and OWNER_1914_GEOJSON). Writes only the cleaned theater
 geometry the game ships. The raw SVG and the full state geojson are not
 copied into the tree.
 
@@ -32,12 +32,8 @@ from world_projection import make_projector, region_of
 
 ROOT = Path(__file__).resolve().parents[1]
 HOI4_DIR = Path(os.environ.get("HOI4_DIR", "/cursor/stores/bot/mapchart-hoi4"))
-WORLDOS_REGIONS = Path(
-    os.environ.get(
-        "WORLDOS_REGIONS",
-        "/cursor/stores/bot/worldos-map/ww1-1914-regions.geojson",
-    )
-)
+_owner_map = os.environ.get("OWNER_1914_GEOJSON", "").strip()
+OWNER_1914_GEOJSON = Path(_owner_map) if _owner_map else None
 OUT_PATH = ROOT / "lib" / "data" / "theater-geometry.json"
 MAPSHAPER = ROOT / "node_modules" / "mapshaper" / "bin" / "mapshaper"
 TGWR_STATES = Path(os.environ.get("TGWR_STATES", "/tmp/tgwr/history/states"))
@@ -57,7 +53,7 @@ CREDIT = (
     "by Paradox Interactive."
 )
 
-# June 1915 Eastern Front. Every other MapChart state is drawn the same way,
+# Playable Eastern Front states for Gorlice–Tarnów. Every other MapChart state is drawn the same way,
 # with playable set to false. To bring one into the game later, add its
 # MapChart id here and a ProvinceDef in lib/data/definitions.ts (name, units,
 # supply, controller). The polygon, owner_1914, and neighbors are already in
@@ -132,8 +128,9 @@ ANCHORS = {
 
 # Area sampling follows the 1936 state shapes. These four are wrong for 1914 and
 # are forced on every rebuild: Katowice is German, and Lemberg, Stanislav and
-# Bukovina are Austrian. The June 1915 controller (all Central Powers) lives in
-# lib/data/definitions.ts and is kept in step with this table.
+# Bukovina are Austrian. The 2 May 1915 controller (all Central Powers) lives in
+# lib/data/definitions.ts and is kept in step with this table. The province scale
+# cannot draw the historical front west of Lemberg, so those states stay home ground.
 OWNER_OVERRIDES = {
     "Katowice": "german_empire",
     "Lwów": "austro_hungarian_empire",
@@ -563,7 +560,9 @@ def sample_points(geom, step=0.55, cap=220):
 
 
 def load_owners():
-    fc = json.loads(WORLDOS_REGIONS.read_text())
+    if OWNER_1914_GEOJSON is None:
+        raise SystemExit("Set OWNER_1914_GEOJSON to a local 1914 political map.")
+    fc = json.loads(OWNER_1914_GEOJSON.read_text())
     geoms = []
     owners = []
     for feature in fc["features"]:
@@ -717,8 +716,10 @@ def main():
     source = HOI4_DIR / "hoi4-states.geojson"
     if not source.exists():
         raise SystemExit(f"Missing {source}. Set HOI4_DIR to the MapChart extract.")
-    if not WORLDOS_REGIONS.exists():
-        raise SystemExit(f"Missing {WORLDOS_REGIONS}. Set WORLDOS_REGIONS to the 1914 owner map.")
+    if OWNER_1914_GEOJSON is None or not OWNER_1914_GEOJSON.exists():
+        raise SystemExit(
+            "Set OWNER_1914_GEOJSON to a local 1914 political map (GeoJSON with owner_1914). It is not part of this repo."
+        )
     if not TGWR_STATES.exists():
         raise SystemExit(
             f"Missing {TGWR_STATES}. Point TGWR_STATES at The Great War Redux history/states. "
@@ -830,7 +831,7 @@ def main():
         reject_reason = REJECT_NAME_MATCH.get(mod_slug(state_id))
         mod = None if reject_reason else lookup_mod(state_id, indexes)
         if reject_reason:
-            rejected_names.append({"id": state_id, "reason": reject_reason, "worldosOwner": area["owner"], "worldosPct": area["pct"]})
+            rejected_names.append({"id": state_id, "reason": reject_reason, "sampledOwner": area["owner"], "sampledPct": area["pct"]})
         if mod:
             name_matched += 1
             final = mod["owner"]
@@ -849,8 +850,8 @@ def main():
                         "modOwner": mod["owner"],
                         "modFile": mod["file"],
                         "modSource": mod["source"],
-                        "worldosOwner": area["owner"],
-                        "worldosPct": area["pct"],
+                        "sampledOwner": area["owner"],
+                        "sampledPct": area["pct"],
                         "finalOwner": final,
                         "redirected": bool(mod.get("redirected")),
                         "alias": bool(mod.get("alias")),
@@ -906,8 +907,8 @@ def main():
                 "owner": forced,
                 "resolvedOwner": info["final"],
                 "method": info["method"],
-                "worldosOwner": info["owner"],
-                "worldosPct": info["pct"],
+                "sampledOwner": info["owner"],
+                "sampledPct": info["pct"],
             }
         )
         info["final"] = forced
@@ -1174,7 +1175,7 @@ def main():
         "sources": {
             "names": "The Great War Redux history/states, public mirror Xaelor/the-great-war-redux. Wolferos Great War filenames do not match the states in those files, so they were not used.",
             "cutoff": "1914-07-28",
-            "fallback": "Per-region pixel fit sampled against WorldOS owner_1914",
+            "fallback": "Per-region pixel fit sampled against a local 1914 political map (owner_1914)",
             "note": "Mod files are not part of this repo.",
         },
     }

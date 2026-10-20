@@ -16,8 +16,8 @@ CUTOFF = (1914, 7, 28)
 DATE_RE = re.compile(r"(\d{4})\.(\d{1,2})\.(\d{1,2})\s*=\s*\{")
 OWNER_RE = re.compile(r"\bowner\s*=\s*([A-Za-z0-9_]+)")
 
-# Mod tags to the owner ids already used by the WorldOS 1914 map, plus a few
-# polities the mods keep that WorldOS folds into an empire.
+# Mod tags to the 1914 sovereign ids used by the owner map, plus a few
+# polities the mods keep that the 1914 map folds into an empire.
 TAG_TO_OWNER = {
     "ENG": "united_kingdom",
     "FRA": "france",
