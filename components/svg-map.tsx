@@ -16,7 +16,8 @@ import {
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
 import { listedStrength } from "@/lib/engine/echelon"
-import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
+import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
+import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
 
 type SvgMapProps = {
   provinces: MapProvince[]
@@ -25,6 +26,7 @@ type SvgMapProps = {
   orders: QueuedOrder[]
   flashIds: string[]
   orderMode: boolean
+  showRails: boolean
   onSelect: (id: string) => void
   onDraw: (from: string, to: string) => void
 }
@@ -36,6 +38,7 @@ export function SvgMap({
   orders,
   flashIds,
   orderMode,
+  showRails,
   onSelect,
   onDraw,
 }: SvgMapProps) {
@@ -186,6 +189,85 @@ export function SvgMap({
           />
         )
       })}
+      {showRails &&
+        railLines(
+          provinces.map(
+            (province): RailEnd => ({
+              id: province.id,
+              neighbors: province.neighbors,
+              rail: province.rail,
+              controller: province.controller,
+              anchor: province.centroid,
+              polygon: province.polygon,
+            }),
+          ),
+          selectedId,
+        ).map((line) => {
+          const [from, to] = line.coordinates
+          const color =
+            line.side === "russia" ? RAIL_STYLE.russia : line.side === "cut" ? RAIL_STYLE.cut : RAIL_STYLE.central
+          const pair = line.side === "cut" ? null : parallelRails(from, to, view.label * 0.045)
+          return (
+            <g key={`${line.a}-${line.b}`} pointerEvents="none" opacity={line.side === "cut" ? 0.45 : 0.95}>
+              {line.hot && (
+                <line
+                  x1={from[0]}
+                  y1={-from[1]}
+                  x2={to[0]}
+                  y2={-to[1]}
+                  stroke={RAIL_STYLE.hot}
+                  strokeWidth={view.label * 0.28}
+                  strokeLinecap="round"
+                />
+              )}
+              {line.side !== "cut" && (
+                <line
+                  x1={from[0]}
+                  y1={-from[1]}
+                  x2={to[0]}
+                  y2={-to[1]}
+                  stroke={RAIL_STYLE.tie}
+                  strokeWidth={view.label * 0.2}
+                  strokeDasharray={`${view.label * 0.07} ${view.label * 0.16}`}
+                  strokeLinecap="butt"
+                />
+              )}
+              {pair ? (
+                <>
+                  <line
+                    x1={pair[0][0]}
+                    y1={-pair[0][1]}
+                    x2={pair[1][0]}
+                    y2={-pair[1][1]}
+                    stroke={color}
+                    strokeWidth={view.label * 0.045}
+                    strokeLinecap="butt"
+                  />
+                  <line
+                    x1={pair[2][0]}
+                    y1={-pair[2][1]}
+                    x2={pair[3][0]}
+                    y2={-pair[3][1]}
+                    stroke={color}
+                    strokeWidth={view.label * 0.045}
+                    strokeLinecap="butt"
+                  />
+                </>
+              ) : (
+                <line
+                  x1={from[0]}
+                  y1={-from[1]}
+                  x2={to[0]}
+                  y2={-to[1]}
+                  stroke={color}
+                  strokeWidth={view.label * 0.07}
+                  strokeDasharray={`${view.label * 0.14} ${view.label * 0.12}`}
+                  strokeLinecap="butt"
+                />
+              )}
+            </g>
+          )
+        })}
       {orders.map((order) => {
         if (!order.to) return null
         const from = byId.get(order.from)
@@ -269,6 +351,24 @@ function labelOffset(id: string): [number, number] {
   const angle = (hash % 360) * (Math.PI / 180)
   const radius = 0.04 + (hash % 7) * 0.01
   return [Math.cos(angle) * radius, Math.sin(angle) * radius]
+}
+
+function parallelRails(
+  from: [number, number],
+  to: [number, number],
+  gap: number,
+): [[number, number], [number, number], [number, number], [number, number]] {
+  const dx = to[0] - from[0]
+  const dy = to[1] - from[1]
+  const length = Math.hypot(dx, dy) || 1
+  const ox = (-dy / length) * gap
+  const oy = (dx / length) * gap
+  return [
+    [from[0] + ox, from[1] + oy],
+    [to[0] + ox, to[1] + oy],
+    [from[0] - ox, from[1] - oy],
+    [to[0] - ox, to[1] - oy],
+  ]
 }
 
 function geometryOverlapsView(geometry: ProvinceGeometry): boolean {

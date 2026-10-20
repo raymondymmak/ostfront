@@ -138,7 +138,7 @@ public/maplibre-gl-worker.mjs
 
 `Province`, `Unit`, `Proposal`, and `GameState` live in `lib/types.ts`. Geometry is not stored in the save.
 
-The map is MapLibre with a blank style and no remote tiles. If WebGL cannot paint, the same polygons are drawn as SVG. Province shapes and adjacency are in `lib/data/theater-geometry.json`: Hearts of Iron IV states in MapChart’s pixel space, drawn flat. There is no real-world basemap.
+The map is MapLibre with a blank style and no remote tiles. Rail edges are the same links the supply rules use, drawn between the province anchors. A link held at both ends by one side is drawn in full, tinted for that side. A link whose ends differ is dimmed and broken. The legend toggles them, on by default, and they fade out with the province labels when the map is zoomed out. Selecting a province highlights its rails. If WebGL cannot paint, the same polygons are drawn as SVG. Province shapes and adjacency are in `lib/data/theater-geometry.json`: Hearts of Iron IV states in MapChart’s pixel space, drawn flat. There is no real-world basemap.
 
 Map geometry: MapChart.net (CC BY-SA 4.0), based on Hearts of Iron IV by Paradox Interactive.
 

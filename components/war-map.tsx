@@ -23,6 +23,13 @@ import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName } from "@/lib/map/labels"
 import { applyMarkerFace, type MarkerFace } from "@/lib/map/marker-face"
 import { applyProvinceLabelOpacity } from "@/lib/map/province-label-zoom"
+import {
+  RAIL_FULL_ZOOM,
+  RAIL_HIDDEN_ZOOM,
+  RAIL_STYLE,
+  railFeatureCollection,
+  type RailEnd,
+} from "@/lib/map/rail-lines"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
 
@@ -41,6 +48,7 @@ type Snapshot = {
   overlay: Overlay
   orders: QueuedOrder[]
   orderMode: boolean
+  showRails: boolean
   onSelect: (id: string) => void
   onDraw: (from: string, to: string, commitAll?: boolean) => void
 }
@@ -66,6 +74,7 @@ export function WarMap({
   const blitFrameRef = useRef<number | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<string | null>(null)
+  const [showRails, setShowRails] = useState(true)
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
   const propsRef = useRef<Snapshot>({
@@ -74,6 +83,7 @@ export function WarMap({
     overlay,
     orders,
     orderMode,
+    showRails: true,
     onSelect,
     onDraw,
   })
@@ -145,6 +155,7 @@ export function WarMap({
       map.addSource("orders", { type: "geojson", data: emptyCollection() })
       map.addSource("order-ends", { type: "geojson", data: emptyCollection() })
       map.addSource("preview", { type: "geojson", data: emptyCollection() })
+      map.addSource("rails", { type: "geojson", data: emptyCollection() })
       map.addLayer({
         id: "sea",
         type: "fill",
@@ -282,6 +293,65 @@ export function WarMap({
             "#2a2118",
           ],
           "line-width": 1.3,
+        },
+      })
+      map.addLayer({
+        id: "rail-hot",
+        type: "line",
+        source: "rails",
+        filter: ["==", ["get", "hot"], true],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": RAIL_STYLE.hot,
+          "line-width": railWidth(7.2, 11),
+          "line-opacity": railFade(),
+        },
+      })
+      map.addLayer({
+        id: "rail-ties",
+        type: "line",
+        source: "rails",
+        filter: ["!=", ["get", "side"], "cut"],
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: {
+          "line-color": RAIL_STYLE.tie,
+          "line-width": railWidth(5.2, 8),
+          "line-dasharray": [0.18, 0.85],
+          "line-opacity": railFade(),
+        },
+      })
+      map.addLayer({
+        id: "rail-track",
+        type: "line",
+        source: "rails",
+        filter: ["!=", ["get", "side"], "cut"],
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: {
+          "line-color": [
+            "match",
+            ["get", "side"],
+            "central",
+            RAIL_STYLE.central,
+            "russia",
+            RAIL_STYLE.russia,
+            RAIL_STYLE.cut,
+          ],
+          "line-width": railWidth(1.05, 1.7),
+          "line-gap-width": railWidth(2.1, 3.4),
+          "line-opacity": railFade(),
+        },
+      })
+      map.addLayer({
+        id: "rail-cut",
+        type: "line",
+        source: "rails",
+        filter: ["==", ["get", "side"], "cut"],
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: {
+          "line-color": RAIL_STYLE.cut,
+          "line-width": railWidth(1.7, 2.6),
+          "line-dasharray": [1.1, 0.85],
+          "line-opacity": railFade(0.45),
         },
       })
       map.addLayer({
@@ -474,6 +544,7 @@ export function WarMap({
       overlay,
       orders,
       orderMode,
+      showRails,
       onSelect,
       onDraw,
     }
@@ -483,7 +554,7 @@ export function WarMap({
     map.once("idle", () => blitMap(map, blitRef.current))
     if (orderMode) map.dragPan.disable()
     else map.dragPan.enable()
-  }, [provinces, orders, selectedId, overlay, orderMode, onSelect, onDraw])
+  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw])
 
   useEffect(() => {
     const map = mapRef.current
@@ -522,6 +593,7 @@ export function WarMap({
           orders={orders}
           flashIds={flashIds}
           orderMode={orderMode}
+          showRails={showRails}
           onSelect={onSelect}
           onDraw={onDraw}
         />
@@ -541,7 +613,7 @@ export function WarMap({
           {hoverTip}
         </div>
       )}
-      <MapLegend />
+      <MapLegend showRails={showRails} onToggleRails={() => setShowRails((value) => !value)} />
 
       {orderMode && (
         <div className="pointer-events-none absolute top-3 left-3 rounded-md bg-[#241c14]/90 px-2.5 py-1.5 text-xs text-[#f3e2a8]">
@@ -562,7 +634,8 @@ function syncMap(
   const provinces = map.getSource("provinces") as maplibregl.GeoJSONSource | undefined
   const orders = map.getSource("orders") as maplibregl.GeoJSONSource | undefined
   const ends = map.getSource("order-ends") as maplibregl.GeoJSONSource | undefined
-  if (!rivers || !provinces || !orders || !ends) return
+  const rails = map.getSource("rails") as maplibregl.GeoJSONSource | undefined
+  if (!rivers || !provinces || !orders || !ends || !rails) return
 
   rivers.setData({
     type: "FeatureCollection",
@@ -644,6 +717,20 @@ function syncMap(
   }
   orders.setData({ type: "FeatureCollection", features: lines })
   ends.setData({ type: "FeatureCollection", features: tips })
+
+  const railEnds: RailEnd[] = snapshot.provinces.map((province) => ({
+    id: province.id,
+    neighbors: province.neighbors,
+    rail: province.rail,
+    controller: province.controller,
+    anchor: province.centroid,
+    polygon: province.polygon,
+  }))
+  rails.setData(railFeatureCollection(railEnds, snapshot.selectedId))
+  const railVisibility = snapshot.showRails ? "visible" : "none"
+  for (const id of ["rail-hot", "rail-ties", "rail-track", "rail-cut"]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", railVisibility)
+  }
 
   if (map.getLayer("provinces")) {
     map.setPaintProperty(
@@ -851,6 +938,32 @@ function stateLabelCollection(): GeoJSON.FeatureCollection {
 
 function emptyCollection(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] }
+}
+
+function railFade(scale = 1): maplibregl.ExpressionSpecification {
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    RAIL_HIDDEN_ZOOM,
+    0,
+    RAIL_FULL_ZOOM,
+    scale,
+  ]
+}
+
+function railWidth(atOpening: number, atClose: number): maplibregl.ExpressionSpecification {
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    RAIL_HIDDEN_ZOOM,
+    0,
+    RAIL_FULL_ZOOM,
+    atOpening,
+    8.4,
+    atClose,
+  ]
 }
 
 function controllerColor(): maplibregl.ExpressionSpecification {
