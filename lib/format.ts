@@ -13,10 +13,15 @@ const MONTHS = [
   "December",
 ]
 
-/** Fortnight starting 4 June 1915. Turn 0 is the opening date. */
+/** Fortnight starting 4 June 1915. Turn 0 is the opening date of the long campaign. */
 export function formatDate(turn: number): string {
-  const ms = Date.UTC(1915, 5, 4) + turn * 14 * 24 * 60 * 60 * 1000
-  const date = new Date(ms)
+  return scenarioDate("campaign-1915", turn)
+}
+
+/** Gorlice–Tarnów opens on 2 May 1915. The long campaign opens on 4 June. */
+export function scenarioDate(scenario: "campaign-1915" | "gorlice", turn: number): string {
+  const start = scenario === "gorlice" ? Date.UTC(1915, 4, 2) : Date.UTC(1915, 5, 4)
+  const date = new Date(start + turn * 14 * 24 * 60 * 60 * 1000)
   return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
 }
 

@@ -12,9 +12,10 @@ type TimelinePanelProps = {
   log: TurnRecord[]
   active: number
   onActive: (index: number) => void
+  briefing?: string
 }
 
-export function TimelinePanel({ log, active, onActive }: TimelinePanelProps) {
+export function TimelinePanel({ log, active, onActive, briefing = BRIEFING }: TimelinePanelProps) {
   const record = log[active]
   const datesRef = useRef<HTMLDivElement>(null)
   const entryRef = useRef<HTMLDivElement>(null)
@@ -59,7 +60,7 @@ export function TimelinePanel({ log, active, onActive }: TimelinePanelProps) {
         >
           <div className="p-4">
             <p className="font-display text-lg">4 June 1915, two days after Przemyśl</p>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{BRIEFING}</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{briefing}</p>
           </div>
         </ScrollArea>
       ) : (

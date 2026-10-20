@@ -28,6 +28,8 @@ import type { Province } from "@/lib/types"
 export type MapProvince = Province & {
   polygon: ProvinceGeometry
   centroid: [number, number]
+  /** Victory-point value for the active scenario. Absent when the province is not an objective. */
+  vp?: number
 }
 
 type Overlay = "none" | "supply" | "unrest"
@@ -39,7 +41,7 @@ type Snapshot = {
   orders: QueuedOrder[]
   orderMode: boolean
   onSelect: (id: string) => void
-  onDraw: (from: string, to: string) => void
+  onDraw: (from: string, to: string, commitAll?: boolean) => void
 }
 
 type WarMapProps = Snapshot & {
@@ -395,17 +397,19 @@ export function WarMap({
           ],
         })
       })
-      const finish = (point?: maplibregl.PointLike) => {
+      const finish = (point?: maplibregl.PointLike, commitAll = false) => {
         if (!startId) return
         const origin = startId
         startId = null
         clearPreview()
         if (!point) return
         const target = idAt(point)
-        if (target && target !== origin) propsRef.current.onDraw(origin, target)
+        if (target && target !== origin) propsRef.current.onDraw(origin, target, commitAll)
         else if (target) propsRef.current.onSelect(target)
       }
-      map.on("mouseup", (event: maplibregl.MapMouseEvent) => finish(event.point))
+      map.on("mouseup", (event: maplibregl.MapMouseEvent) =>
+        finish(event.point, event.originalEvent.shiftKey),
+      )
       const onWindowUp = (event: MouseEvent) => {
         if (!startId) return
         const canvas = map.getCanvas()
@@ -729,7 +733,7 @@ function markerFace(province: MapProvince, selectedId: string | null): MarkerFac
     className: ["map-tag", province.id === selectedId ? "is-selected" : "", province.depot ? "is-depot" : ""]
       .filter(Boolean)
       .join(" "),
-    innerHTML: `<div class="map-tag-name">${escapeHtml(shortProvinceName(province.name))}</div>${badge}`,
+    innerHTML: `<div class="map-tag-name">${province.vp ? "★ " : ""}${escapeHtml(shortProvinceName(province.name))}</div>${badge}`,
     provinceId: province.id,
     lng: province.centroid[0],
     lat: province.centroid[1],

@@ -19,18 +19,24 @@ export async function playTurn(
   let source: "mock" | "llm" = "mock"
   let warning: string | undefined
 
+  const staff = mockAiTurn(rebound, orders)
   let gm
   if (!llmConfigured()) {
-    gm = buildStaffTurn(rebound, mockAiTurn(rebound, orders), interpreted)
+    gm = buildStaffTurn(rebound, staff, interpreted)
   } else {
     const fetched = await fetchGmWithCascade(rebound, orders, interpreted)
     if (fetched.ok) {
       source = "llm"
-      gm = buildStaffTurn(rebound, fetched.turn, interpreted)
+      const flavour = fetched.turn.diplomacy.map((line) => line.trim()).filter(Boolean).slice(0, 2)
+      gm = buildStaffTurn(
+        rebound,
+        { ...staff, diplomacy: flavour.length ? flavour : staff.diplomacy },
+        interpreted,
+      )
       warning = fetched.warning
     } else {
       warning = `${fetched.warning} The staff simulation took the turn.`
-      gm = buildStaffTurn(rebound, mockAiTurn(rebound, orders), interpreted)
+      gm = buildStaffTurn(rebound, staff, interpreted)
     }
   }
 

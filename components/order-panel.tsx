@@ -3,7 +3,9 @@
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { RECRUIT } from "@/lib/engine/economy"
 import { engagementOdds, findProvince } from "@/lib/engine/turn"
+import { KIND_LABEL } from "@/lib/format"
 import { interpretOrders } from "@/lib/gm/interpret"
 import type { QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
@@ -110,9 +112,13 @@ export function OrderPanel({
                   <p className="text-sm">
                     {order.kind === "fortify"
                       ? `Fortify ${from?.name ?? order.from}`
-                      : order.kind === "attack"
-                        ? `Attack ${to?.name ?? order.to} from ${from?.name ?? order.from}`
-                        : `Move to ${to?.name ?? order.to} from ${from?.name ?? order.from}`}
+                      : order.kind === "recruit"
+                        ? `Raise ${order.unitKind ? KIND_LABEL[order.unitKind] : "troops"} at ${from?.name ?? order.from}`
+                        : order.kind === "cancelRecruit"
+                          ? "Cancel a formation in the yards"
+                          : order.kind === "attack"
+                            ? `Attack ${to?.name ?? order.to} from ${from?.name ?? order.from}`
+                            : `Move to ${to?.name ?? order.to} from ${from?.name ?? order.from}`}
                   </p>
                   <Button
                     type="button"
@@ -131,7 +137,18 @@ export function OrderPanel({
                     {from && from.supply < 30 ? " Supply is too low to march." : ""}
                   </p>
                 )}
-                {order.kind !== "fortify" && from && (
+                {emptiesDepot(state, order) && (
+                  <p className="mt-1 text-xs text-destructive" data-testid="depot-warning">
+                    This order empties the {from?.name ?? "depot"} depot. Leave a garrison unless you mean to abandon it.
+                  </p>
+                )}
+                {order.kind === "recruit" && order.unitKind && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {RECRUIT[order.unitKind].mp} manpower, {RECRUIT[order.unitKind].ip} industry. Arrives when the fortnight closes
+                    {RECRUIT[order.unitKind].turns > 1 ? ", one fortnight later" : ""}.
+                  </p>
+                )}
+                {order.kind !== "fortify" && order.kind !== "recruit" && order.kind !== "cancelRecruit" && from && (
                   <ul className="mt-2 flex flex-col gap-1">
                     {from.units
                       .filter((unit) => unit.faction === "central")
@@ -172,12 +189,12 @@ export function OrderPanel({
         <Button
           type="button"
           data-testid="end-turn"
-          disabled={busy}
+          disabled={busy || !!state.result}
           onClick={onEndTurn}
           className="w-full"
           size="lg"
         >
-          {busy ? "Staff conference…" : "Close the fortnight"}
+          {state.result ? "The campaign is over" : busy ? "Staff conference…" : "Close the fortnight"}
         </Button>
         <Separator />
         <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Your formations</h3>
@@ -200,6 +217,14 @@ export function OrderPanel({
       </div>
     </ScrollArea>
   )
+}
+
+function emptiesDepot(state: GameState, order: QueuedOrder): boolean {
+  if (order.kind === "fortify" || order.kind === "recruit" || order.kind === "cancelRecruit") return false
+  const from = findProvince(state, order.from)
+  if (!from || from.depot !== "central") return false
+  const held = from.units.filter((unit) => unit.faction === "central")
+  return held.length > 0 && held.every((unit) => order.unitIds.includes(unit.id))
 }
 
 function describeProposal(

@@ -1,7 +1,18 @@
 import { applySupply } from "@/lib/data/scenario"
+import {
+  addPurse,
+  projectIncome,
+  RECRUIT,
+  recruitmentYard,
+  refund,
+  reinforceFaction,
+  pay,
+  canAfford,
+} from "@/lib/engine/economy"
+import { decideFortnight, gradeLabel, noteCaptures } from "@/lib/engine/victory"
 import { attackerPower, defenderPower, resolveCombat } from "@/lib/engine/combat"
 import { decaySupplyModifier } from "@/lib/engine/supply"
-import { clamp, FACTION_LABEL, formatDate, signed } from "@/lib/format"
+import { clamp, FACTION_LABEL, scenarioDate, signed } from "@/lib/format"
 import { makeRng, rollD6 } from "@/lib/rng"
 import type {
   AttackProposal,
@@ -12,13 +23,16 @@ import type {
   GameEvent,
   GameState,
   GMTurn,
+  CancelRecruitProposal,
   ModifyProposal,
   MoveProposal,
   Proposal,
   Province,
+  RecruitProposal,
   Resolution,
   TurnRecord,
   Unit,
+  UnitKind,
 } from "@/lib/types"
 
 export type ResolveOptions = {
@@ -35,6 +49,12 @@ export function resolveTurn(
   gm: GMTurn,
   options: ResolveOptions = {},
 ): { state: GameState; record: TurnRecord } {
+  if (input.result) {
+    return {
+      state: structuredClone(input),
+      record: decidedRecord(input, "The campaign is already decided."),
+    }
+  }
   const state = structuredClone(input)
   const beforeControl = new Map(
     state.provinces.map((province) => [province.id, province.controller]),
@@ -56,10 +76,12 @@ export function resolveTurn(
     supply: new Map<string, number>(),
   }
   const resolutions: Resolution[] = []
+  const attacked = new Set<string>()
 
   for (const proposal of gm.proposals) {
+    if (proposal.type === "recruit" || proposal.type === "cancelRecruit") continue
     resolutions.push(
-      applyProposal(state, proposal, usedUnits, fortified, spent, rng),
+      applyProposal(state, proposal, usedUnits, fortified, spent, rng, attacked),
     )
   }
 
@@ -81,6 +103,8 @@ export function resolveTurn(
     }
     if (province.unrest >= 85 && province.units.length > 0) {
       for (const unit of province.units) {
+        const loss = Math.min(4, unit.strength)
+        if (unit.faction === "central") state.cpStrengthLost += loss
         unit.strength = Math.max(0, unit.strength - 4)
       }
       logistics.push(
@@ -117,6 +141,31 @@ export function resolveTurn(
     }
   }
 
+  for (const faction of ["central", "russia"] as const) {
+    const income = projectIncome(state, faction)
+    state.treasury[faction] = addPurse(state.treasury[faction], income)
+    logistics.push(
+      `${FACTION_LABEL[faction]} collect ${income.mp} manpower and ${income.ip} industry.`,
+    )
+  }
+  logistics.push(...reinforceFaction(state, "central", attacked))
+  logistics.push(...reinforceFaction(state, "russia", attacked))
+
+  for (const proposal of gm.proposals) {
+    if (proposal.type !== "recruit" && proposal.type !== "cancelRecruit") continue
+    resolutions.push(applyProposal(state, proposal, usedUnits, fortified, spent, rng, attacked))
+  }
+  logistics.push(...advanceBuilds(state))
+
+  noteCaptures(state)
+  const decision = decideFortnight(state)
+  if (decision) {
+    state.result = decision
+    logistics.push(
+      `The campaign ends: ${gradeLabel(decision.grade)}. ${decision.reason} Score ${decision.score}.`,
+    )
+  }
+
   const record: TurnRecord = {
     turn: state.turn,
     date: state.date,
@@ -131,9 +180,26 @@ export function resolveTurn(
     warning: options.warning,
   }
 
-  state.turn += 1
-  state.date = formatDate(state.turn)
+  if (!state.result) {
+    state.turn += 1
+    state.date = scenarioDate(state.scenario, state.turn)
+  }
   return { state, record }
+}
+
+function decidedRecord(state: GameState, narration: string): TurnRecord {
+  return {
+    turn: state.turn,
+    date: state.date,
+    narration,
+    diplomacy: [],
+    resolutions: [],
+    events: [],
+    controlChanges: [],
+    logistics: [],
+    notes: [],
+    gmSource: "mock",
+  }
 }
 
 function applyProposal(
@@ -143,16 +209,21 @@ function applyProposal(
   fortified: Set<string>,
   spent: { unrest: Map<string, number>; supply: Map<string, number> },
   rng: () => number,
+  attacked: Set<string>,
 ): Resolution {
   switch (proposal.type) {
     case "move":
       return applyMove(state, proposal, usedUnits)
     case "attack":
-      return applyAttack(state, proposal, usedUnits, rollD6(rng))
+      return applyAttack(state, proposal, usedUnits, rollD6(rng), attacked)
     case "fortify":
       return applyFortify(state, proposal, fortified)
     case "modify":
       return applyModify(state, proposal, spent)
+    case "recruit":
+      return applyRecruit(state, proposal)
+    case "cancelRecruit":
+      return applyCancelRecruit(state, proposal)
   }
 }
 
@@ -205,6 +276,7 @@ export function applyAttack(
   proposal: AttackProposal,
   usedUnits: Set<string>,
   roll: number,
+  attacked: Set<string> = new Set(),
 ): Resolution {
   const from = findProvince(state, proposal.from)
   const target = findProvince(state, proposal.target)
@@ -278,6 +350,9 @@ export function applyAttack(
   )
   const attackerLoss = attackerStrengthBefore - sumStrength(survivingAttackers)
   const defenderLoss = defenderStrengthBefore - sumStrength(survivingDefenders)
+  if (faction === "central") state.cpStrengthLost += attackerLoss
+  if (target.controller === "central") state.cpStrengthLost += defenderLoss
+  for (const unit of attackers) attacked.add(unit.id)
 
   from.units = from.units.filter((unit) => !attackers.includes(unit))
   target.units = target.units.filter((unit) => !defenders.includes(unit))
@@ -291,10 +366,15 @@ export function applyAttack(
     const previous = target.controller
     let retreatSummary = "The garrison is destroyed."
     if (survivingDefenders.length > 0) {
+      for (const unit of survivingDefenders) {
+        const shaken = Math.max(5, Math.round(unit.strength * 0.6))
+        if (unit.faction === "central") state.cpStrengthLost += unit.strength - shaken
+        unit.strength = shaken
+      }
       const retreatTo = retreatDestination(state, target, previous, from.id)
       if (retreatTo) {
         retreatTo.units.push(...survivingDefenders)
-        retreatSummary = `The remnants retreat to ${retreatTo.name}.`
+        retreatSummary = `The remnants retreat to ${retreatTo.name}, shaken.`
       } else {
         retreatSummary = "No friendly province is open. The remnants are lost."
       }
@@ -477,7 +557,11 @@ function applyEvent(state: GameState, event: GameEvent): EventResolution {
     case "partisans": {
       province.unrest = clamp(province.unrest + 15, 0, 100)
       const target = [...province.units].sort((a, b) => b.strength - a.strength)[0]
-      if (target) target.strength = Math.max(0, target.strength - 8)
+      if (target) {
+        const loss = Math.min(8, target.strength)
+        if (target.faction === "central") state.cpStrengthLost += loss
+        target.strength = Math.max(0, target.strength - 8)
+      }
       const hurt = target ? ` ${target.name} loses 8 strength.` : ""
       return {
         event,
@@ -529,6 +613,97 @@ function applyEvent(state: GameState, event: GameEvent): EventResolution {
       }
     }
   }
+}
+
+function applyRecruit(state: GameState, proposal: RecruitProposal): Resolution {
+  const province = findProvince(state, proposal.province)
+  if (!province) return reject(proposal, "Unknown province.")
+  if (!recruitmentYard(province, proposal.faction)) {
+    return reject(
+      proposal,
+      `${province.name} cannot raise troops for ${FACTION_LABEL[proposal.faction]}. Depots and home cities need supply 60.`,
+    )
+  }
+  const cost = RECRUIT[proposal.kind]
+  const purse = state.treasury[proposal.faction]
+  if (!canAfford(purse, proposal.kind)) {
+    return reject(
+      proposal,
+      `${FACTION_LABEL[proposal.faction]} cannot afford ${cost.label} (${cost.mp} manpower, ${cost.ip} industry).`,
+    )
+  }
+  const pending = state.queue.filter(
+    (job) => job.faction === proposal.faction && job.provinceId === province.id,
+  )
+  if (pending.length >= 2) {
+    return reject(proposal, `${province.name} already has two formations in the yards.`)
+  }
+  state.treasury[proposal.faction] = pay(purse, proposal.kind)
+  const job = {
+    id: `${proposal.faction}-raise-${province.id}-${state.turn}-${proposal.kind}-${state.queue.length}`,
+    faction: proposal.faction,
+    provinceId: province.id,
+    kind: proposal.kind,
+    remaining: cost.turns,
+    name: raisedName(province.name, proposal.kind, state.queue.length),
+  }
+  state.queue.push(job)
+  const when = cost.turns === 1 ? "this fortnight closes" : "two fortnights"
+  return {
+    proposal,
+    status: "applied",
+    summary: `${FACTION_LABEL[proposal.faction]} raise ${job.name} at ${province.name}. It arrives when ${when}.`,
+  }
+}
+
+function applyCancelRecruit(state: GameState, proposal: CancelRecruitProposal): Resolution {
+  const index = state.queue.findIndex((job) => job.id === proposal.id)
+  if (index < 0) return reject(proposal, "That formation is not in the yards.")
+  const job = state.queue[index]
+  state.queue.splice(index, 1)
+  state.treasury[job.faction] = refund(state.treasury[job.faction], job.kind)
+  return {
+    proposal,
+    status: "applied",
+    summary: `${job.name} is cancelled at the yards. The manpower and industry are returned.`,
+  }
+}
+
+function advanceBuilds(state: GameState): string[] {
+  const notes: string[] = []
+  const still = []
+  for (const job of state.queue) {
+    job.remaining -= 1
+    if (job.remaining > 0) {
+      still.push(job)
+      continue
+    }
+    const province = findProvince(state, job.provinceId)
+    if (!province || province.controller !== job.faction) {
+      state.treasury[job.faction] = refund(state.treasury[job.faction], job.kind)
+      notes.push(`${job.name} is lost with ${province?.name ?? "its yard"}. The stocks are returned.`)
+      continue
+    }
+    const stats = RECRUIT[job.kind]
+    province.units.push({
+      id: job.id,
+      name: job.name,
+      faction: job.faction,
+      strength: stats.strength,
+      maxStrength: stats.strength,
+      morale: stats.morale,
+      kind: job.kind,
+    })
+    notes.push(`${job.name} arrives at ${province.name}.`)
+  }
+  state.queue = still
+  return notes
+}
+
+function raisedName(province: string, kind: UnitKind, salt: number): string {
+  const title =
+    kind === "infantry" ? "Reserve Corps" : kind === "cavalry" ? "Reserve Cavalry" : "Heavy Artillery"
+  return salt % 2 === 0 ? `${province} ${title}` : `${province} ${title} II`
 }
 
 function label(field: "unrest" | "supply"): string {

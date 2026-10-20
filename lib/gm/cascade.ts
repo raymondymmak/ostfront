@@ -237,6 +237,16 @@ function isCentralAction(state: GameState, proposal: Proposal): boolean {
         ?.controller === "central"
     )
   }
+  if (proposal.type === "recruit") return proposal.faction === "central"
+  if (proposal.type === "cancelRecruit") {
+    return state.queue.some((job) => job.id === proposal.id && job.faction === "central")
+  }
+  if (proposal.type === "modify") {
+    return (
+      state.provinces.find((province) => province.id === proposal.province)?.controller ===
+      "central"
+    )
+  }
   return false
 }
 
@@ -255,5 +265,9 @@ function proposalKey(proposal: Proposal): string {
       return `fortify:${proposal.province}`
     case "modify":
       return `modify:${proposal.province}:${proposal.field}:${proposal.delta}`
+    case "recruit":
+      return `recruit:${proposal.faction}:${proposal.province}:${proposal.kind}`
+    case "cancelRecruit":
+      return `cancel:${proposal.id}`
   }
 }

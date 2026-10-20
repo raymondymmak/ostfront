@@ -5,15 +5,23 @@ import { Hud } from "@/components/hud"
 import { OrderPanel } from "@/components/order-panel"
 import { ProvincePanel } from "@/components/province-panel"
 import { TimelinePanel } from "@/components/timeline-panel"
+import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
-import type { QueuedOrder } from "@/lib/orders"
+import { BRIEFING, GORLICE_BRIEFING } from "@/lib/data/scenario"
+import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
+import { RECRUIT, spendable } from "@/lib/engine/economy"
+import { gradeLabel } from "@/lib/engine/victory"
+import { leaveDepotGarrison, type QueuedOrder } from "@/lib/orders"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
-import type { GameState, PlayerOrder, SaveGame, TurnRecord } from "@/lib/types"
+import type { Difficulty, GameState, PlayerOrder, SaveGame, ScenarioId, TurnRecord, UnitKind } from "@/lib/types"
 import { WarMap, type MapProvince } from "@/components/war-map"
 
 export function GameApp() {
   const [game, setGame] = useState<SaveGame>(() => loadGame() ?? freshGame())
+  const [setupOpen, setSetupOpen] = useState(() => loadGame() === null)
+  const [choice, setChoice] = useState<ScenarioId>("campaign-1915")
+  const [difficulty, setDifficulty] = useState<Difficulty>("normal")
   const [selectedId, setSelectedId] = useState("krakow")
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
   const [orderMode, setOrderMode] = useState(false)
@@ -27,8 +35,8 @@ export function GameApp() {
   const [armReset, setArmReset] = useState(false)
 
   useEffect(() => {
-    saveGame(game)
-  }, [game])
+    if (!setupOpen) saveGame(game)
+  }, [game, setupOpen])
 
   useEffect(() => {
     if (!hint) return
@@ -48,13 +56,24 @@ export function GameApp() {
         ...province,
         polygon: CATALOG_BY_ID[province.id]?.polygon ?? [],
         centroid: CATALOG_BY_ID[province.id]?.centroid ?? [0, 0],
+        vp: objectiveValue(game.state.scenario, province.id) || undefined,
       })),
-    [game.state.provinces],
+    [game.state.provinces, game.state.scenario],
   )
+  const attacking = new Set(
+    queue.filter((order) => order.kind === "attack").flatMap((order) => order.unitIds),
+  )
+  const budget = spendable(game.state, "central", attacking)
+  for (const order of queue) {
+    if (order.kind !== "recruit" || !order.unitKind) continue
+    const cost = RECRUIT[order.unitKind]
+    budget.mp -= cost.mp
+    budget.ip -= cost.ip
+  }
   const selected = game.state.provinces.find((province) => province.id === selectedId) ?? null
   const activeLog = logIndex ?? Math.max(0, game.log.length - 1)
 
-  function addArrow(fromId: string, toId: string) {
+  function addArrow(fromId: string, toId: string, commitAll = false) {
     const from = game.state.provinces.find((province) => province.id === fromId)
     const to = game.state.provinces.find((province) => province.id === toId)
     if (!from || !to || fromId === toId) return
@@ -74,12 +93,18 @@ export function GameApp() {
       return
     }
     const kind = to.controller === "central" ? "move" : "attack"
+    const chosen = leaveDepotGarrison(available, from.depot === "central", commitAll)
+    const remaining = from.units.filter(
+      (unit) => unit.faction === "central" && !chosen.some((item) => item.id === unit.id) && !claimed.has(unit.id),
+    )
     if (!from.neighbors.includes(toId)) {
       setHint(
         `${from.name} and ${to.name} do not share a border. The engine will reject the order so you can see why.`,
       )
     } else if (from.supply < 30) {
       setHint(`${from.name} is below supply 30. The engine will refuse the advance.`)
+    } else if (from.depot === "central" && remaining.length === 0) {
+      setHint(`This arrow empties the ${from.name} depot. Leave a garrison unless you mean to abandon it.`)
     } else {
       setHint(null)
     }
@@ -94,10 +119,47 @@ export function GameApp() {
           kind,
           from: fromId,
           to: toId,
-          unitIds: available.map((unit) => unit.id),
+          unitIds: chosen.map((unit) => unit.id),
         },
       ]
     })
+  }
+
+  function recruit(provinceId: string, unitKind: UnitKind) {
+    setQueue((current) => {
+      if (current.some((order) => order.kind === "recruit" && order.from === provinceId && order.unitKind === unitKind)) {
+        return current
+      }
+      return [
+        ...current,
+        { id: crypto.randomUUID(), kind: "recruit", from: provinceId, unitIds: [], unitKind },
+      ]
+    })
+    setHint(null)
+  }
+
+  function cancelRecruit(buildId: string) {
+    setQueue((current) => {
+      if (current.some((order) => order.kind === "cancelRecruit" && order.buildId === buildId)) return current
+      return [
+        ...current,
+        { id: crypto.randomUUID(), kind: "cancelRecruit", from: "", unitIds: [], buildId },
+      ]
+    })
+  }
+
+  function begin(scenario: ScenarioId, nextDifficulty: Difficulty) {
+    clearGame()
+    setGame(freshGame(scenario, nextDifficulty))
+    setQueue([])
+    setDirective("")
+    setFlash([])
+    setError(null)
+    setLogIndex(null)
+    setSelectedId("krakow")
+    setOrderMode(false)
+    setArmReset(false)
+    setSetupOpen(false)
   }
 
   function fortify(provinceId: string) {
@@ -116,13 +178,17 @@ export function GameApp() {
   }
 
   const endTurn = useCallback(async () => {
-    if (busy) return
+    if (busy || game.state.result) return
     setBusy(true)
     setError(null)
     const orders: PlayerOrder[] = []
     for (const order of queue) {
       if (order.kind === "fortify") {
         orders.push({ type: "fortify", provinceId: order.from })
+      } else if (order.kind === "recruit" && order.unitKind) {
+        orders.push({ type: "recruit", provinceId: order.from, unitKind: order.unitKind })
+      } else if (order.kind === "cancelRecruit" && order.buildId) {
+        orders.push({ type: "cancelRecruit", buildId: order.buildId })
       } else if (order.kind === "move" && order.to) {
         for (const unitId of order.unitIds) {
           orders.push({ type: "move", unitId, to: order.to })
@@ -154,7 +220,7 @@ export function GameApp() {
       }
       const record = payload.record
       setGame((current) => ({
-        version: 1,
+        version: 2,
         state: payload.state!,
         log: [...current.log, record],
       }))
@@ -187,7 +253,7 @@ export function GameApp() {
       return
     }
     clearGame()
-    setGame(freshGame())
+    setSetupOpen(true)
     setQueue([])
     setDirective("")
     setFlash([])
@@ -252,18 +318,22 @@ export function GameApp() {
               <ProvincePanel
                 state={game.state}
                 province={selected}
+                budget={budget}
                 onSelect={setSelectedId}
                 onOrder={addArrow}
                 onFortify={fortify}
+                onRecruit={recruit}
+                onCancelRecruit={cancelRecruit}
               />
             </TabsContent>
             <TabsContent value="chronicle" className="min-h-0 flex-1 lg:hidden">
-              <TimelinePanel
-                log={game.log}
-                active={game.log.length ? activeLog : 0}
-                onActive={setLogIndex}
-              />
-            </TabsContent>
+            <TimelinePanel
+              log={game.log}
+              active={game.log.length ? activeLog : 0}
+              onActive={setLogIndex}
+              briefing={game.state.scenario === "gorlice" ? GORLICE_BRIEFING : BRIEFING}
+            />
+          </TabsContent>
           </Tabs>
         </aside>
         <section className="relative z-10 hidden min-h-0 overflow-hidden border-t border-border bg-background lg:block">
@@ -272,10 +342,85 @@ export function GameApp() {
               log={game.log}
               active={game.log.length ? activeLog : 0}
               onActive={setLogIndex}
+              briefing={game.state.scenario === "gorlice" ? GORLICE_BRIEFING : BRIEFING}
             />
           </div>
         </section>
       </div>
+      {game.state.result && !setupOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-4" data-testid="endgame">
+          <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg">
+            <p className="text-xs tracking-wide text-muted-foreground uppercase">
+              {game.state.result.sudden ? "Sudden death" : "Campaign over"}
+            </p>
+            <h2 className="mt-2 font-display text-4xl leading-none">{gradeLabel(game.state.result.grade)}</h2>
+            <p className="mt-3 text-sm leading-6">{game.state.result.reason}</p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              {game.state.date} · Fortnight {Math.min(game.state.turn + 1, scenarioSpec(game.state.scenario).length)} / {scenarioSpec(game.state.scenario).length}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Score {game.state.result.score} · ★ {game.state.result.captured}/{game.state.result.available} victory points
+            </p>
+            <Button type="button" className="mt-5" onClick={() => setSetupOpen(true)}>
+              Choose another scenario
+            </Button>
+          </div>
+        </div>
+      )}
+      {setupOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4" data-testid="scenario-picker">
+          <div className="flex w-full max-w-xl flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-lg">
+            <div>
+              <p className="font-display text-3xl leading-none">Choose a scenario</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Lemberg starts in Central Powers hands in both. Nothing happens while you are away. Every order resolves when the fortnight closes.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(
+                [
+                  ["campaign-1915", "1915 Campaign", "4 June – 31 December. Sixteen fortnights. Take Warsaw and the eastern cities. Hold Lemberg, Kraków and Königsberg."],
+                  ["gorlice", "Gorlice–Tarnów", "2 May – 11 July. Six fortnights. Mackensen's 11th Army breaks the thin Russian 3rd Army toward Kielce, Lublin and Rovno."],
+                ] as const
+              ).map(([id, title, copy]) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`scenario-${id}`}
+                  onClick={() => setChoice(id)}
+                  className={`rounded-lg border p-3 text-left ${choice === id ? "border-primary bg-primary/10" : "border-border"}`}
+                >
+                  <span className="font-display text-xl leading-none">{title}</span>
+                  <span className="mt-2 block text-sm text-muted-foreground">{copy}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2" data-testid="difficulty">
+              {(
+                [
+                  ["easy", "Easy", "Russia ×0.8 income, attacks at 1.4"],
+                  ["normal", "Normal", "Full income, attacks at 1.2"],
+                  ["hard", "Hard", "Russia ×1.25 income, attacks at 1.05"],
+                ] as const
+              ).map(([id, title, copy]) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`difficulty-${id}`}
+                  onClick={() => setDifficulty(id)}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm ${difficulty === id ? "border-primary bg-primary/10" : "border-border"}`}
+                >
+                  <span className="block font-medium">{title}</span>
+                  <span className="text-muted-foreground">{copy}</span>
+                </button>
+              ))}
+            </div>
+            <Button type="button" data-testid="begin-scenario" onClick={() => begin(choice, difficulty)}>
+              Begin
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

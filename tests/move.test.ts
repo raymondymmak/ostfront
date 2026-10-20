@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { blankCampaign } from "@/lib/data/campaign"
 import { resolveTurn } from "@/lib/engine/turn"
 import type { Faction, GameState, GMTurn, Province, Unit } from "@/lib/types"
 
@@ -36,6 +37,7 @@ function quiet(proposals: GMTurn["proposals"] = []): GMTurn {
 
 function front(): GameState {
   return {
+    ...blankCampaign(),
     version: 1,
     turn: 3,
     date: "30 July 1915",

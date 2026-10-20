@@ -37,6 +37,19 @@ export function interpretOrders(
       proposals.push({ type: "fortify", province: province.id })
       continue
     }
+    if (order.type === "recruit") {
+      proposals.push({
+        type: "recruit",
+        faction: "central",
+        province: order.provinceId,
+        kind: order.unitKind,
+      })
+      continue
+    }
+    if (order.type === "cancelRecruit") {
+      proposals.push({ type: "cancelRecruit", id: order.buildId })
+      continue
+    }
     if (order.type === "move") {
       const located = findUnit(state, order.unitId)
       if (!located) {
