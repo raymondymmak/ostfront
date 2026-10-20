@@ -19,6 +19,7 @@ import {
   geometryValid,
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
+import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName } from "@/lib/map/labels"
 import { applyMarkerFace, type MarkerFace } from "@/lib/map/marker-face"
 import { applyProvinceLabelOpacity } from "@/lib/map/province-label-zoom"
@@ -28,6 +29,8 @@ import type { Province } from "@/lib/types"
 export type MapProvince = Province & {
   polygon: ProvinceGeometry
   centroid: [number, number]
+  /** Victory-point value for the active scenario. Absent when the province is not an objective. */
+  vp?: number
 }
 
 type Overlay = "none" | "supply" | "unrest"
@@ -39,7 +42,7 @@ type Snapshot = {
   orders: QueuedOrder[]
   orderMode: boolean
   onSelect: (id: string) => void
-  onDraw: (from: string, to: string) => void
+  onDraw: (from: string, to: string, commitAll?: boolean) => void
 }
 
 type WarMapProps = Snapshot & {
@@ -395,17 +398,19 @@ export function WarMap({
           ],
         })
       })
-      const finish = (point?: maplibregl.PointLike) => {
+      const finish = (point?: maplibregl.PointLike, commitAll = false) => {
         if (!startId) return
         const origin = startId
         startId = null
         clearPreview()
         if (!point) return
         const target = idAt(point)
-        if (target && target !== origin) propsRef.current.onDraw(origin, target)
+        if (target && target !== origin) propsRef.current.onDraw(origin, target, commitAll)
         else if (target) propsRef.current.onSelect(target)
       }
-      map.on("mouseup", (event: maplibregl.MapMouseEvent) => finish(event.point))
+      map.on("mouseup", (event: maplibregl.MapMouseEvent) =>
+        finish(event.point, event.originalEvent.shiftKey),
+      )
       const onWindowUp = (event: MouseEvent) => {
         if (!startId) return
         const canvas = map.getCanvas()
@@ -576,7 +581,7 @@ function syncMap(
   for (const province of snapshot.provinces) {
     if (!geometryValid(province.polygon)) continue
     hasGeometry = true
-    const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
+    const strength = listedStrength(province.units)
     eachCoord(province.polygon, (coord) => bounds.extend(coord))
     features.push({
       type: "Feature",
@@ -720,7 +725,7 @@ function paintProvinceLabels(map: maplibregl.Map, markers: Map<string, maplibreg
 }
 
 function markerFace(province: MapProvince, selectedId: string | null): MarkerFace {
-  const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
+  const strength = listedStrength(province.units)
   const faction = province.controller === "central" ? "Central Powers" : "Russia"
   const badge = strength
     ? `<div class="map-badge ${province.controller}" title="Total unit strength: ${strength} (${faction})">${strength}</div>`
@@ -729,7 +734,7 @@ function markerFace(province: MapProvince, selectedId: string | null): MarkerFac
     className: ["map-tag", province.id === selectedId ? "is-selected" : "", province.depot ? "is-depot" : ""]
       .filter(Boolean)
       .join(" "),
-    innerHTML: `<div class="map-tag-name">${escapeHtml(shortProvinceName(province.name))}</div>${badge}`,
+    innerHTML: `<div class="map-tag-name">${province.vp ? "★ " : ""}${escapeHtml(shortProvinceName(province.name))}</div>${badge}`,
     provinceId: province.id,
     lng: province.centroid[0],
     lat: province.centroid[1],

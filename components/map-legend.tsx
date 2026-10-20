@@ -38,6 +38,9 @@ export function MapLegend() {
           <div className="mt-1 flex items-center gap-2">
             <span className="inline-block size-2.5 rotate-45 bg-[#8a6a32]" /> Depot
           </div>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="text-[#8a6a32]">★</span> Victory-point city
+          </div>
           <div className="mt-1.5 border-t border-[#3d342b]/25 pt-1.5">
             <p className="font-semibold text-[#3d342b]">Strength counters</p>
             <p className="mt-0.5 flex items-center gap-2">

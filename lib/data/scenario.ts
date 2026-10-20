@@ -1,7 +1,8 @@
+import { blankCampaign } from "@/lib/data/campaign"
 import { CATALOG, blankProvince } from "@/lib/data/catalog"
 import { computeSupply } from "@/lib/engine/supply"
-import { formatDate } from "@/lib/format"
-import type { Faction, GameState, Unit, UnitKind } from "@/lib/types"
+import { scenarioDate } from "@/lib/format"
+import type { Difficulty, Echelon, Faction, GameState, ScenarioId, Unit, UnitKind } from "@/lib/types"
 
 const START_SEED = 19150604
 
@@ -13,6 +14,8 @@ type Placement = {
   strength: number
   morale: number
   province: string
+  echelon?: Echelon
+  parentId?: string
 }
 
 const PLACEMENTS: Placement[] = [
@@ -72,7 +75,7 @@ const PLACEMENTS: Placement[] = [
 export const BRIEFING = [
   "4 June 1915. Galicia is already Central Powers ground. Przemyśl sits in the Kraków state, and Lemberg is the Austrian forward depot, with Stanislav and Bukovina held behind it.",
   "The Russian line is Lublin, Volhynia and Podolia. Warsaw is Stavka's depot. Your depots are Königsberg, Kraków and Lemberg. Rovno, in Volhynia, is the Russian forward railhead.",
-  "A depot feeds only its own side, and only while they hold it. Rails are cheap. Below supply 30 a formation cannot advance. Stavka spends this first fortnight digging; after that, local superiority is enough for them to strike.",
+  "A depot feeds only its own side, and only while they hold it. Provinces in supply pay manpower and industry, less where unrest is high and half as much in occupied ground. Raise troops at a depot or a home city; they arrive when the fortnight closes. The campaign ends on 31 December 1915.",
 ].join(" ")
 
 function toUnit(placement: Placement): Unit {
@@ -81,25 +84,85 @@ function toUnit(placement: Placement): Unit {
     name: placement.name,
     faction: placement.faction,
     strength: placement.strength,
+    maxStrength: placement.strength,
     morale: placement.morale,
     kind: placement.kind,
+    echelon: placement.echelon ?? "army",
+    ...(placement.parentId ? { parentId: placement.parentId } : {}),
   }
 }
 
-export function createInitialState(): GameState {
+/**
+ * 2 May 1915. Mackensen's 11th Army is massed in the Kraków state
+ * (Gorlice, Tarnów, and the San gateway). Lemberg stays the Austrian depot.
+ * The Russian 3rd Army is a thin cordon on Kielce and Lublin.
+ */
+const GORLICE_PLACEMENTS: Placement[] = [
+  { id: "g-kra-11", name: "German 11th Army (Mackensen)", faction: "central", kind: "infantry", strength: 64, morale: 80, province: "krakow", echelon: "army" },
+  { id: "g-kra-x", name: "X Corps", faction: "central", kind: "infantry", strength: 58, morale: 78, province: "krakow" },
+  { id: "g-kra-grd", name: "Guard Corps", faction: "central", kind: "infantry", strength: 44, morale: 84, province: "krakow" },
+  { id: "g-kra-art", name: "Mackensen's Heavy Artillery", faction: "central", kind: "artillery", strength: 34, morale: 82, province: "krakow" },
+  { id: "g-lwow-inf", name: "Lemberg Garrison", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "lwow" },
+  { id: "g-lwow-art", name: "Lemberg Artillery", faction: "central", kind: "artillery", strength: 18, morale: 72, province: "lwow" },
+  { id: "g-kon-inf", name: "I Reserve Corps", faction: "central", kind: "infantry", strength: 40, morale: 72, province: "konigsberg" },
+  { id: "g-erm-inf", name: "XX Corps", faction: "central", kind: "infantry", strength: 28, morale: 70, province: "ermland_masuren" },
+  { id: "g-pos-inf", name: "V Corps", faction: "central", kind: "infantry", strength: 36, morale: 70, province: "poznan" },
+  { id: "g-obs-inf", name: "Upper Silesia Landwehr", faction: "central", kind: "infantry", strength: 32, morale: 66, province: "oberschlesien" },
+  { id: "g-kat-inf", name: "Silesian Corps", faction: "central", kind: "infantry", strength: 30, morale: 72, province: "katowice" },
+  { id: "g-dan-inf", name: "Danzig Garrison", faction: "central", kind: "infantry", strength: 22, morale: 64, province: "danzig" },
+  { id: "g-gdy-inf", name: "Thorn Fortress Brigade", faction: "central", kind: "infantry", strength: 26, morale: 66, province: "gdynia" },
+  { id: "g-sta-cav", name: "Austrian Cavalry Corps", faction: "central", kind: "cavalry", strength: 24, morale: 74, province: "stanislawow" },
+  { id: "g-buc-inf", name: "Bukovina Brigade", faction: "central", kind: "infantry", strength: 20, morale: 66, province: "bucovina" },
+  { id: "g-kie-inf", name: "3rd Army Screen", faction: "russia", kind: "infantry", strength: 26, morale: 62, province: "kielce" },
+  { id: "g-lub-inf", name: "3rd Army", faction: "russia", kind: "infantry", strength: 40, morale: 66, province: "lublin" },
+  { id: "g-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 16, morale: 64, province: "lublin" },
+  { id: "g-wol-inf", name: "Rovno Reserve", faction: "russia", kind: "infantry", strength: 32, morale: 66, province: "wolyn" },
+  { id: "g-war-inf", name: "Warsaw Garrison", faction: "russia", kind: "infantry", strength: 36, morale: 70, province: "warszawa" },
+  { id: "g-war-art", name: "Warsaw Fortress Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 72, province: "warszawa" },
+  { id: "g-lod-inf", name: "II Corps", faction: "russia", kind: "infantry", strength: 34, morale: 68, province: "lodz" },
+  { id: "g-plo-inf", name: "1st Army", faction: "russia", kind: "infantry", strength: 30, morale: 66, province: "plock" },
+  { id: "g-bia-inf", name: "Narew Group", faction: "russia", kind: "infantry", strength: 28, morale: 64, province: "bialystok" },
+  { id: "g-sud-inf", name: "Kovno Garrison", faction: "russia", kind: "infantry", strength: 26, morale: 64, province: "suduva" },
+  { id: "g-wil-cav", name: "1st Cavalry Corps", faction: "russia", kind: "cavalry", strength: 20, morale: 74, province: "wilno" },
+  { id: "g-pro-inf", name: "8th Army", faction: "russia", kind: "infantry", strength: 40, morale: 70, province: "proskuriv" },
+  { id: "g-min-inf", name: "Minsk Reserve", faction: "russia", kind: "infantry", strength: 22, morale: 62, province: "minsk" },
+  { id: "g-pol-inf", name: "Polesie Brigade", faction: "russia", kind: "infantry", strength: 16, morale: 58, province: "polesie" },
+]
+
+export const GORLICE_BRIEFING = [
+  "2 May 1915. Mackensen's 11th Army is concentrated in the Kraków state, the ground of Gorlice and Tarnów, with the San gateway at Przemyśl behind the same border.",
+  "Lemberg is already the Austrian depot and stays so. The Russian 3rd Army is thin on Kielce and only a little stronger at Lublin. Rovno, in Volhynia, is the rail behind that line.",
+  "You have six fortnights. Take Kielce, Lublin and Volhynia, and do not lose Kraków or Lemberg. Depots and cities raise troops; they arrive when the fortnight closes.",
+].join(" ")
+
+export function createInitialState(difficulty: Difficulty = "normal"): GameState {
+  return assemble("campaign-1915", difficulty, PLACEMENTS, START_SEED)
+}
+
+export function createScenario(id: ScenarioId, difficulty: Difficulty = "normal"): GameState {
+  if (id === "gorlice") return assemble("gorlice", difficulty, GORLICE_PLACEMENTS, 19150502)
+  return createInitialState(difficulty)
+}
+
+function assemble(
+  scenario: ScenarioId,
+  difficulty: Difficulty,
+  placements: Placement[],
+  seed: number,
+): GameState {
   const provinces = CATALOG.map((entry) => {
     const province = blankProvince(entry)
-    province.units = PLACEMENTS.filter((unit) => unit.province === entry.id).map(
-      toUnit,
-    )
+    province.units = placements.filter((unit) => unit.province === entry.id).map(toUnit)
     return province
   })
   const state: GameState = {
     version: 1,
     turn: 0,
-    date: formatDate(0),
-    seed: START_SEED,
+    date: scenarioDate(scenario, 0),
+    seed,
     provinces,
+    ...blankCampaign(difficulty),
+    scenario,
   }
   applySupply(state)
   return state
@@ -141,11 +204,21 @@ export function linksOf(
 }
 
 export function rebindState(state: GameState): GameState {
+  const scenario = state.scenario ?? "campaign-1915"
   const live = new Map(state.provinces.map((province) => [province.id, province]))
-  const rebound = createInitialState()
+  const rebound = createScenario(scenario, state.difficulty ?? "normal")
   rebound.turn = state.turn
-  rebound.date = formatDate(state.turn)
-  rebound.seed = state.seed || START_SEED
+  rebound.date = scenarioDate(scenario, state.turn)
+  rebound.seed = state.seed || (scenario === "gorlice" ? 19150502 : START_SEED)
+  rebound.treasury = {
+    central: { ...(state.treasury?.central ?? rebound.treasury.central) },
+    russia: { ...(state.treasury?.russia ?? rebound.treasury.russia) },
+  }
+  rebound.queue = (state.queue ?? []).map((job) => ({ ...job }))
+  rebound.result = state.result ?? null
+  rebound.capturedOn = { ...(state.capturedOn ?? {}) }
+  rebound.homeLost = state.homeLost ?? false
+  rebound.cpStrengthLost = state.cpStrengthLost ?? 0
   for (const province of rebound.provinces) {
     const current = live.get(province.id)
     if (!current) continue
@@ -153,7 +226,11 @@ export function rebindState(state: GameState): GameState {
     province.unrest = current.unrest
     province.fort = current.fort
     province.supplyModifier = current.supplyModifier ?? 0
-    province.units = current.units.map((unit) => ({ ...unit }))
+    province.units = current.units.map((unit) => ({
+      ...unit,
+      echelon: unit.echelon ?? "army",
+      maxStrength: unit.maxStrength ?? unit.strength,
+    }))
     province.supply = current.supply
   }
   applySupply(rebound)

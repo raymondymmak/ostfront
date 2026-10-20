@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { blankCampaign } from "@/lib/data/campaign"
 import { applyModify, resolveTurn } from "@/lib/engine/turn"
 import type { GameState, ModifyProposal, Province } from "@/lib/types"
 
@@ -22,6 +23,7 @@ function warsaw(unrest: number): Province {
 
 function game(unrest: number): GameState {
   return {
+    ...blankCampaign(),
     version: 1,
     turn: 0,
     date: "4 June 1915",

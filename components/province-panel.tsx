@@ -4,24 +4,32 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { objectiveValue } from "@/lib/data/objectives"
+import { RECRUIT, recruitmentYard } from "@/lib/engine/economy"
 import { engagementOdds } from "@/lib/engine/turn"
 import { FACTION_LABEL, KIND_LABEL, TERRAIN_LABEL } from "@/lib/format"
-import type { GameState, Province } from "@/lib/types"
+import type { GameState, Province, Purse, UnitKind } from "@/lib/types"
 
 type ProvincePanelProps = {
   state: GameState
   province: Province | null
+  budget: Purse
   onSelect: (id: string) => void
   onOrder: (from: string, to: string) => void
   onFortify: (provinceId: string) => void
+  onRecruit: (provinceId: string, kind: UnitKind) => void
+  onCancelRecruit: (buildId: string) => void
 }
 
 export function ProvincePanel({
   state,
   province,
+  budget,
   onSelect,
   onOrder,
   onFortify,
+  onRecruit,
+  onCancelRecruit,
 }: ProvincePanelProps) {
   if (!province) {
     return (
@@ -43,6 +51,9 @@ export function ProvincePanel({
             <Badge variant="outline">{TERRAIN_LABEL[province.terrain]}</Badge>
             {province.depot && province.controller === province.depot && (
               <Badge>Depot</Badge>
+            )}
+            {objectiveValue(state.scenario, province.id) > 0 && (
+              <Badge variant="outline">★ {objectiveValue(state.scenario, province.id)} VP</Badge>
             )}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -67,6 +78,42 @@ export function ProvincePanel({
           >
             Fortify {province.name}
           </Button>
+        )}
+        {friendly && recruitmentYard(province, "central") && (
+          <div data-testid="recruit-panel" className="flex flex-col gap-2">
+            <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Raise troops</h3>
+            <p className="text-sm text-muted-foreground">
+              Paid when the fortnight closes, after formations in supply refit. You have {budget.mp} manpower and {budget.ip} industry to spend.
+            </p>
+            {(Object.keys(RECRUIT) as UnitKind[]).map((kind) => {
+              const cost = RECRUIT[kind]
+              const affordable = budget.mp >= cost.mp && budget.ip >= cost.ip
+              return (
+                <Button
+                  key={kind}
+                  type="button"
+                  variant="outline"
+                  disabled={!affordable}
+                  data-testid={`recruit-${kind}`}
+                  onClick={() => onRecruit(province.id, kind)}
+                >
+                  {cost.label} · {cost.mp} MP {cost.ip} IP · {cost.turns === 1 ? "1 fortnight" : "2 fortnights"}
+                </Button>
+              )
+            })}
+            {state.queue
+              .filter((job) => job.provinceId === province.id && job.faction === "central")
+              .map((job) => (
+                <div key={job.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span>
+                    {job.name} · {job.remaining} fortnight{job.remaining === 1 ? "" : "s"}
+                  </span>
+                  <Button type="button" size="xs" variant="ghost" onClick={() => onCancelRecruit(job.id)}>
+                    Cancel
+                  </Button>
+                </div>
+              ))}
+          </div>
         )}
         <Separator />
         <div>

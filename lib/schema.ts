@@ -7,6 +7,9 @@ export const UnitSchema = z.object({
   strength: z.number().min(0).max(100),
   morale: z.number().min(0).max(100),
   kind: z.enum(["infantry", "cavalry", "artillery"]),
+  echelon: z.enum(["army", "corps", "division"]).default("army"),
+  parentId: z.string().min(1).optional(),
+  maxStrength: z.number().min(0).max(100).optional(),
 })
 
 export const ProvinceSchema = z.object({
@@ -25,12 +28,47 @@ export const ProvinceSchema = z.object({
   supplyModifier: z.number().min(-40).max(40).default(0),
 })
 
+const PurseSchema = z.object({
+  mp: z.number().min(0).max(5000),
+  ip: z.number().min(0).max(5000),
+})
+
+const BuildJobSchema = z.object({
+  id: z.string().min(1),
+  faction: z.enum(["central", "russia"]),
+  provinceId: z.string(),
+  kind: z.enum(["infantry", "cavalry", "artillery"]),
+  remaining: z.number().int().min(0).max(4),
+  name: z.string(),
+  echelon: z.enum(["army", "corps", "division"]).optional(),
+  parentId: z.string().min(1).optional(),
+})
+
+const CampaignResultSchema = z.object({
+  grade: z.enum(["brilliant", "decisive", "victory", "marginal", "draw", "defeat"]),
+  score: z.number(),
+  reason: z.string(),
+  captured: z.number(),
+  available: z.number(),
+  sudden: z.boolean(),
+})
+
 export const GameStateSchema = z.object({
   version: z.literal(1),
   turn: z.number().int().min(0),
   date: z.string(),
   seed: z.number(),
   provinces: z.array(ProvinceSchema).min(1),
+  scenario: z.enum(["campaign-1915", "gorlice"]).default("campaign-1915"),
+  difficulty: z.enum(["easy", "normal", "hard"]).default("normal"),
+  treasury: z
+    .object({ central: PurseSchema, russia: PurseSchema })
+    .default({ central: { mp: 0, ip: 0 }, russia: { mp: 0, ip: 0 } }),
+  queue: z.array(BuildJobSchema).default([]),
+  result: CampaignResultSchema.nullable().default(null),
+  capturedOn: z.record(z.string(), z.number()).default({}),
+  homeLost: z.boolean().default(false),
+  cpStrengthLost: z.number().min(0).default(0),
 })
 
 export const ProposalSchema = z.discriminatedUnion("type", [
@@ -90,6 +128,15 @@ export const PlayerOrderSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("text"),
     text: z.string().max(2000),
+  }),
+  z.object({
+    type: z.literal("recruit"),
+    provinceId: z.string(),
+    unitKind: z.enum(["infantry", "cavalry", "artillery"]),
+  }),
+  z.object({
+    type: z.literal("cancelRecruit"),
+    buildId: z.string(),
   }),
 ])
 

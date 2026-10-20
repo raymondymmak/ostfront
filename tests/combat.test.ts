@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { blankCampaign } from "@/lib/data/campaign"
 import { resolveCombat } from "@/lib/engine/combat"
 import { applyAttack } from "@/lib/engine/turn"
 import type { GameState, Province, Unit } from "@/lib/types"
@@ -33,6 +34,7 @@ function province(partial: Partial<Province> & Pick<Province, "id">): Province {
 
 function state(provinces: Province[]): GameState {
   return {
+    ...blankCampaign(),
     version: 1,
     turn: 0,
     date: "4 June 1915",
