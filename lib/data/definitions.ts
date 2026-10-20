@@ -37,7 +37,7 @@ export const PROVINCE_DEFS: ProvinceDef[] = [
   { id: "poznan", name: "Posen", mp: 2, ip: 2, lon: -0.82, lat: -0.026, terrain: "urban", owner: "central", controller: "central", fort: 1, aliases: ["poznan", "posen", "kalisz"] },
   { id: "klaipeda", name: "Memel", mp: 1, ip: 0, lon: 0.082, lat: 0.81, terrain: "plains", owner: "russia", controller: "russia", fort: 0, aliases: ["klaipeda", "memel"] },
   { id: "plock", name: "Płock", mp: 1, ip: 1, lon: -0.148, lat: 0.109, terrain: "plains", owner: "russia", controller: "russia", fort: 0, aliases: ["plock", "mlawa", "mława"] },
-  { id: "warszawa", name: "Warsaw", mp: 3, ip: 3, lon: -0.044, lat: -0.104, terrain: "urban", owner: "russia", controller: "russia", fort: 3, depot: "russia", aliases: ["warsaw", "warszawa", "radom", "siedlce"] },
+  { id: "warszawa", name: "Warsaw", mp: 3, ip: 3, lon: -0.044, lat: -0.104, terrain: "urban", owner: "russia", controller: "russia", fort: 2, depot: "russia", aliases: ["warsaw", "warszawa", "radom", "siedlce"] },
   { id: "lodz", name: "Łódź", mp: 2, ip: 3, lon: -0.409, lat: -0.157, terrain: "urban", owner: "russia", controller: "russia", fort: 0, aliases: ["lodz"] },
   { id: "kielce", name: "Kielce", mp: 1, ip: 1, lon: -0.113, lat: -0.385, terrain: "plains", owner: "russia", controller: "russia", fort: 0 },
   { id: "krakow", name: "Kraków", mp: 2, ip: 2, lon: -0.022, lat: -0.632, terrain: "urban", owner: "central", controller: "central", fort: 2, depot: "central", aliases: ["cracow", "krakau", "krakow", "tarnow", "tarnów", "rzeszow", "rzeszów", "przemysl", "przemyśl"] },

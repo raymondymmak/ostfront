@@ -42,17 +42,17 @@ const PLACEMENTS: Placement[] = [
   { id: "cp-tar-art", name: "Mackensen's Heavy Artillery", faction: "central", kind: "artillery", strength: 26, morale: 82, province: "lwow" },
   { id: "cp-rze-cav", name: "Austrian Cavalry Corps", faction: "central", kind: "cavalry", strength: 60, morale: 76, province: "stanislawow" },
   { id: "cp-buc-inf", name: "Bukovina Brigade", faction: "central", kind: "infantry", strength: 48, morale: 68, province: "bucovina" },
-  { id: "ru-war-inf", name: "Grenadier Corps", faction: "russia", kind: "infantry", strength: 34, morale: 76, province: "warszawa" },
-  { id: "ru-war-gar", name: "Warsaw Garrison", faction: "russia", kind: "infantry", strength: 22, morale: 66, province: "warszawa" },
+  { id: "ru-war-inf", name: "Grenadier Corps", faction: "russia", kind: "infantry", strength: 28, morale: 74, province: "warszawa" },
+  { id: "ru-war-gar", name: "Warsaw Garrison", faction: "russia", kind: "infantry", strength: 18, morale: 64, province: "warszawa" },
   { id: "ru-war-art", name: "Warsaw Fortress Artillery", faction: "russia", kind: "artillery", strength: 19, morale: 74, province: "warszawa" },
-  { id: "ru-lod-inf", name: "II Corps", faction: "russia", kind: "infantry", strength: 58, morale: 70, province: "lodz" },
-  { id: "ru-sie-inf", name: "IV Corps", faction: "russia", kind: "infantry", strength: 32, morale: 68, province: "lodz" },
+  { id: "ru-lod-inf", name: "II Corps", faction: "russia", kind: "infantry", strength: 44, morale: 68, province: "lodz" },
+  { id: "ru-sie-inf", name: "IV Corps", faction: "russia", kind: "infantry", strength: 26, morale: 66, province: "lodz" },
   { id: "ru-mla-inf", name: "1st Army", faction: "russia", kind: "infantry", strength: 46, morale: 68, province: "plock" },
   { id: "ru-mla-cav", name: "Narew Cossacks", faction: "russia", kind: "cavalry", strength: 26, morale: 74, province: "plock" },
   { id: "ru-plo-inf", name: "Novogeorgievsk Screen", faction: "russia", kind: "infantry", strength: 18, morale: 64, province: "plock" },
-  { id: "ru-kie-inf", name: "Kielce Screen", faction: "russia", kind: "infantry", strength: 52, morale: 60, province: "kielce" },
-  { id: "ru-rad-inf", name: "Radom Detachment", faction: "russia", kind: "infantry", strength: 54, morale: 62, province: "kielce" },
-  { id: "ru-lub-inf", name: "3rd Army", faction: "russia", kind: "infantry", strength: 42, morale: 68, province: "lublin" },
+  { id: "ru-kie-inf", name: "Kielce Screen", faction: "russia", kind: "infantry", strength: 40, morale: 58, province: "kielce" },
+  { id: "ru-rad-inf", name: "Radom Detachment", faction: "russia", kind: "infantry", strength: 36, morale: 58, province: "kielce" },
+  { id: "ru-lub-inf", name: "3rd Army", faction: "russia", kind: "infantry", strength: 36, morale: 66, province: "lublin" },
   { id: "ru-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 24, morale: 66, province: "lublin" },
   { id: "ru-bre-inf", name: "Brest-Litovsk Garrison", faction: "russia", kind: "infantry", strength: 22, morale: 70, province: "lublin" },
   { id: "ru-che-inf", name: "Chełm Detachment", faction: "russia", kind: "infantry", strength: 17, morale: 62, province: "lublin" },
@@ -64,8 +64,8 @@ const PLACEMENTS: Placement[] = [
   { id: "ru-lut-cav", name: "South-West Cavalry", faction: "russia", kind: "cavalry", strength: 24, morale: 72, province: "wolyn" },
   { id: "ru-rov-inf", name: "Rovno Railhead Guard", faction: "russia", kind: "infantry", strength: 20, morale: 64, province: "wolyn" },
   { id: "ru-lem-art", name: "South-West Batteries", faction: "russia", kind: "artillery", strength: 18, morale: 70, province: "wolyn" },
-  { id: "ru-lem-inf", name: "8th Army", faction: "russia", kind: "infantry", strength: 64, morale: 74, province: "proskuriv" },
-  { id: "ru-sta-inf", name: "Dniester Group", faction: "russia", kind: "infantry", strength: 46, morale: 60, province: "proskuriv" },
+  { id: "ru-lem-inf", name: "8th Army", faction: "russia", kind: "infantry", strength: 48, morale: 70, province: "proskuriv" },
+  { id: "ru-sta-inf", name: "Dniester Group", faction: "russia", kind: "infantry", strength: 36, morale: 60, province: "proskuriv" },
   { id: "ru-vil-cav", name: "1st Cavalry Corps", faction: "russia", kind: "cavalry", strength: 35, morale: 76, province: "wilno" },
   { id: "ru-pin-inf", name: "Pinsk Guard", faction: "russia", kind: "infantry", strength: 18, morale: 56, province: "polesie" },
   { id: "ru-kvl-inf", name: "Polesie Brigade", faction: "russia", kind: "infantry", strength: 22, morale: 58, province: "polesie" },
@@ -78,14 +78,26 @@ export const BRIEFING = [
   "A depot feeds only its own side, and only while they hold it. Provinces in supply pay manpower and industry, less where unrest is high and half as much in occupied ground. Raise troops at a depot or a home city; they arrive when the fortnight closes. The campaign ends on 31 December 1915.",
 ].join(" ")
 
-function toUnit(placement: Placement): Unit {
+/**
+ * Normal uses the placements as written. Easy trims Russian corps; Hard fills them out.
+ * The map and who owns each province at the start do not change.
+ */
+function toUnit(placement: Placement, difficulty: Difficulty): Unit {
+  let strength = placement.strength
+  let morale = placement.morale
+  if (placement.faction === "russia" && difficulty !== "normal") {
+    const factor = difficulty === "easy" ? 0.84 : 1.28
+    const moraleShift = difficulty === "easy" ? -4 : 3
+    strength = Math.max(10, Math.round(placement.strength * factor))
+    morale = Math.min(94, Math.max(42, placement.morale + moraleShift))
+  }
   return {
     id: placement.id,
     name: placement.name,
     faction: placement.faction,
-    strength: placement.strength,
-    maxStrength: placement.strength,
-    morale: placement.morale,
+    strength,
+    maxStrength: strength,
+    morale,
     kind: placement.kind,
     echelon: placement.echelon ?? "army",
     ...(placement.parentId ? { parentId: placement.parentId } : {}),
@@ -114,9 +126,9 @@ const GORLICE_PLACEMENTS: Placement[] = [
   { id: "g-sta-cav", name: "Austrian Cavalry Corps", faction: "central", kind: "cavalry", strength: 24, morale: 74, province: "stanislawow" },
   { id: "g-buc-inf", name: "Bukovina Brigade", faction: "central", kind: "infantry", strength: 20, morale: 66, province: "bucovina" },
   { id: "g-kie-inf", name: "3rd Army Screen", faction: "russia", kind: "infantry", strength: 26, morale: 62, province: "kielce" },
-  { id: "g-lub-inf", name: "3rd Army", faction: "russia", kind: "infantry", strength: 40, morale: 66, province: "lublin" },
-  { id: "g-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 16, morale: 64, province: "lublin" },
-  { id: "g-wol-inf", name: "Rovno Reserve", faction: "russia", kind: "infantry", strength: 32, morale: 66, province: "wolyn" },
+  { id: "g-lub-inf", name: "3rd Army", faction: "russia", kind: "infantry", strength: 44, morale: 66, province: "lublin" },
+  { id: "g-lub-art", name: "3rd Army Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 64, province: "lublin" },
+  { id: "g-wol-inf", name: "Rovno Reserve", faction: "russia", kind: "infantry", strength: 50, morale: 68, province: "wolyn" },
   { id: "g-war-inf", name: "Warsaw Garrison", faction: "russia", kind: "infantry", strength: 36, morale: 70, province: "warszawa" },
   { id: "g-war-art", name: "Warsaw Fortress Artillery", faction: "russia", kind: "artillery", strength: 18, morale: 72, province: "warszawa" },
   { id: "g-lod-inf", name: "II Corps", faction: "russia", kind: "infantry", strength: 34, morale: 68, province: "lodz" },
@@ -152,7 +164,9 @@ function assemble(
 ): GameState {
   const provinces = CATALOG.map((entry) => {
     const province = blankProvince(entry)
-    province.units = placements.filter((unit) => unit.province === entry.id).map(toUnit)
+    province.units = placements
+      .filter((unit) => unit.province === entry.id)
+      .map((unit) => toUnit(unit, difficulty))
     return province
   })
   const state: GameState = {

@@ -231,7 +231,7 @@ function bestOrigin(
       province.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
     )
     if (!units.length) continue
-    const power = attackerPower(units, province.supply, target.terrain)
+    const power = attackerPower(units, province.supply, target.terrain, target.fort)
     if (!best || power > best.power) best = { province, power }
   }
   return best?.province

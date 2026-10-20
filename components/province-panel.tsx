@@ -6,7 +6,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { objectiveValue } from "@/lib/data/objectives"
 import { RECRUIT, recruitmentYard } from "@/lib/engine/economy"
-import { engagementOdds } from "@/lib/engine/turn"
+import { combinedEngagementOdds, engagementOdds, type EngagementPreview } from "@/lib/engine/turn"
+import type { QueuedOrder } from "@/lib/orders"
 import { FACTION_LABEL, KIND_LABEL, TERRAIN_LABEL } from "@/lib/format"
 import type { GameState, Province, Purse, UnitKind } from "@/lib/types"
 
@@ -19,6 +20,7 @@ type ProvincePanelProps = {
   onFortify: (provinceId: string) => void
   onRecruit: (provinceId: string, kind: UnitKind) => void
   onCancelRecruit: (buildId: string) => void
+  queue?: QueuedOrder[]
 }
 
 export function ProvincePanel({
@@ -30,6 +32,7 @@ export function ProvincePanel({
   onFortify,
   onRecruit,
   onCancelRecruit,
+  queue = [],
 }: ProvincePanelProps) {
   if (!province) {
     return (
@@ -147,14 +150,7 @@ export function ProvincePanel({
               if (!neighbor) return null
               const attack =
                 friendly && neighbor.controller !== "central"
-                  ? engagementOdds(
-                      state,
-                      province.id,
-                      neighbor.id,
-                      province.units
-                        .filter((unit) => unit.faction === "central")
-                        .map((unit) => unit.id),
-                    )
+                  ? previewNeighbor(state, province, neighbor.id, queue)
                   : null
               return (
                 <li key={id}>
@@ -173,11 +169,7 @@ export function ProvincePanel({
                         {neighbor.rail.includes(province.id) || province.rail.includes(neighbor.id)
                           ? " · rail"
                           : ""}
-                        {attack
-                          ? attack.empty
-                            ? " · undefended"
-                            : ` · odds ${attack.ratio.toFixed(2)} : 1`
-                          : ""}
+                        {attack ? ` · ${neighborOddsLabel(attack)}` : ""}
                       </span>
                     </span>
                     <span className="text-xs text-primary">
@@ -199,6 +191,9 @@ export function ProvincePanel({
             <li>Move only across a shared border, and only into a friendly province.</li>
             <li>Supply under 30 cannot advance. Rails cost 1; roads cost the ground you enter.</li>
             <li>Attacks are strength × morale × supply against defense × terrain × fort, then a d6.</li>
+            <li>
+              Two or more neighbors attacking the same province in one fortnight fight as one battle, with a flanking bonus. If no friendly exit remains, the defender is surrounded.
+            </li>
             <li>The game master may ask for unrest or supply shifts of at most 20.</li>
             <li>Depots feed only their own side: Königsberg and Kraków; Warsaw and Volhynia (Rovno).</li>
           </ul>
@@ -206,6 +201,32 @@ export function ProvincePanel({
       </div>
     </ScrollArea>
   )
+}
+
+function previewNeighbor(
+  state: GameState,
+  province: Province,
+  neighborId: string,
+  queue: QueuedOrder[],
+): EngagementPreview | null {
+  const localIds = province.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
+  const pending = queue.filter(
+    (order) => order.kind === "attack" && order.to === neighborId && order.from !== province.id,
+  )
+  if (!pending.length) return engagementOdds(state, province.id, neighborId, localIds)
+  return combinedEngagementOdds(state, neighborId, [
+    { fromId: province.id, unitIds: localIds },
+    ...pending.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
+  ])
+}
+
+function neighborOddsLabel(attack: EngagementPreview): string {
+  if (attack.origins > 1) {
+    const shape = attack.origins === 2 ? "two-pronged" : "concentric"
+    const ratio = attack.empty ? "undefended" : `${attack.ratio.toFixed(2)} : 1`
+    return attack.encircled ? `${shape}, surrounded, ${ratio}` : `${shape} ${ratio}`
+  }
+  return attack.empty ? "undefended" : `odds ${attack.ratio.toFixed(2)} : 1`
 }
 
 function Meter({
