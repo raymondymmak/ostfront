@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { chronicleFollowsLatest } from "@/lib/chronicle-scroll"
+import { logisticsForPhase, type FinalePhase } from "@/lib/finale"
 import { BRIEFING } from "@/lib/data/scenario"
 import { FACTION_LABEL } from "@/lib/format"
 import type { TurnRecord } from "@/lib/types"
@@ -13,9 +14,16 @@ type TimelinePanelProps = {
   active: number
   onActive: (index: number) => void
   briefing?: string
+  phase?: FinalePhase
 }
 
-export function TimelinePanel({ log, active, onActive, briefing = BRIEFING }: TimelinePanelProps) {
+export function TimelinePanel({
+  log,
+  active,
+  onActive,
+  briefing = BRIEFING,
+  phase = "playing",
+}: TimelinePanelProps) {
   const record = log[active]
   const datesRef = useRef<HTMLDivElement>(null)
   const entryRef = useRef<HTMLDivElement>(null)
@@ -154,7 +162,7 @@ export function TimelinePanel({ log, active, onActive, briefing = BRIEFING }: Ti
                       {note}
                     </li>
                   ))}
-                  {record.logistics.map((line) => (
+                  {logisticsForPhase(record.logistics, phase).map((line) => (
                     <li key={line} className="text-muted-foreground">
                       {line}
                     </li>

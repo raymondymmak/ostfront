@@ -13,6 +13,13 @@ import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
 import { gradeLabel } from "@/lib/engine/victory"
+import {
+  BACK_TO_MAP_LABEL,
+  FINAL_POSITIONS_LABEL,
+  SEE_RESULT_LABEL,
+  finalePhase,
+  ordersLocked,
+} from "@/lib/finale"
 import { leaveDepotGarrison, type QueuedOrder } from "@/lib/orders"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
@@ -33,6 +40,7 @@ export function GameApp() {
   const [flash, setFlash] = useState<string[]>([])
   const [logIndex, setLogIndex] = useState<number | null>(null)
   const [armReset, setArmReset] = useState(false)
+  const [resultOpen, setResultOpen] = useState(false)
 
   useEffect(() => {
     if (!setupOpen) saveGame(game)
@@ -72,8 +80,11 @@ export function GameApp() {
   }
   const selected = game.state.provinces.find((province) => province.id === selectedId) ?? null
   const activeLog = logIndex ?? Math.max(0, game.log.length - 1)
+  const finished = ordersLocked(Boolean(game.state.result))
+  const phase = finalePhase(finished, resultOpen)
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
+    if (ordersLocked(Boolean(game.state.result))) return
     const from = game.state.provinces.find((province) => province.id === fromId)
     const to = game.state.provinces.find((province) => province.id === toId)
     if (!from || !to || fromId === toId) return
@@ -127,6 +138,7 @@ export function GameApp() {
   }
 
   function recruit(provinceId: string, unitKind: UnitKind) {
+    if (ordersLocked(Boolean(game.state.result))) return
     setQueue((current) => {
       if (current.some((order) => order.kind === "recruit" && order.from === provinceId && order.unitKind === unitKind)) {
         return current
@@ -140,6 +152,7 @@ export function GameApp() {
   }
 
   function cancelRecruit(buildId: string) {
+    if (ordersLocked(Boolean(game.state.result))) return
     setQueue((current) => {
       if (current.some((order) => order.kind === "cancelRecruit" && order.buildId === buildId)) return current
       return [
@@ -160,10 +173,12 @@ export function GameApp() {
     setSelectedId("krakow")
     setOrderMode(false)
     setArmReset(false)
+    setResultOpen(false)
     setSetupOpen(false)
   }
 
   function fortify(provinceId: string) {
+    if (ordersLocked(Boolean(game.state.result))) return
     const province = game.state.provinces.find((item) => item.id === provinceId)
     if (!province || province.controller !== "central") return
     setQueue((current) => {
@@ -179,7 +194,7 @@ export function GameApp() {
   }
 
   const endTurn = useCallback(async () => {
-    if (busy || game.state.result) return
+    if (busy || ordersLocked(Boolean(game.state.result))) return
     setBusy(true)
     setError(null)
     const orders: PlayerOrder[] = []
@@ -286,10 +301,28 @@ export function GameApp() {
             overlay={overlay}
             orders={queue}
             flashIds={flash}
-            orderMode={orderMode}
+            orderMode={orderMode && !finished}
             onSelect={setSelectedId}
             onDraw={addArrow}
           />
+          {phase === "map" && !setupOpen && (
+            <div className="pointer-events-none absolute top-3 right-14 left-3 z-30 flex justify-center">
+              <div
+                className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/92 px-3 py-2 text-[#f3e2a8] shadow-lg"
+                data-testid="finale-banner"
+                role="status"
+              >
+                <p className="text-sm" data-testid="finale-summary">
+                  <span className="tracking-wide text-[#c6a15a] uppercase">{FINAL_POSITIONS_LABEL}</span>
+                  <span className="mx-2 text-[#f3e2a8]/70">·</span>
+                  <span className="font-display text-lg leading-none">{game.state.date}</span>
+                </p>
+                <Button type="button" size="sm" data-testid="see-result" onClick={() => setResultOpen(true)}>
+                  {SEE_RESULT_LABEL}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <aside className="flex min-h-[28rem] flex-col border-t border-border lg:row-span-2 lg:min-h-0 lg:border-t-0 lg:border-l">
           <Tabs defaultValue="orders" className="min-h-0 flex-1 gap-0">
@@ -307,8 +340,11 @@ export function GameApp() {
                 onDirective={setDirective}
                 queue={queue}
                 onQueue={setQueue}
-                orderMode={orderMode}
-                onOrderMode={setOrderMode}
+                orderMode={orderMode && !finished}
+                onOrderMode={(value) => {
+                  if (finished) return
+                  setOrderMode(value)
+                }}
                 hint={hint}
                 busy={busy}
                 onEndTurn={() => void endTurn()}
@@ -334,6 +370,7 @@ export function GameApp() {
               active={game.log.length ? activeLog : 0}
               onActive={setLogIndex}
               briefing={BRIEFING}
+              phase={phase}
             />
           </TabsContent>
           </Tabs>
@@ -345,17 +382,26 @@ export function GameApp() {
               active={game.log.length ? activeLog : 0}
               onActive={setLogIndex}
               briefing={BRIEFING}
+              phase={phase}
             />
           </div>
         </section>
       </div>
-      {game.state.result && !setupOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-4" data-testid="endgame">
+      {phase === "result" && game.state.result && !setupOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-4"
+          data-testid="endgame"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="endgame-title"
+        >
           <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg">
             <p className="text-xs tracking-wide text-muted-foreground uppercase">
               {game.state.result.sudden ? "Sudden death" : "Campaign over"}
             </p>
-            <h2 className="mt-2 font-display text-4xl leading-none">{gradeLabel(game.state.result.grade)}</h2>
+            <h2 id="endgame-title" className="mt-2 font-display text-4xl leading-none">
+              {gradeLabel(game.state.result.grade)}
+            </h2>
             <p className="mt-3 text-sm leading-6">{game.state.result.reason}</p>
             <p className="mt-3 text-sm text-muted-foreground">
               {game.state.date} · Fortnight {Math.min(game.state.turn + 1, scenarioSpec(game.state.scenario).length)} / {scenarioSpec(game.state.scenario).length}
@@ -363,9 +409,20 @@ export function GameApp() {
             <p className="mt-1 text-sm text-muted-foreground">
               Score {game.state.result.score} · ★ {game.state.result.captured}/{game.state.result.available} victory points
             </p>
-            <Button type="button" className="mt-5" onClick={() => setSetupOpen(true)}>
-              Play again
-            </Button>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button type="button" variant="outline" data-testid="back-to-map" onClick={() => setResultOpen(false)}>
+                {BACK_TO_MAP_LABEL}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setResultOpen(false)
+                  setSetupOpen(true)
+                }}
+              >
+                Play again
+              </Button>
+            </div>
           </div>
         </div>
       )}
