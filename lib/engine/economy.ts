@@ -1,4 +1,5 @@
 import { PROVINCE_DEFS } from "@/lib/data/definitions"
+import { fightingUnits } from "@/lib/engine/echelon"
 import type { Difficulty, Faction, GameState, Province, Purse, UnitKind } from "@/lib/types"
 
 export const YIELD_BY_ID: Record<string, { mp: number; ip: number }> = Object.fromEntries(
@@ -88,7 +89,7 @@ export function reinforcementCost(
   let mp = 0
   for (const province of state.provinces) {
     if (province.controller !== faction || province.supply < HEAL_SUPPLY) continue
-    for (const unit of province.units) {
+    for (const unit of fightingUnits(province.units)) {
       if (unit.faction !== faction || skip.has(unit.id)) continue
       const max = unit.maxStrength ?? unit.strength
       const need = Math.max(0, Math.min(HEAL_POINTS, max - unit.strength))
@@ -126,7 +127,7 @@ export function reinforceFaction(
   const provinces = [...state.provinces].sort((a, b) => a.id.localeCompare(b.id))
   for (const province of provinces) {
     if (province.controller !== faction || province.supply < HEAL_SUPPLY) continue
-    const units = [...province.units].sort((a, b) => a.id.localeCompare(b.id))
+    const units = fightingUnits(province.units).sort((a, b) => a.id.localeCompare(b.id))
     for (const unit of units) {
       if (unit.faction !== faction) continue
       const max = unit.maxStrength ?? unit.strength

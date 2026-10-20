@@ -1,3 +1,4 @@
+import { childUnits, echelonOf, independentFormations } from "@/lib/engine/echelon"
 import { GMTurnSchema, GM_JSON_SCHEMA } from "@/lib/schema"
 import type { GameState, GMTurn, PlayerOrder } from "@/lib/types"
 
@@ -239,11 +240,12 @@ function stripFence(text: string): string {
 
 function digest(state: GameState): string {
   const lines = state.provinces.map((province) => {
-    const units = province.units
-      .map(
-        (unit) =>
-          `${unit.id} (${unit.name}, ${unit.kind}, ${unit.faction}, str ${unit.strength}, mor ${unit.morale})`,
-      )
+    const units = independentFormations(province.units)
+      .map((unit) => {
+        const children = childUnits(province.units, unit.id)
+        const nested = children.length ? `, under it: ${children.map((child) => child.id).join(",")}` : ""
+        return `${unit.id} (${unit.name}, ${echelonOf(unit)}, ${unit.kind}, ${unit.faction}, str ${unit.strength}, mor ${unit.morale}${nested})`
+      })
       .join("; ")
     return [
       province.id,

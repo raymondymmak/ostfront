@@ -7,6 +7,8 @@ export const UnitSchema = z.object({
   strength: z.number().min(0).max(100),
   morale: z.number().min(0).max(100),
   kind: z.enum(["infantry", "cavalry", "artillery"]),
+  echelon: z.enum(["army", "corps", "division"]).default("army"),
+  parentId: z.string().min(1).optional(),
   maxStrength: z.number().min(0).max(100).optional(),
 })
 
@@ -38,6 +40,8 @@ const BuildJobSchema = z.object({
   kind: z.enum(["infantry", "cavalry", "artillery"]),
   remaining: z.number().int().min(0).max(4),
   name: z.string(),
+  echelon: z.enum(["army", "corps", "division"]).optional(),
+  parentId: z.string().min(1).optional(),
 })
 
 const CampaignResultSchema = z.object({

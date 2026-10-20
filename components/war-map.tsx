@@ -19,6 +19,7 @@ import {
   geometryValid,
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
+import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName } from "@/lib/map/labels"
 import { applyMarkerFace, type MarkerFace } from "@/lib/map/marker-face"
 import { applyProvinceLabelOpacity } from "@/lib/map/province-label-zoom"
@@ -580,7 +581,7 @@ function syncMap(
   for (const province of snapshot.provinces) {
     if (!geometryValid(province.polygon)) continue
     hasGeometry = true
-    const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
+    const strength = listedStrength(province.units)
     eachCoord(province.polygon, (coord) => bounds.extend(coord))
     features.push({
       type: "Feature",
@@ -724,7 +725,7 @@ function paintProvinceLabels(map: maplibregl.Map, markers: Map<string, maplibreg
 }
 
 function markerFace(province: MapProvince, selectedId: string | null): MarkerFace {
-  const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
+  const strength = listedStrength(province.units)
   const faction = province.controller === "central" ? "Central Powers" : "Russia"
   const badge = strength
     ? `<div class="map-badge ${province.controller}" title="Total unit strength: ${strength} (${faction})">${strength}</div>`

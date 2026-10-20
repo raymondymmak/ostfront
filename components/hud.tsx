@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { listedStrength } from "@/lib/engine/echelon"
 import { projectIncome } from "@/lib/engine/economy"
 import { gradeLabel, standing } from "@/lib/engine/victory"
 import { scenarioSpec } from "@/lib/data/objectives"
@@ -100,11 +101,7 @@ export function Hud({ state, overlay, onOverlay, armReset, onReset }: HudProps) 
 
 function strength(state: GameState, faction: "central" | "russia") {
   return state.provinces.reduce(
-    (sum, province) =>
-      sum +
-      province.units
-        .filter((unit) => unit.faction === faction)
-        .reduce((inner, unit) => inner + unit.strength, 0),
+    (sum, province) => sum + listedStrength(province.units.filter((unit) => unit.faction === faction)),
     0,
   )
 }

@@ -1,5 +1,6 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { attackerPower } from "@/lib/engine/combat"
+import { fightingUnits, independentFormations } from "@/lib/engine/echelon"
 import { findProvince } from "@/lib/engine/turn"
 import { normalizeName } from "@/lib/format"
 import type { GameState, PlayerOrder, Proposal, Province } from "@/lib/types"
@@ -79,9 +80,9 @@ export function interpretOrders(
       return located?.province.id === from.id && located.unit.faction === "central"
     })
     if (!unitIds.length) {
-      unitIds = from.units
-        .filter((unit) => unit.faction === "central" && !claimed.has(unit.id))
-        .map((unit) => unit.id)
+      unitIds = independentFormations(
+        from.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
+      ).map((unit) => unit.id)
     }
     unitIds = unitIds.filter((id) => !claimed.has(id))
     if (!unitIds.length) {
@@ -189,8 +190,8 @@ function interpretText(
       const unitIds = (
         namedUnits.length
           ? namedUnits
-          : origin.units.filter(
-              (unit) => unit.faction === "central" && !claimed.has(unit.id),
+          : independentFormations(
+              origin.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
             )
       ).map((unit) => unit.id)
       if (!unitIds.length) {
@@ -226,8 +227,8 @@ function bestOrigin(
     if (!province || province.controller !== "central" || province.supply < 30) {
       continue
     }
-    const units = province.units.filter(
-      (unit) => unit.faction === "central" && !claimed.has(unit.id),
+    const units = fightingUnits(
+      province.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
     )
     if (!units.length) continue
     const power = attackerPower(units, province.supply, target.terrain)
@@ -245,8 +246,8 @@ function fromProvinceUnits(
     (province) => province.controller === "central",
   )
   if (!origin) return []
-  return origin.units.filter(
-    (unit) => unit.faction === "central" && !claimed.has(unit.id),
+  return independentFormations(
+    origin.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
   )
 }
 

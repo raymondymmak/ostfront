@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT } from "@/lib/engine/economy"
 import { engagementOdds, findProvince } from "@/lib/engine/turn"
 import { KIND_LABEL } from "@/lib/format"
@@ -223,8 +224,9 @@ function emptiesDepot(state: GameState, order: QueuedOrder): boolean {
   if (order.kind === "fortify" || order.kind === "recruit" || order.kind === "cancelRecruit") return false
   const from = findProvince(state, order.from)
   if (!from || from.depot !== "central") return false
-  const held = from.units.filter((unit) => unit.faction === "central")
-  return held.length > 0 && held.every((unit) => order.unitIds.includes(unit.id))
+  const held = independentFormations(from.units.filter((unit) => unit.faction === "central"))
+  const departing = new Set(partyOf(from.units, order.unitIds).map((unit) => unit.id))
+  return held.length > 0 && held.every((unit) => departing.has(unit.id))
 }
 
 function describeProposal(

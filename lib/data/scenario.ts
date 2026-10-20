@@ -2,7 +2,7 @@ import { blankCampaign } from "@/lib/data/campaign"
 import { CATALOG, blankProvince } from "@/lib/data/catalog"
 import { computeSupply } from "@/lib/engine/supply"
 import { scenarioDate } from "@/lib/format"
-import type { Difficulty, Faction, GameState, ScenarioId, Unit, UnitKind } from "@/lib/types"
+import type { Difficulty, Echelon, Faction, GameState, ScenarioId, Unit, UnitKind } from "@/lib/types"
 
 const START_SEED = 19150604
 
@@ -14,6 +14,8 @@ type Placement = {
   strength: number
   morale: number
   province: string
+  echelon?: Echelon
+  parentId?: string
 }
 
 const PLACEMENTS: Placement[] = [
@@ -85,6 +87,8 @@ function toUnit(placement: Placement): Unit {
     maxStrength: placement.strength,
     morale: placement.morale,
     kind: placement.kind,
+    echelon: placement.echelon ?? "army",
+    ...(placement.parentId ? { parentId: placement.parentId } : {}),
   }
 }
 
@@ -94,7 +98,7 @@ function toUnit(placement: Placement): Unit {
  * The Russian 3rd Army is a thin cordon on Kielce and Lublin.
  */
 const GORLICE_PLACEMENTS: Placement[] = [
-  { id: "g-kra-11", name: "11th Army", faction: "central", kind: "infantry", strength: 64, morale: 80, province: "krakow" },
+  { id: "g-kra-11", name: "German 11th Army (Mackensen)", faction: "central", kind: "infantry", strength: 64, morale: 80, province: "krakow", echelon: "army" },
   { id: "g-kra-x", name: "X Corps", faction: "central", kind: "infantry", strength: 58, morale: 78, province: "krakow" },
   { id: "g-kra-grd", name: "Guard Corps", faction: "central", kind: "infantry", strength: 44, morale: 84, province: "krakow" },
   { id: "g-kra-art", name: "Mackensen's Heavy Artillery", faction: "central", kind: "artillery", strength: 34, morale: 82, province: "krakow" },
@@ -224,6 +228,7 @@ export function rebindState(state: GameState): GameState {
     province.supplyModifier = current.supplyModifier ?? 0
     province.units = current.units.map((unit) => ({
       ...unit,
+      echelon: unit.echelon ?? "army",
       maxStrength: unit.maxStrength ?? unit.strength,
     }))
     province.supply = current.supply

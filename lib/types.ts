@@ -4,6 +4,9 @@ export type Faction = "central" | "russia"
 
 export type UnitKind = "infantry" | "cavalry" | "artillery"
 
+/** Front, then army, then corps, then division. Today's units are armies. */
+export type Echelon = "army" | "corps" | "division"
+
 export type Unit = {
   id: string
   name: string
@@ -11,6 +14,13 @@ export type Unit = {
   strength: number
   morale: number
   kind: UnitKind
+  /**
+   * Missing means army. A name can already say which formation it is,
+   * for example "German 11th Army (Mackensen)".
+   */
+  echelon?: Echelon
+  /** Set when this formation is under another unit. Children are found by this link. */
+  parentId?: string
   /** Strength this formation can be reinforced back to. Defaults to its current strength. */
   maxStrength?: number
 }
@@ -28,6 +38,9 @@ export type BuildJob = {
   kind: UnitKind
   remaining: number
   name: string
+  /** Raised formations are armies unless a later order nests them. */
+  echelon?: Echelon
+  parentId?: string
 }
 
 export type CampaignGrade =

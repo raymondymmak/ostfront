@@ -15,6 +15,7 @@ import {
   geometryValid,
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
+import { listedStrength } from "@/lib/engine/echelon"
 import { labelRank, shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 
 type SvgMapProps = {
@@ -218,7 +219,7 @@ export function SvgMap({
       {provinces
         .filter((province) => geometryValid(province.polygon))
         .map((province) => {
-        const strength = province.units.reduce((sum, unit) => sum + unit.strength, 0)
+        const strength = listedStrength(province.units)
         const x = province.centroid[0]
         const y = -province.centroid[1]
         const offset = labelOffset(province.id)

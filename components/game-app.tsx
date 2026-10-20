@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { BRIEFING, GORLICE_BRIEFING } from "@/lib/data/scenario"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
+import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
 import { gradeLabel } from "@/lib/engine/victory"
 import { leaveDepotGarrison, type QueuedOrder } from "@/lib/orders"
@@ -85,8 +86,8 @@ export function GameApp() {
     const claimed = new Set(
       queue.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)),
     )
-    const available = from.units.filter(
-      (unit) => unit.faction === "central" && !claimed.has(unit.id),
+    const available = independentFormations(
+      from.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
     )
     if (!available.length) {
       setHint(`${from.name} has no unassigned formation.`)
@@ -94,8 +95,9 @@ export function GameApp() {
     }
     const kind = to.controller === "central" ? "move" : "attack"
     const chosen = leaveDepotGarrison(available, from.depot === "central", commitAll)
-    const remaining = from.units.filter(
-      (unit) => unit.faction === "central" && !chosen.some((item) => item.id === unit.id) && !claimed.has(unit.id),
+    const departing = new Set(partyOf(from.units, chosen.map((unit) => unit.id)).map((unit) => unit.id))
+    const remaining = independentFormations(
+      from.units.filter((unit) => unit.faction === "central" && !departing.has(unit.id) && !claimed.has(unit.id)),
     )
     if (!from.neighbors.includes(toId)) {
       setHint(

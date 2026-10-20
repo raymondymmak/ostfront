@@ -11,6 +11,13 @@ import {
 } from "@/lib/engine/economy"
 import { decideFortnight, gradeLabel, noteCaptures } from "@/lib/engine/victory"
 import { attackerPower, defenderPower, resolveCombat } from "@/lib/engine/combat"
+import {
+  fightingUnits,
+  independentFormations,
+  keptAfterHarm,
+  partyOf,
+  standingUnits,
+} from "@/lib/engine/echelon"
 import { decaySupplyModifier } from "@/lib/engine/supply"
 import { clamp, FACTION_LABEL, scenarioDate, signed } from "@/lib/format"
 import { makeRng, rollD6 } from "@/lib/rng"
@@ -102,7 +109,7 @@ export function resolveTurn(
       province.unrest = clamp(province.unrest + 4, 0, 100)
     }
     if (province.unrest >= 85 && province.units.length > 0) {
-      for (const unit of province.units) {
+      for (const unit of fightingUnits(province.units)) {
         const loss = Math.min(4, unit.strength)
         if (unit.faction === "central") state.cpStrengthLost += loss
         unit.strength = Math.max(0, unit.strength - 4)
@@ -120,9 +127,7 @@ export function resolveTurn(
   }
 
   for (const province of state.provinces) {
-    province.units = province.units.filter(
-      (unit) => unit.strength >= 5 && unit.morale > 0,
-    )
+    province.units = standingUnits(province.units)
     province.fort = clamp(Math.round(province.fort), 0, 3)
     province.unrest = clamp(Math.round(province.unrest), 0, 100)
     province.supply = clamp(Math.round(province.supply), 0, 100)
@@ -261,9 +266,14 @@ export function applyMove(
     )
   }
 
-  province.units = province.units.filter((item) => item.id !== unit.id)
-  destination.units.push(unit)
-  usedUnits.add(unit.id)
+  const party = partyOf(province.units, [unit.id])
+  if (party.some((member) => usedUnits.has(member.id))) {
+    return reject(proposal, `${unit.name} already has orders this fortnight.`)
+  }
+  const leaving = new Set(party.map((member) => member.id))
+  province.units = province.units.filter((item) => !leaving.has(item.id))
+  destination.units.push(...party)
+  for (const member of party) usedUnits.add(member.id)
   return {
     proposal,
     status: "applied",
@@ -291,7 +301,7 @@ export function applyAttack(
     )
   }
 
-  const attackers: Unit[] = []
+  const named: Unit[] = []
   for (const id of proposal.units) {
     const unit = from.units.find((item) => item.id === id)
     if (!unit) {
@@ -303,14 +313,16 @@ export function applyAttack(
           : "Unknown formation in the attack.",
       )
     }
-    if (usedUnits.has(unit.id)) {
-      return reject(proposal, `${unit.name} already has orders this fortnight.`)
-    }
-    attackers.push(unit)
+    named.push(unit)
+  }
+  const attackerParty = partyOf(from.units, named.map((unit) => unit.id))
+  const busy = attackerParty.find((unit) => usedUnits.has(unit.id))
+  if (busy) {
+    return reject(proposal, `${busy.name} already has orders this fortnight.`)
   }
 
-  const faction = attackers[0].faction
-  if (attackers.some((unit) => unit.faction !== faction)) {
+  const faction = named[0].faction
+  if (attackerParty.some((unit) => unit.faction !== faction)) {
     return reject(proposal, "Those formations are not all of one side.")
   }
   if (target.controller === faction) {
@@ -326,36 +338,38 @@ export function applyAttack(
     )
   }
 
-  const defenders = target.units.filter((unit) => unit.faction === target.controller)
-  const attack = attackerPower(attackers, from.supply, target.terrain)
+  const defenderPool = target.units.filter((unit) => unit.faction === target.controller)
+  const attackerBodies = fightingUnits(from.units, independentFormations(attackerParty))
+  const defenderBodies = fightingUnits(defenderPool)
+  const attack = attackerPower(attackerBodies, from.supply, target.terrain)
   const defense = defenderPower(
-    defenders,
+    defenderBodies,
     target.supply,
     target.terrain,
     target.fort,
   )
   const outcome = resolveCombat(attack, defense, roll)
-  const attackerStrengthBefore = sumStrength(attackers)
-  const defenderStrengthBefore = sumStrength(defenders)
+  const attackerStrengthBefore = sumStrength(attackerBodies)
+  const defenderStrengthBefore = sumStrength(defenderBodies)
 
-  const survivingAttackers = harm(
-    attackers,
-    outcome.attackerLossFraction,
-    outcome.attackerMoraleDelta,
+  const survivingAttackers = keptAfterHarm(
+    attackerParty,
+    harm(attackerBodies, outcome.attackerLossFraction, outcome.attackerMoraleDelta),
   )
-  const survivingDefenders = harm(
-    defenders,
-    outcome.defenderLossFraction,
-    outcome.defenderMoraleDelta,
+  const survivingDefenders = keptAfterHarm(
+    defenderPool,
+    harm(defenderBodies, outcome.defenderLossFraction, outcome.defenderMoraleDelta),
   )
-  const attackerLoss = attackerStrengthBefore - sumStrength(survivingAttackers)
-  const defenderLoss = defenderStrengthBefore - sumStrength(survivingDefenders)
+  const attackerLoss = attackerStrengthBefore - sumStrength(fightingUnits(survivingAttackers))
+  const defenderLoss = defenderStrengthBefore - sumStrength(fightingUnits(survivingDefenders))
   if (faction === "central") state.cpStrengthLost += attackerLoss
   if (target.controller === "central") state.cpStrengthLost += defenderLoss
-  for (const unit of attackers) attacked.add(unit.id)
+  for (const unit of attackerParty) attacked.add(unit.id)
 
-  from.units = from.units.filter((unit) => !attackers.includes(unit))
-  target.units = target.units.filter((unit) => !defenders.includes(unit))
+  const attackerIds = new Set(attackerParty.map((unit) => unit.id))
+  const defenderIds = new Set(defenderPool.map((unit) => unit.id))
+  from.units = from.units.filter((unit) => !attackerIds.has(unit.id))
+  target.units = target.units.filter((unit) => !defenderIds.has(unit.id))
 
   const odds =
     outcome.defense <= 0
@@ -367,6 +381,7 @@ export function applyAttack(
     let retreatSummary = "The garrison is destroyed."
     if (survivingDefenders.length > 0) {
       for (const unit of survivingDefenders) {
+        if (survivingDefenders.some((other) => other.parentId === unit.id)) continue
         const shaken = Math.max(5, Math.round(unit.strength * 0.6))
         if (unit.faction === "central") state.cpStrengthLost += unit.strength - shaken
         unit.strength = shaken
@@ -378,7 +393,7 @@ export function applyAttack(
       } else {
         retreatSummary = "No friendly province is open. The remnants are lost."
       }
-    } else if (defenders.length === 0) {
+    } else if (defenderBodies.length === 0) {
       retreatSummary = "The province was empty."
     }
     target.units.push(...survivingAttackers)
@@ -556,7 +571,7 @@ function applyEvent(state: GameState, event: GameEvent): EventResolution {
   switch (event.type) {
     case "partisans": {
       province.unrest = clamp(province.unrest + 15, 0, 100)
-      const target = [...province.units].sort((a, b) => b.strength - a.strength)[0]
+      const target = [...fightingUnits(province.units)].sort((a, b) => b.strength - a.strength)[0]
       if (target) {
         const loss = Math.min(8, target.strength)
         if (target.faction === "central") state.cpStrengthLost += loss
@@ -693,6 +708,8 @@ function advanceBuilds(state: GameState): string[] {
       maxStrength: stats.strength,
       morale: stats.morale,
       kind: job.kind,
+      echelon: job.echelon ?? "army",
+      ...(job.parentId ? { parentId: job.parentId } : {}),
     })
     notes.push(`${job.name} arrives at ${province.name}.`)
   }
@@ -745,9 +762,9 @@ export function engagementOdds(
   const from = findProvince(state, fromId)
   const target = findProvince(state, targetId)
   if (!from || !target) return null
-  const attackers = from.units.filter((unit) => unitIds.includes(unit.id))
-  const defenders = target.units.filter(
-    (unit) => unit.faction === target.controller,
+  const attackers = fightingUnits(from.units, independentFormations(partyOf(from.units, unitIds)))
+  const defenders = fightingUnits(
+    target.units.filter((unit) => unit.faction === target.controller),
   )
   const attack = attackerPower(attackers, from.supply, target.terrain)
   const defense = defenderPower(

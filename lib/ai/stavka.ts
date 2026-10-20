@@ -1,4 +1,5 @@
 import { attackerPower, defenderPower } from "@/lib/engine/combat"
+import { fightingUnits, formationStrength, independentFormations } from "@/lib/engine/echelon"
 import { canAfford, RECRUIT, recruitmentYard, spendable } from "@/lib/engine/economy"
 import { findProvince } from "@/lib/engine/turn"
 import { scenarioSpec } from "@/lib/data/objectives"
@@ -225,14 +226,16 @@ function russianProvinces(state: GameState): Province[] {
 }
 
 function garrisonUnits(province: Province): Unit[] {
-  return province.units.filter((unit) => unit.faction === "russia")
+  return independentFormations(province.units.filter((unit) => unit.faction === "russia"))
 }
 
 function spareUnits(state: GameState, province: Province, units: Unit[]): Unit[] {
   if (!mustKeepGarrison(state, province) || units.length <= 1) {
     return mustKeepGarrison(state, province) ? [] : units
   }
-  const sorted = [...units].sort((a, b) => b.strength - a.strength || a.id.localeCompare(b.id))
+  const sorted = [...units].sort(
+    (a, b) => formationStrength(province.units, b) - formationStrength(province.units, a) || a.id.localeCompare(b.id),
+  )
   return sorted.slice(0, -1)
 }
 
@@ -247,10 +250,11 @@ function isVictoryCity(state: GameState, id: string): boolean {
 }
 
 function odds(attackers: Unit[], from: Province, target: Province): number {
-  const defenders = target.units.filter((unit) => unit.faction === target.controller)
-  if (!defenders.length) return Number.POSITIVE_INFINITY
-  const attack = attackerPower(attackers, from.supply, target.terrain)
-  const defense = defenderPower(defenders, target.supply, target.terrain, target.fort)
+  const attackBodies = fightingUnits(from.units, attackers)
+  const defenseBodies = fightingUnits(target.units.filter((unit) => unit.faction === target.controller))
+  if (!defenseBodies.length) return Number.POSITIVE_INFINITY
+  const attack = attackerPower(attackBodies, from.supply, target.terrain)
+  const defense = defenderPower(defenseBodies, target.supply, target.terrain, target.fort)
   return attack / Math.max(8, defense)
 }
 
