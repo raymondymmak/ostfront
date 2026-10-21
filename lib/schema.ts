@@ -145,6 +145,17 @@ export const TurnRequestSchema = z.object({
   orders: z.array(PlayerOrderSchema).max(40),
 })
 
+export const AdvisorMessageSchema = z.object({
+  role: z.enum(["user", "advisor"]),
+  content: z.string().max(2000),
+})
+
+export const AdvisorRequestSchema = z.object({
+  state: GameStateSchema,
+  messages: z.array(AdvisorMessageSchema).max(12).default([]),
+  queuedOrders: z.array(PlayerOrderSchema).max(40).default([]),
+})
+
 export const GM_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,

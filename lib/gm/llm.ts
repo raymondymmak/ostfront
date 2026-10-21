@@ -132,14 +132,7 @@ async function complete(
   responseFormat: unknown,
   timeoutMs: number,
 ): Promise<GMTurn> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-  }
-  const referer = process.env.LLM_HTTP_REFERER?.trim()
-  if (referer) headers["HTTP-Referer"] = referer
-  const title = process.env.LLM_HTTP_TITLE?.trim()
-  if (title) headers["X-Title"] = title
+  const headers = llmRequestHeaders(key)
 
   let response: Response
   try {
@@ -236,6 +229,191 @@ function stripFence(text: string): string {
   const trimmed = text.trim()
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i)
   return fenced ? fenced[1].trim() : trimmed
+}
+
+export function llmBaseUrl(): string {
+  return (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "")
+}
+
+/** Same headers the Russian staff uses, including optional OpenRouter titles. */
+export function llmRequestHeaders(key: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  }
+  const referer = process.env.LLM_HTTP_REFERER?.trim()
+  if (referer) headers["HTTP-Referer"] = referer
+  const title = process.env.LLM_HTTP_TITLE?.trim()
+  if (title) headers["X-Title"] = title
+  return headers
+}
+
+export type LlmChatFailureKind = "unconfigured" | "http" | "timeout" | "empty"
+
+export type LlmChatResult =
+  | { ok: true; content: string; latencyMs: number }
+  | { ok: false; kind: LlmChatFailureKind; message: string; latencyMs: number }
+
+/**
+ * One chat completion on the fast model. Reasoning models sometimes spend the
+ * whole max_tokens budget before they write `content`. Null or empty content
+ * is an `empty` result, not a throw. Reasoning text is never returned.
+ */
+export async function llmChat(options: {
+  model: string
+  system: string
+  user: string
+  timeoutMs: number
+  maxTokens: number
+  temperature?: number
+}): Promise<LlmChatResult> {
+  const key = process.env.LLM_API_KEY?.trim()
+  if (!key) {
+    return { ok: false, kind: "unconfigured", message: "LLM_API_KEY is not set", latencyMs: 0 }
+  }
+  const started = Date.now()
+  const base = llmBaseUrl()
+  const openRouter = base.includes("openrouter.ai")
+  try {
+    const content = await chatWithFallbacks(base, key, options, openRouter)
+    return { ok: true, content, latencyMs: Date.now() - started }
+  } catch (error) {
+    const latencyMs = Date.now() - started
+    if (error instanceof LlmTimeoutError) {
+      return { ok: false, kind: "timeout", message: error.message, latencyMs }
+    }
+    if (error instanceof LlmEmptyError) {
+      return { ok: false, kind: "empty", message: error.message, latencyMs }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { ok: false, kind: "http", message, latencyMs }
+  }
+}
+
+async function chatWithFallbacks(
+  base: string,
+  key: string,
+  options: {
+    model: string
+    system: string
+    user: string
+    timeoutMs: number
+    maxTokens: number
+    temperature?: number
+  },
+  openRouter: boolean,
+): Promise<string> {
+  const attempts: Record<string, unknown>[] = []
+  if (openRouter) {
+    attempts.push({
+      response_format: { type: "json_object" },
+      reasoning: { effort: "low", exclude: true },
+    })
+  }
+  attempts.push({ response_format: { type: "json_object" } })
+  attempts.push({})
+
+  let last: unknown
+  for (let index = 0; index < attempts.length; index += 1) {
+    try {
+      return await postChat(base, key, options, attempts[index])
+    } catch (error) {
+      last = error
+      if (error instanceof LlmEmptyError || error instanceof LlmTimeoutError) throw error
+      const retry = isResponseFormatUnsupported(error) || isReasoningUnsupported(error)
+      if (!retry || index === attempts.length - 1) throw error
+    }
+  }
+  throw last instanceof Error ? last : new Error("LLM chat failed")
+}
+
+async function postChat(
+  base: string,
+  key: string,
+  options: {
+    model: string
+    system: string
+    user: string
+    timeoutMs: number
+    maxTokens: number
+    temperature?: number
+  },
+  extra: Record<string, unknown>,
+): Promise<string> {
+  let response: Response
+  try {
+    response = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: llmRequestHeaders(key),
+      body: JSON.stringify({
+        model: options.model,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.maxTokens,
+        messages: [
+          { role: "system", content: options.system },
+          { role: "user", content: options.user },
+        ],
+        ...extra,
+      }),
+      signal: AbortSignal.timeout(options.timeoutMs),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new LlmTimeoutError(`LLM timed out after ${options.timeoutMs}ms`)
+    }
+    throw error
+  }
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`LLM HTTP ${response.status}: ${body.slice(0, 240)}`)
+  }
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    throw new LlmEmptyError("LLM returned an empty message")
+  }
+  const content = readMessageContent(payload)
+  if (!content) throw new LlmEmptyError("LLM returned an empty message")
+  return content
+}
+
+/** Visible assistant text only. Ignores reasoning traces, which may be null-content leftovers. */
+export function readMessageContent(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null
+  const choices = (payload as { choices?: unknown }).choices
+  if (!Array.isArray(choices) || choices.length === 0) return null
+  const message = (choices[0] as { message?: unknown } | undefined)?.message
+  if (!message || typeof message !== "object") return null
+  const text = contentToString((message as { content?: unknown }).content).trim()
+  return text || null
+}
+
+function contentToString(content: unknown): string {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part
+      if (part && typeof part === "object" && "text" in part && typeof (part as { text: unknown }).text === "string") {
+        return (part as { text: string }).text
+      }
+      return ""
+    })
+    .join("")
+}
+
+class LlmEmptyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "LlmEmptyError"
+  }
+}
+
+function isReasoningUnsupported(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const text = error.message.toLowerCase()
+  return text.includes("reasoning") || text.includes("thinking")
 }
 
 function digest(state: GameState): string {
