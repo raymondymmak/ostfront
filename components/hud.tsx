@@ -16,9 +16,11 @@ type HudProps = {
   onOverlay: (overlay: "none" | "supply" | "unrest") => void
   armReset: boolean
   onReset: () => void
+  advisorOpen: boolean
+  onAdvisor: () => void
 }
 
-export function Hud({ state, overlay, onOverlay, armReset, onReset }: HudProps) {
+export function Hud({ state, overlay, onOverlay, armReset, onReset, advisorOpen, onAdvisor }: HudProps) {
   const central = strength(state, "central")
   const russia = strength(state, "russia")
   const held = {
@@ -74,6 +76,16 @@ export function Hud({ state, overlay, onOverlay, armReset, onReset }: HudProps) 
             </Button>
           ))}
         </div>
+        <Button
+          type="button"
+          size="sm"
+          variant={advisorOpen ? "default" : "outline"}
+          aria-expanded={advisorOpen}
+          data-testid="advisor-toggle"
+          onClick={onAdvisor}
+        >
+          Chief of Staff
+        </Button>
         <Button type="button" size="sm" variant="outline" onClick={onReset}>
           {armReset ? "Confirm restart" : "Restart"}
         </Button>

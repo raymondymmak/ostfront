@@ -891,7 +891,7 @@ function applyEvent(state: GameState, event: GameEvent): EventResolution {
   }
 }
 
-function applyRecruit(state: GameState, proposal: RecruitProposal): Resolution {
+export function applyRecruit(state: GameState, proposal: RecruitProposal): Resolution {
   const province = findProvince(state, proposal.province)
   if (!province) return reject(proposal, "Unknown province.")
   if (!recruitmentYard(province, proposal.faction)) {
@@ -932,7 +932,7 @@ function applyRecruit(state: GameState, proposal: RecruitProposal): Resolution {
   }
 }
 
-function applyCancelRecruit(state: GameState, proposal: CancelRecruitProposal): Resolution {
+export function applyCancelRecruit(state: GameState, proposal: CancelRecruitProposal): Resolution {
   const index = state.queue.findIndex((job) => job.id === proposal.id)
   if (index < 0) return reject(proposal, "That formation is not in the yards.")
   const job = state.queue[index]

@@ -12,6 +12,8 @@ You give orders for your own formations: move along a friendly border, attack in
 
 Russia is played by Stavka, a rule-based staff. The rules engine is the source of truth. It accepts or rejects every proposal, then resolves movement, combat, supply, recruiting, and unrest. Stavka writes the Russian orders and the chronicle of the fortnight. If a model key is set, the model may replace up to two diplomacy sentences. It does not order units, and it does not decide battles. With no key, the game plays the same way.
 
+General Erich von Falkenhayn, chief of the German General Staff, can be asked for advice from the Chief of Staff panel. He sees only the map the engine has already computed: ownership, supply, strengths, morale, rails, odds, and victory points. He may suggest orders. Accept puts a suggestion in the queue; Dismiss throws it away. He never changes the state, and he does not see the Russian orders for the fortnight. With no key, the panel says the chief of staff is unavailable offline and reads a short summary off the map.
+
 The situation is saved in the browser under `ostfront-1915-v1`. Restarting clears it. A save from another scenario is discarded. Neighbors and rails are rebound from the catalog, so a save cannot invent borders.
 
 ## Economy, recruiting, and reinforcement
@@ -107,7 +109,7 @@ LLM_MODEL=gpt-4o-mini
 LLM_MODEL_STRONG=
 ```
 
-`LLM_BASE_URL` is any OpenAI-compatible chat-completions endpoint. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent when set.
+`LLM_BASE_URL` is any OpenAI-compatible chat-completions endpoint. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent when set. The chief of staff uses `LLM_MODEL`, the fast model. `LLM_MODEL_STRONG` stays on important Russian diplomacy turns.
 
 When a key is present, the server still asks Stavka for the Russian orders. The model is called only for diplomacy. Turns are classed routine, important, or critical (`lib/gm/tier.ts`). With `LLM_MODEL_STRONG` set, important and critical turns try the strong model first. A cheap reply may be retried once on the strong model if validation fails or more than 30 percent of that draft’s proposals would be rejected. The wall clock for both calls is about 28 seconds, and each call is capped at about 14 seconds. One JSON line is logged per call (`ostfront.gm.call`), without the key or the prompt. If the model fails, Stavka’s own diplomacy is kept.
 
@@ -118,6 +120,8 @@ The turn route can be guarded when a deployment has a key:
 - `TURN_ALLOWED_ORIGINS` — comma-separated origins, for example `https://raymondymmak-ostfront.vercel.app,http://localhost:3000`.
 - `TURN_API_TOKEN` — send `X-Ostfront-Turn-Token` or `Authorization: Bearer …`.
 
+`POST /api/advisor` takes `{ state, messages, queuedOrders }` and returns the chief of staff's reply and any suggestions. It uses the same body size, rate limit, origin, and token checks. It does not write a save, and it does not resolve the turn.
+
 Campaign state stays in the browser. The turn API does not write a save on the server.
 
 ## Project structure
@@ -125,6 +129,7 @@ Campaign state stays in the browser. The turn API does not write a save on the s
 ```
 app/page.tsx              the game
 app/api/turn/route.ts     POST { state, orders } → { state, record }
+app/api/advisor/route.ts  POST { state, messages, queuedOrders } → advice
 components/               map, orders, province, chronicle, HUD
 lib/data/                 catalog, 2 May order of battle, objectives, rails, geometry
 lib/engine/               supply, combat, economy, victory, resolveTurn
