@@ -11,6 +11,11 @@ export type AdvisorOrder =
 export type AdvisorCard = {
   id: string
   order: AdvisorOrder
+  /**
+   * Further orders Accept files with `order`. A concentric attack is several
+   * attacks on one province, each already accepted by the engine.
+   */
+  companions: AdvisorOrder[]
   label: string
   valid: boolean
   /** Engine rejection, when the order names real troops but breaks a rule. */

@@ -9,7 +9,7 @@ import { combinedEngagementOdds, engagementOdds, findProvince, type EngagementPr
 import { KIND_LABEL } from "@/lib/format"
 import { ordersLocked } from "@/lib/finale"
 import { interpretOrders } from "@/lib/gm/interpret"
-import type { QueuedOrder } from "@/lib/orders"
+import { combinedQueueLines, type QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
 
 type OrderPanelProps = {
@@ -109,6 +109,11 @@ export function OrderPanel({
         ))}
         <Separator />
         <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Queued arrows</h3>
+        {combinedQueueLines(state, queue).map((line) => (
+          <p key={line.targetId} className="text-sm text-muted-foreground" data-testid="combined-odds">
+            {line.targetName} is one battle from {joinAnd(line.fromNames)}. {describeOdds(line.preview)}
+          </p>
+        ))}
         {queue.length === 0 && (
           <p className="text-sm text-muted-foreground">No arrows yet. Unordered formations hold.</p>
         )}
@@ -259,13 +264,19 @@ function queuedAttackOdds(
   )
 }
 
+function joinAnd(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ""
+  if (names.length === 2) return `${names[0]} and ${names[1]}`
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+}
+
 function describeOdds(odds: EngagementPreview): string {
   if (odds.empty && odds.origins < 2) return "Undefended, before the dice."
-  const ratio = odds.empty ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
+  const ratio = odds.empty || !Number.isFinite(odds.ratio) ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
   if (odds.origins >= 2) {
-    const shape = odds.origins === 2 ? "Two-pronged" : "Concentric"
+    const shape = odds.origins === 2 ? "two-pronged" : "concentric"
     const ring = odds.encircled ? ", and the defender is surrounded" : ""
-    return `${shape}, about ${ratio} before the dice${ring}.`
+    return `One battle, ${odds.origins} directions, ${shape}, about ${ratio} before the dice${ring}.`
   }
   return `About ${ratio} before the dice.`
 }

@@ -42,7 +42,7 @@ type AdvisorPanelProps = {
   closed: boolean
   epoch: number
   onClose: () => void
-  onAccept: (order: AdvisorOrder) => boolean
+  onAccept: (orders: AdvisorOrder[]) => boolean
 }
 
 export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAccept }: AdvisorPanelProps) {
@@ -230,10 +230,11 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                       size="xs"
                       data-testid="advisor-accept"
                       onClick={() => {
-                        if (onAccept(card.order)) dismiss(index, card.id)
+                        const orders = [card.order, ...(card.companions ?? [])]
+                        if (onAccept(orders)) dismiss(index, card.id)
                       }}
                     >
-                      Accept
+                      {card.companions?.length ? "Accept all" : "Accept"}
                     </Button>
                   )}
                   <Button

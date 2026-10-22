@@ -276,6 +276,48 @@ export function GameApp() {
     setSideTab("orders")
   }
 
+  function acceptAdvisorOrders(orders: AdvisorOrder[]): boolean {
+    if (ordersLocked(Boolean(game.state.result))) return false
+    const attacks = orders.filter(
+      (order): order is Extract<AdvisorOrder, { type: "attack" }> => order.type === "attack",
+    )
+    const others = orders.filter((order) => order.type !== "attack")
+    let accepted = false
+    for (const order of others) {
+      if (acceptAdvisorOrder(order)) accepted = true
+    }
+    if (attacks.length > 1) accepted = queueAttackSet(attacks) || accepted
+    else if (attacks.length === 1 && acceptAdvisorOrder(attacks[0])) accepted = true
+    return accepted
+  }
+
+  function queueAttackSet(orders: Extract<AdvisorOrder, { type: "attack" }>[]): boolean {
+    const claimed = new Set(queue.flatMap((item) => item.unitIds))
+    const additions: QueuedOrder[] = []
+    for (const order of orders) {
+      if (queue.some((item) => item.kind === "attack" && item.from === order.from && item.to === order.target)) {
+        continue
+      }
+      if (additions.some((item) => item.from === order.from && item.to === order.target)) continue
+      const unitIds = order.unitIds.filter(
+        (id) => !claimed.has(id) && !additions.some((item) => item.unitIds.includes(id)),
+      )
+      if (!unitIds.length) continue
+      for (const id of unitIds) claimed.add(id)
+      additions.push({
+        id: crypto.randomUUID(),
+        kind: "attack",
+        from: order.from,
+        to: order.target,
+        unitIds,
+      })
+    }
+    if (!additions.length) return false
+    setQueue((current) => [...current, ...additions])
+    noteQueued()
+    return true
+  }
+
   function acceptAdvisorOrder(order: AdvisorOrder): boolean {
     if (ordersLocked(Boolean(game.state.result))) return false
     if (order.type === "fortify") {
@@ -380,7 +422,7 @@ export function GameApp() {
             closed={finished}
             epoch={chatEpoch}
             onClose={() => setAdvisorOpen(false)}
-            onAccept={acceptAdvisorOrder}
+            onAccept={acceptAdvisorOrders}
           />
           {phase === "map" && !setupOpen && (
             <div className="pointer-events-none absolute top-3 right-14 left-3 z-30 flex justify-center">
