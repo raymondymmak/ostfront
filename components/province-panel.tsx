@@ -226,7 +226,7 @@ function neighborOddsLabel(attack: EngagementPreview): string {
   if (attack.origins > 1) {
     const shape = attack.origins === 2 ? "two-pronged" : "concentric"
     const ratio = attack.empty ? "undefended" : `${attack.ratio.toFixed(2)} : 1`
-    return attack.encircled ? `${shape}, surrounded, ${ratio}` : `${shape} ${ratio}`
+    return attack.encircled ? `one battle, ${shape}, surrounded, ${ratio}` : `one battle, ${shape}, ${ratio}`
   }
   return attack.empty ? "undefended" : `odds ${attack.ratio.toFixed(2)} : 1`
 }

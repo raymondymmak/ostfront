@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
-import { engagementOdds } from "@/lib/engine/turn"
+import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
+import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engine/turn"
 import { advise, buildSituation, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
 import { readMessageContent } from "@/lib/gm/llm"
 import { resetTurnGuardStateForTests } from "@/lib/api/turn-guard"
-import type { AdvisorCard, AdvisorResponse } from "@/lib/gm/advisor-types"
+import { combinedQueueLines } from "@/lib/orders"
+import type { AdvisorCard, AdvisorOrder, AdvisorResponse } from "@/lib/gm/advisor-types"
 
 async function postAdvisor(body: unknown, headers: Record<string, string> = {}) {
   const { POST } = await import("@/app/api/advisor/route")
@@ -62,6 +64,209 @@ describe("advisor grounding", () => {
     expect(text).not.toContain(`manpower ${state.treasury.russia.mp}`)
     expect(text).not.toMatch(/Russian purse|Russian manpower|Russian industry|Stavka/)
     expect(JSON.stringify(situation)).not.toContain('"plans"')
+    expect(text).toContain(String(flankMultiplier(2)))
+    expect(text).toContain(String(flankMultiplier(3)))
+    expect(text).toContain(String(flankMultiplier(4)))
+    expect(text).toContain(String(Math.round(ENCIRCLEMENT_DEFENDER_LOSS * 100)))
+    expect(text).toMatch(/one battle/i)
+    expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/i)
+  })
+
+  it("pools four directions into Łódź at the resolver's combined odds", () => {
+    const state = createInitialState()
+    const situation = buildSituation(state, [])
+    const map = staffMap(state)
+    const lodz = situation.combined.find((battle) => battle.targetId === "lodz")
+    expect(lodz).toBeTruthy()
+    expect(lodz!.prongs.map((prong) => prong.fromId).sort()).toEqual([
+      "gdynia",
+      "katowice",
+      "oberschlesien",
+      "poznan",
+    ])
+    expect(lodz!.prongs.map((prong) => prong.fromName).sort()).toEqual([
+      "Katowice",
+      "Pomorze",
+      "Posen",
+      "Upper Silesia",
+    ])
+    const columns = lodz!.prongs.map((prong) => engagementOdds(map, prong.fromId, "lodz", prong.unitIds))
+    expect(columns.every((column) => column && column.origins === 1)).toBe(true)
+    const preview = combinedEngagementOdds(
+      map,
+      "lodz",
+      lodz!.prongs.map((prong) => ({ fromId: prong.fromId, unitIds: prong.unitIds })),
+    )
+    expect(preview).not.toBeNull()
+    expect(lodz!.ratio).toBe(preview!.ratio)
+    expect(lodz!.multiplier).toBe(preview!.multiplier)
+    expect(lodz!.multiplier).toBe(flankMultiplier(4))
+    expect(lodz!.origins).toBe(4)
+    expect(lodz!.encircled).toBe(preview!.encircled)
+    const pooledAttack =
+      columns.reduce((sum, column) => sum + column!.attack, 0) * flankMultiplier(lodz!.origins)
+    expect(preview!.ratio).toBeCloseTo(pooledAttack / Math.max(8, preview!.defense), 5)
+    expect(preview!.ratio).toBeGreaterThan(Math.max(...columns.map((column) => column!.ratio)))
+
+    const text = renderSituation(situation)
+    expect(text).toContain(`flank ×${preview!.multiplier}`)
+    expect(text).toContain(preview!.ratio.toFixed(2))
+    expect(text).not.toMatch(/with your queued attack/i)
+
+    const fought = resolveTurn(
+      state,
+      {
+        narration: "",
+        proposals: lodz!.prongs.map((prong) => ({
+          type: "attack" as const,
+          from: prong.fromId,
+          target: "lodz",
+          units: prong.unitIds,
+        })),
+        events: [],
+        diplomacy: [],
+      },
+      { rng: () => 0 },
+    )
+    const attacks = fought.record.resolutions.filter((item) => item.proposal.type === "attack")
+    expect(attacks).toHaveLength(1)
+    expect(attacks[0].summary).toMatch(/Concentric attack/)
+    expect(attacks[0].summary).toContain("Łódź")
+    const variance = 0.82
+    expect(attacks[0].summary).toContain((preview!.ratio * variance).toFixed(2))
+    expect(attacks[0].summary).toContain("roll 1")
+    expect(state.provinces.find((province) => province.id === "lodz")?.controller).toBe("russia")
+  })
+
+  it("tells Falkenhayn what adding columns does to a queued attack", () => {
+    const state = createInitialState()
+    const queued = [{ type: "attack" as const, from: "poznan", target: "lodz", unitIds: ["g-pos-inf"] }]
+    const situation = buildSituation(state, queued)
+    const map = staffMap(state)
+    const lodz = situation.combined.find((battle) => battle.targetId === "lodz")
+    expect(lodz).toBeTruthy()
+    expect(lodz!.prongs.filter((prong) => prong.queued).map((prong) => prong.fromId)).toEqual(["poznan"])
+    expect(lodz!.prongs.filter((prong) => !prong.queued)).toHaveLength(3)
+    const full = combinedEngagementOdds(
+      map,
+      "lodz",
+      lodz!.prongs.map((prong) => ({ fromId: prong.fromId, unitIds: prong.unitIds })),
+    )
+    const alone = combinedEngagementOdds(map, "lodz", [{ fromId: "poznan", unitIds: ["g-pos-inf"] }])
+    expect(lodz!.ratio).toBe(full!.ratio)
+    expect(lodz!.queuedRatio).toBe(alone!.ratio)
+    const text = renderSituation(situation)
+    expect(text).toContain(full!.ratio.toFixed(2))
+    expect(text).toContain(alone!.ratio.toFixed(2))
+    expect(text).toMatch(/with your queued attack from Posen, adding .+ makes it/)
+  })
+
+  it("answers a together question with one validated Łódź battle", async () => {
+    const state = createInitialState()
+    const snapshot = structuredClone(state)
+    const response = await postAdvisor({
+      state,
+      messages: [
+        {
+          role: "user",
+          content: "If we attack Łódź together from Posen, Upper Silesia, Pomorze and Katowice, the odds are different.",
+        },
+      ],
+      queuedOrders: [],
+    })
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as AdvisorResponse
+    const preview = combinedEngagementOdds(staffMap(state), "lodz", [
+      { fromId: "poznan", unitIds: ["g-pos-inf"] },
+      { fromId: "oberschlesien", unitIds: ["g-obs-inf"] },
+      { fromId: "gdynia", unitIds: ["g-gdy-inf"] },
+      { fromId: "katowice", unitIds: ["g-kat-inf"] },
+    ])
+    expect(payload.reply).toContain(preview!.ratio.toFixed(2))
+    expect(payload.reply).toMatch(/one battle/i)
+    expect(payload.reply).toContain(String(flankMultiplier(4)))
+    expect(payload.reply).not.toMatch(/does not show combined|each column separately|cannot promise|dispersion/i)
+    expect(payload.reply).not.toMatch(/Stavka|will attack/i)
+    const card = payload.suggestions.find(
+      (item) => item.order.type === "attack" && item.order.target === "lodz",
+    )
+    expect(card?.valid).toBe(true)
+    const orders = [card!.order, ...card!.companions] as Extract<AdvisorOrder, { type: "attack" }>[]
+    expect(orders).toHaveLength(4)
+    expect(orders.every((order) => order.target === "lodz")).toBe(true)
+    expect(orders.map((order) => order.from).sort()).toEqual(["gdynia", "katowice", "oberschlesien", "poznan"])
+    expect(card?.odds).toContain(preview!.ratio.toFixed(2))
+    expect(state).toEqual(snapshot)
+  })
+
+  it("groups a model's four Łódź attacks and drops a Russian column", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    const state = createInitialState()
+    const snapshot = structuredClone(state)
+    let system = ""
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)) as { messages: { role: string; content: string }[] }
+        system = body.messages.find((message) => message.role === "system")?.content ?? ""
+        return Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply:
+                "The map does not show combined odds. I cannot promise the dice or the engine will pool these attacks. The real figure is on the dispatch.",
+              suggestions: [
+                { type: "attack", from: "poznan", target: "lodz", unitIds: ["g-pos-inf"] },
+                { type: "attack", from: "oberschlesien", target: "lodz", unitIds: ["g-obs-inf"] },
+                { type: "attack", from: "gdynia", target: "lodz", unitIds: ["g-gdy-inf"] },
+                { type: "attack", from: "katowice", target: "lodz", unitIds: ["g-kat-inf"] },
+                { type: "attack", from: "warszawa", target: "lodz", unitIds: ["g-war-inf"] },
+              ],
+            }),
+          ),
+        )
+      }),
+    )
+    const response = await postAdvisor({
+      state,
+      messages: [{ role: "user", content: "If we do it together, the odds are different." }],
+      queuedOrders: [],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(system).toMatch(/one battle/i)
+    expect(system).toContain(String(flankMultiplier(2)))
+    expect(system).toContain(String(flankMultiplier(4)))
+    expect(system).not.toMatch(/each column separately|cannot promise/i)
+    expect(payload.reply).not.toMatch(/does not show combined|cannot promise/)
+    expect(payload.reply).toMatch(/real figure|dispatch/i)
+    const card = payload.suggestions.find((item) => item.order.type === "attack" && item.order.target === "lodz")
+    const orders = [card!.order, ...card!.companions]
+    expect(orders).toHaveLength(4)
+    expect(card?.valid).toBe(true)
+    expect(JSON.stringify(payload.suggestions)).not.toContain("g-war-inf")
+    expect(payload.dropped).toBeGreaterThanOrEqual(1)
+    expect(state).toEqual(snapshot)
+  })
+
+  it("shows one combined readout for four queued attacks on Łódź", () => {
+    const state = staffMap(createInitialState())
+    const queue = [
+      { id: "1", kind: "attack" as const, from: "poznan", to: "lodz", unitIds: ["g-pos-inf"] },
+      { id: "2", kind: "attack" as const, from: "oberschlesien", to: "lodz", unitIds: ["g-obs-inf"] },
+      { id: "3", kind: "attack" as const, from: "gdynia", to: "lodz", unitIds: ["g-gdy-inf"] },
+      { id: "4", kind: "attack" as const, from: "katowice", to: "lodz", unitIds: ["g-kat-inf"] },
+    ]
+    const lines = combinedQueueLines(state, queue)
+    const preview = combinedEngagementOdds(
+      state,
+      "lodz",
+      queue.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
+    )
+    expect(lines).toHaveLength(1)
+    expect(lines[0].targetName).toBe("Łódź")
+    expect(lines[0].fromNames).toEqual(["Katowice", "Pomorze", "Posen", "Upper Silesia"])
+    expect(lines[0].preview.ratio).toBe(preview!.ratio)
+    expect(lines[0].preview.multiplier).toBe(flankMultiplier(4))
+    expect(lines[0].preview.origins).toBe(4)
   })
 
   it("drops invented and Russian orders, flags an illegal Central Powers order, and does not roll the battle", async () => {
@@ -277,6 +482,15 @@ describe("advisor grounding", () => {
     expect(text).toContain("Kielce is thin")
     expect(text).toContain("Hold the depot")
     expect(text).not.toMatch(/will attack/i)
+  })
+
+  it("scrubs a denial that converging attacks are one battle", () => {
+    const text = scrubAdvisorReply(
+      "The map does not show combined odds. The engine previews each column separately. I cannot promise the dice or the engine will pool these attacks. Łódź is one battle at 3.53 : 1.",
+      createInitialState(),
+    )
+    expect(text).toContain("Łódź is one battle")
+    expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
   })
 })
 
