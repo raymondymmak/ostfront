@@ -1,5 +1,11 @@
 import { childUnits, echelonOf, independentFormations } from "@/lib/engine/echelon"
 import { sanitizeGmText, type GmContentState } from "@/lib/gm/debug"
+import {
+  scheduleLlmResponseLog,
+  type LlmLogKind,
+  type LlmLogOutcome,
+  type LlmUsage,
+} from "@/lib/gm/llm-log"
 import { GMTurnSchema, GM_JSON_SCHEMA } from "@/lib/schema"
 import type { GameState, GMTurn, PlayerOrder } from "@/lib/types"
 
@@ -18,6 +24,14 @@ Use only ids from the state digest. narration is two short paragraphs, present t
 JSON schema for your reply (follow exactly):
 ${JSON.stringify(GM_JSON_SCHEMA)}`
 
+/** Room for the JSON after a short reasoning pass. The call is still aborted by LLM_TIMEOUT_MS. */
+const GM_MAX_TOKENS = 4_000
+
+/** One extra attempt when invalid JSON, schema failure, or an empty body still has this much GM budget. */
+const JSON_RETRY_MIN_REMAINING_MS = 8_000
+
+const LOW_REASONING = { effort: "low", exclude: true } as const
+
 export type LlmModels = {
   cheap: string
   strong: string | null
@@ -32,6 +46,8 @@ export type LlmFailure = {
   httpStatus: number | null
   content: GmContentState
   abortReason: string
+  finishReason?: string | null
+  usage?: LlmUsage | null
 }
 
 export type LlmCallResult =
@@ -42,6 +58,21 @@ export type LlmCallResult =
       zodIssueCount: 0
     }
   | LlmFailure
+
+type ModelMeta = {
+  finishReason: string | null
+  usage: LlmUsage | null
+}
+
+const EMPTY_META: ModelMeta = { finishReason: null, usage: null }
+
+type AttemptLog = {
+  kind: LlmLogKind
+  model: string
+  gameTurn: number | null
+  gameDate: string | null
+  attempt: number
+}
 
 export function resolveLlmModels(): LlmModels {
   const cheap = process.env.LLM_MODEL || "gpt-4o-mini"
@@ -57,7 +88,7 @@ export function llmConfigured(): boolean {
 export async function llmAiTurn(
   state: GameState,
   orders: PlayerOrder[],
-  options: { model: string; timeoutMs: number },
+  options: { model: string; timeoutMs: number; budgetDeadline?: number },
 ): Promise<LlmCallResult> {
   const key = process.env.LLM_API_KEY
   if (!key) {
@@ -70,10 +101,7 @@ export async function llmAiTurn(
       abortReason: "LLM_API_KEY is not set",
     })
   }
-  const base = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(
-    /\/$/,
-    "",
-  )
+  const base = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "")
 
   void orders
   const user = [
@@ -83,23 +111,47 @@ export async function llmAiTurn(
   ].join("\n")
 
   const started = Date.now()
-  try {
-    const turn = await completeWithFormatFallback(
+  const budgetDeadline = options.budgetDeadline ?? started + Math.max(1, options.timeoutMs)
+  const log: AttemptLog = {
+    kind: "turn",
+    model: options.model,
+    gameTurn: state.turn,
+    gameDate: state.date,
+    attempt: 0,
+  }
+  const run = () =>
+    completeWithFormatFallback(
       base,
       key,
       options.model,
       user,
-      options.timeoutMs,
+      callWindow(budgetDeadline, options.timeoutMs),
+      log,
     )
-    return {
-      ok: true,
-      turn,
-      latencyMs: Date.now() - started,
-      zodIssueCount: 0,
-    }
+
+  try {
+    const turn = await run()
+    return { ok: true, turn, latencyMs: Date.now() - started, zodIssueCount: 0 }
   } catch (error) {
+    const remaining = budgetDeadline - Date.now()
+    if (isRetryableModelError(error) && remaining >= JSON_RETRY_MIN_REMAINING_MS) {
+      try {
+        const turn = await run()
+        return { ok: true, turn, latencyMs: Date.now() - started, zodIssueCount: 0 }
+      } catch (retryError) {
+        return classifyLlmError(retryError, Date.now() - started)
+      }
+    }
     return classifyLlmError(error, Date.now() - started)
   }
+}
+
+function callWindow(deadline: number, cap: number): number {
+  return Math.max(1, Math.min(cap, deadline - Date.now()))
+}
+
+function isRetryableModelError(error: unknown): boolean {
+  return error instanceof LlmZodError || error instanceof LlmEmptyError
 }
 
 async function completeWithFormatFallback(
@@ -108,14 +160,36 @@ async function completeWithFormatFallback(
   model: string,
   user: string,
   timeoutMs: number,
+  log: AttemptLog,
 ): Promise<GMTurn> {
+  const openRouter = base.includes("openrouter.ai")
+  let useReasoning = openRouter
+  let useSchema = true
+  let droppedReasoning = false
+  let droppedSchema = false
   const deadline = Date.now() + timeoutMs
   const left = () => Math.max(1, deadline - Date.now())
-  try {
-    return await complete(base, key, model, user, schemaFormat(), left())
-  } catch (error) {
-    if (!isResponseFormatUnsupported(error)) throw error
-    return await complete(base, key, model, user, { type: "json_object" }, left())
+
+  for (;;) {
+    const extra: Record<string, unknown> = {
+      response_format: useSchema ? schemaFormat() : { type: "json_object" },
+    }
+    if (useReasoning) extra.reasoning = LOW_REASONING
+    try {
+      return await complete(base, key, model, user, extra, left(), log)
+    } catch (error) {
+      if (useReasoning && !droppedReasoning && isReasoningUnsupported(error)) {
+        droppedReasoning = true
+        useReasoning = false
+        continue
+      }
+      if (useSchema && !droppedSchema && isResponseFormatUnsupported(error)) {
+        droppedSchema = true
+        useSchema = false
+        continue
+      }
+      throw error
+    }
   }
 }
 
@@ -124,92 +198,131 @@ async function complete(
   key: string,
   model: string,
   user: string,
-  responseFormat: unknown,
+  extra: Record<string, unknown>,
   timeoutMs: number,
+  log: AttemptLog,
 ): Promise<GMTurn> {
-  const headers = llmRequestHeaders(key)
-
-  let response: Response
+  const attempt = ++log.attempt
+  const ctx: AttemptLog = { ...log, attempt }
+  let sent: SentChat
   try {
-    response = await fetch(`${base}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model,
-        temperature: 0.4,
-        max_tokens: 1800,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: user },
-        ],
-        response_format: responseFormat,
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
+    sent = await sendChat({
+      base,
+      key,
+      model,
+      system: SYSTEM,
+      user,
+      timeoutMs,
+      maxTokens: GM_MAX_TOKENS,
+      temperature: 0.4,
+      extra,
     })
   } catch (error) {
-    if (isAbortTimeout(error)) throw new LlmTimeoutError(abortReasonOf(error))
+    logTransportFailure(ctx, error)
     throw error
   }
 
-  if (!response.ok) {
-    const body = await response.text()
-    throw new LlmHttpError(response.status, publicHttpReason(response.status, body))
+  const meta: ModelMeta = { finishReason: sent.finishReason, usage: sent.usage }
+  if (!sent.content) {
+    logAttempt(ctx, {
+      latencyMs: sent.latencyMs,
+      httpStatus: sent.httpStatus,
+      finishReason: sent.finishReason,
+      usage: sent.usage,
+      content: null,
+      outcome: "empty",
+      error: "empty message",
+      fellBack: true,
+    })
+    throw new LlmEmptyError("LLM returned an empty message", meta)
   }
-  const payload = (await response.json()) as {
-    choices?: { message?: { content?: string | null } }[]
+
+  const extracted = extractTopLevelJson(sent.content)
+  if (!extracted.ok) {
+    logAttempt(ctx, {
+      latencyMs: sent.latencyMs,
+      httpStatus: sent.httpStatus,
+      finishReason: sent.finishReason,
+      usage: sent.usage,
+      content: sent.content,
+      outcome: "invalid_json",
+      error: extracted.error,
+      fellBack: true,
+    })
+    throw new LlmZodError(extracted.error, 1, meta)
   }
-  const content = payload.choices?.[0]?.message?.content
-  if (content == null || (typeof content === "string" && content.trim() === "")) {
-    throw new LlmEmptyError("LLM returned an empty message")
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(stripFence(content))
-  } catch {
-    throw new LlmZodError("LLM JSON was not valid JSON", 1)
-  }
-  const result = GMTurnSchema.safeParse(parsed)
+
+  const result = GMTurnSchema.safeParse(extracted.value)
   if (!result.success) {
-    throw new LlmZodError(
-      `LLM JSON failed validation: ${result.error.issues
-        .map((issue) => issue.message)
-        .slice(0, 4)
-        .join("; ")}`,
-      result.error.issues.length,
-    )
+    const message = `LLM JSON failed validation: ${result.error.issues
+      .map((issue) => issue.message)
+      .slice(0, 4)
+      .join("; ")}`
+    logAttempt(ctx, {
+      latencyMs: sent.latencyMs,
+      httpStatus: sent.httpStatus,
+      finishReason: sent.finishReason,
+      usage: sent.usage,
+      content: sent.content,
+      outcome: "schema",
+      error: message,
+      fellBack: true,
+    })
+    throw new LlmZodError(message, result.error.issues.length, meta)
   }
+
+  logAttempt(ctx, {
+    latencyMs: sent.latencyMs,
+    httpStatus: sent.httpStatus,
+    finishReason: sent.finishReason,
+    usage: sent.usage,
+    content: sent.content,
+    outcome: "ok",
+    error: null,
+    fellBack: false,
+  })
   return result.data
 }
 
 class LlmZodError extends Error {
   issueCount: number
-  constructor(message: string, issueCount: number) {
+  meta: ModelMeta
+  constructor(message: string, issueCount: number, meta: ModelMeta = EMPTY_META) {
     super(message)
     this.name = "LlmZodError"
     this.issueCount = issueCount
+    this.meta = meta
   }
 }
 
 class LlmTimeoutError extends Error {
-  constructor(message: string) {
+  latencyMs: number
+  constructor(message: string, latencyMs = 0) {
     super(message)
     this.name = "LlmTimeoutError"
+    this.latencyMs = latencyMs
   }
 }
 
 class LlmHttpError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  rawBody: string
+  latencyMs: number
+  constructor(status: number, message: string, rawBody: string, latencyMs: number) {
     super(message)
     this.name = "LlmHttpError"
     this.status = status
+    this.rawBody = rawBody
+    this.latencyMs = latencyMs
   }
 }
 
 class LlmEmptyError extends Error {
-  constructor(message: string) {
+  meta: ModelMeta
+  constructor(message: string, meta: ModelMeta = EMPTY_META) {
     super(message)
     this.name = "LlmEmptyError"
+    this.meta = meta
   }
 }
 
@@ -229,6 +342,8 @@ export function classifyLlmError(error: unknown, latencyMs: number): LlmFailure 
       httpStatus: null,
       content: "present",
       abortReason: reason,
+      finishReason: error.meta.finishReason,
+      usage: error.meta.usage,
     })
   }
   if (error instanceof LlmEmptyError || errorMessage(error).toLowerCase().includes("empty message")) {
@@ -239,6 +354,8 @@ export function classifyLlmError(error: unknown, latencyMs: number): LlmFailure 
       httpStatus: null,
       content: "empty",
       abortReason: "empty message",
+      finishReason: error instanceof LlmEmptyError ? error.meta.finishReason : null,
+      usage: error instanceof LlmEmptyError ? error.meta.usage : null,
     })
   }
   if (error instanceof LlmHttpError) {
@@ -327,9 +444,13 @@ function publicHttpReason(status: number, body: string): string {
   return brief ? `LLM HTTP ${status}: ${brief}` : `LLM HTTP ${status}`
 }
 
+function providerText(error: unknown): string {
+  if (error instanceof LlmHttpError) return `${error.message}\n${error.rawBody}`
+  return errorMessage(error)
+}
+
 function isResponseFormatUnsupported(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  const text = error.message.toLowerCase()
+  const text = providerText(error).toLowerCase()
   return (
     text.includes("response_format") ||
     text.includes("json_schema") ||
@@ -350,10 +471,64 @@ function schemaFormat() {
   }
 }
 
-function stripFence(text: string): string {
-  const trimmed = text.trim()
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i)
-  return fenced ? fenced[1].trim() : trimmed
+export type JsonExtract =
+  | { ok: true; value: unknown }
+  | { ok: false; error: string }
+
+/** Drop markdown fences anywhere, then take the first balanced top-level object. */
+export function extractTopLevelJson(text: string): JsonExtract {
+  const stripped = stripFences(text).trim()
+  if (!stripped) return { ok: false, error: "LLM JSON was not valid JSON" }
+  const direct = parseJson(stripped)
+  if (direct.ok) return direct
+  const slice = firstBalancedObject(stripped)
+  if (!slice) return { ok: false, error: "LLM JSON was not valid JSON" }
+  return parseJson(slice)
+}
+
+function parseJson(text: string): JsonExtract {
+  try {
+    return { ok: true, value: JSON.parse(text) }
+  } catch {
+    return { ok: false, error: "LLM JSON was not valid JSON" }
+  }
+}
+
+function stripFences(text: string): string {
+  return text.replace(/```(?:json)?/gi, "")
+}
+
+function firstBalancedObject(text: string): string | null {
+  const start = text.indexOf("{")
+  if (start < 0) return null
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escape) {
+        escape = false
+        continue
+      }
+      if (char === "\\") {
+        escape = true
+        continue
+      }
+      if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === "{") depth += 1
+    else if (char === "}") {
+      depth -= 1
+      if (depth === 0) return text.slice(start, index + 1)
+    }
+  }
+  return null
 }
 
 export function llmBaseUrl(): string {
@@ -375,9 +550,18 @@ export function llmRequestHeaders(key: string): Record<string, string> {
 
 export type LlmChatFailureKind = "unconfigured" | "http" | "timeout" | "empty"
 
+export type LlmExchange = {
+  attempt: number
+  httpStatus: number | null
+  finishReason: string | null
+  usage: LlmUsage | null
+  content: string | null
+  latencyMs: number
+}
+
 export type LlmChatResult =
-  | { ok: true; content: string; latencyMs: number }
-  | { ok: false; kind: LlmChatFailureKind; message: string; latencyMs: number }
+  | { ok: true; content: string; latencyMs: number; exchange: LlmExchange }
+  | { ok: false; kind: LlmChatFailureKind; message: string; latencyMs: number; exchange: null }
 
 /**
  * One chat completion on the fast model. Reasoning models sometimes spend the
@@ -391,27 +575,35 @@ export async function llmChat(options: {
   timeoutMs: number
   maxTokens: number
   temperature?: number
+  gameTurn?: number | null
+  gameDate?: string | null
 }): Promise<LlmChatResult> {
   const key = process.env.LLM_API_KEY?.trim()
   if (!key) {
-    return { ok: false, kind: "unconfigured", message: "LLM_API_KEY is not set", latencyMs: 0 }
+    return { ok: false, kind: "unconfigured", message: "LLM_API_KEY is not set", latencyMs: 0, exchange: null }
   }
   const started = Date.now()
   const base = llmBaseUrl()
-  const openRouter = base.includes("openrouter.ai")
+  const log: AttemptLog = {
+    kind: "advisor",
+    model: options.model,
+    gameTurn: options.gameTurn ?? null,
+    gameDate: options.gameDate ?? null,
+    attempt: 0,
+  }
   try {
-    const content = await chatWithFallbacks(base, key, options, openRouter)
-    return { ok: true, content, latencyMs: Date.now() - started }
+    const result = await chatWithFallbacks(base, key, options, log)
+    return { ok: true, content: result.content, latencyMs: Date.now() - started, exchange: result.exchange }
   } catch (error) {
     const latencyMs = Date.now() - started
     if (error instanceof LlmTimeoutError) {
-      return { ok: false, kind: "timeout", message: error.message, latencyMs }
+      return { ok: false, kind: "timeout", message: error.message, latencyMs, exchange: null }
     }
     if (error instanceof LlmEmptyError) {
-      return { ok: false, kind: "empty", message: error.message, latencyMs }
+      return { ok: false, kind: "empty", message: error.message, latencyMs, exchange: null }
     }
     const message = error instanceof Error ? error.message : String(error)
-    return { ok: false, kind: "http", message, latencyMs }
+    return { ok: false, kind: "http", message, latencyMs, exchange: null }
   }
 }
 
@@ -426,13 +618,14 @@ async function chatWithFallbacks(
     maxTokens: number
     temperature?: number
   },
-  openRouter: boolean,
-): Promise<string> {
+  log: AttemptLog,
+): Promise<{ content: string; exchange: LlmExchange }> {
+  const openRouter = base.includes("openrouter.ai")
   const attempts: Record<string, unknown>[] = []
   if (openRouter) {
     attempts.push({
       response_format: { type: "json_object" },
-      reasoning: { effort: "low", exclude: true },
+      reasoning: LOW_REASONING,
     })
   }
   attempts.push({ response_format: { type: "json_object" } })
@@ -440,67 +633,223 @@ async function chatWithFallbacks(
 
   let last: unknown
   for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = ++log.attempt
+    const ctx: AttemptLog = { ...log, attempt }
     try {
-      return await postChat(base, key, options, attempts[index])
+      const sent = await sendChat({
+        base,
+        key,
+        model: options.model,
+        system: options.system,
+        user: options.user,
+        timeoutMs: options.timeoutMs,
+        maxTokens: options.maxTokens,
+        temperature: options.temperature ?? 0.3,
+        extra: attempts[index],
+      })
+      if (!sent.content) {
+        logAttempt(ctx, {
+          latencyMs: sent.latencyMs,
+          httpStatus: sent.httpStatus,
+          finishReason: sent.finishReason,
+          usage: sent.usage,
+          content: null,
+          outcome: "empty",
+          error: "empty message",
+          fellBack: true,
+        })
+        throw new LlmEmptyError("LLM returned an empty message", {
+          finishReason: sent.finishReason,
+          usage: sent.usage,
+        })
+      }
+      return {
+        content: sent.content,
+        exchange: {
+          attempt,
+          httpStatus: sent.httpStatus,
+          finishReason: sent.finishReason,
+          usage: sent.usage,
+          content: sent.content,
+          latencyMs: sent.latencyMs,
+        },
+      }
     } catch (error) {
       last = error
-      if (error instanceof LlmEmptyError || error instanceof LlmTimeoutError) throw error
-      const retry = isResponseFormatUnsupported(error) || isReasoningUnsupported(error)
-      if (!retry || index === attempts.length - 1) throw error
+      if (error instanceof LlmEmptyError) throw error
+      logTransportFailure(ctx, error)
+      const retry = (isResponseFormatUnsupported(error) || isReasoningUnsupported(error)) && index < attempts.length - 1
+      if (!retry) throw error
     }
   }
   throw last instanceof Error ? last : new Error("LLM chat failed")
 }
 
-async function postChat(
-  base: string,
-  key: string,
-  options: {
-    model: string
-    system: string
-    user: string
-    timeoutMs: number
-    maxTokens: number
-    temperature?: number
-  },
-  extra: Record<string, unknown>,
-): Promise<string> {
+type SentChat = {
+  httpStatus: number
+  finishReason: string | null
+  usage: LlmUsage | null
+  content: string | null
+  latencyMs: number
+}
+
+async function sendChat(options: {
+  base: string
+  key: string
+  model: string
+  system: string
+  user: string
+  timeoutMs: number
+  maxTokens: number
+  temperature: number
+  extra: Record<string, unknown>
+}): Promise<SentChat> {
+  const started = Date.now()
   let response: Response
   try {
-    response = await fetch(`${base}/chat/completions`, {
+    response = await fetch(`${options.base}/chat/completions`, {
       method: "POST",
-      headers: llmRequestHeaders(key),
+      headers: llmRequestHeaders(options.key),
       body: JSON.stringify({
         model: options.model,
-        temperature: options.temperature ?? 0.3,
+        temperature: options.temperature,
         max_tokens: options.maxTokens,
         messages: [
           { role: "system", content: options.system },
           { role: "user", content: options.user },
         ],
-        ...extra,
+        ...options.extra,
       }),
       signal: AbortSignal.timeout(options.timeoutMs),
     })
   } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      throw new LlmTimeoutError(`LLM timed out after ${options.timeoutMs}ms`)
-    }
+    const latencyMs = Date.now() - started
+    if (isAbortTimeout(error)) throw new LlmTimeoutError(abortReasonOf(error), latencyMs)
     throw error
   }
+
+  const latencyMs = Date.now() - started
   if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`LLM HTTP ${response.status}: ${body.slice(0, 240)}`)
+    const rawBody = await response.text()
+    throw new LlmHttpError(response.status, publicHttpReason(response.status, rawBody), rawBody, latencyMs)
   }
+
   let payload: unknown
   try {
     payload = await response.json()
   } catch {
-    throw new LlmEmptyError("LLM returned an empty message")
+    throw new LlmHttpError(response.status, `LLM HTTP ${response.status}`, "", latencyMs)
   }
-  const content = readMessageContent(payload)
-  if (!content) throw new LlmEmptyError("LLM returned an empty message")
-  return content
+
+  return {
+    httpStatus: response.status,
+    finishReason: readFinishReason(payload),
+    usage: readUsage(payload),
+    content: readMessageContent(payload),
+    latencyMs,
+  }
+}
+
+export function readFinishReason(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null
+  const choices = (payload as { choices?: unknown }).choices
+  if (!Array.isArray(choices) || choices.length === 0 || !choices[0] || typeof choices[0] !== "object") return null
+  const choice = choices[0] as { finish_reason?: unknown; native_finish_reason?: unknown }
+  if (typeof choice.finish_reason === "string" && choice.finish_reason.trim()) return choice.finish_reason.trim()
+  if (typeof choice.native_finish_reason === "string" && choice.native_finish_reason.trim()) {
+    return choice.native_finish_reason.trim()
+  }
+  return null
+}
+
+export function readUsage(payload: unknown): LlmUsage | null {
+  if (!payload || typeof payload !== "object") return null
+  const usage = (payload as { usage?: unknown }).usage
+  if (!usage || typeof usage !== "object") return null
+  const record = usage as Record<string, unknown>
+  const promptTokens = readTokenCount(record.prompt_tokens) ?? readTokenCount(record.input_tokens)
+  const completionTokens = readTokenCount(record.completion_tokens) ?? readTokenCount(record.output_tokens)
+  const totalTokens = readTokenCount(record.total_tokens)
+  const reasoningTokens = readReasoningTokens(record)
+  if (promptTokens == null && completionTokens == null && totalTokens == null && reasoningTokens == null) return null
+  return { promptTokens, completionTokens, totalTokens, reasoningTokens }
+}
+
+function readReasoningTokens(usage: Record<string, unknown>): number | null {
+  for (const key of ["completion_tokens_details", "output_tokens_details"]) {
+    const detail = usage[key]
+    if (!detail || typeof detail !== "object") continue
+    const count = readTokenCount((detail as Record<string, unknown>).reasoning_tokens)
+    if (count != null) return count
+  }
+  return readTokenCount(usage.reasoning_tokens)
+}
+
+function readTokenCount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null
+  return Math.round(value)
+}
+
+function logAttempt(
+  ctx: AttemptLog,
+  fields: {
+    latencyMs: number
+    httpStatus: number | null
+    finishReason: string | null
+    usage: LlmUsage | null
+    content: string | null
+    outcome: LlmLogOutcome
+    error: string | null
+    fellBack: boolean
+  },
+): void {
+  scheduleLlmResponseLog({
+    kind: ctx.kind,
+    attempt: ctx.attempt,
+    gameTurn: ctx.gameTurn,
+    gameDate: ctx.gameDate,
+    model: ctx.model,
+    ...fields,
+  })
+}
+
+function logTransportFailure(ctx: AttemptLog, error: unknown): void {
+  if (error instanceof LlmHttpError) {
+    logAttempt(ctx, {
+      latencyMs: error.latencyMs,
+      httpStatus: error.status,
+      finishReason: null,
+      usage: null,
+      content: error.rawBody || null,
+      outcome: "http",
+      error: error.message,
+      fellBack: true,
+    })
+    return
+  }
+  if (error instanceof LlmTimeoutError || isAbortTimeout(error)) {
+    logAttempt(ctx, {
+      latencyMs: error instanceof LlmTimeoutError ? error.latencyMs : 0,
+      httpStatus: null,
+      finishReason: null,
+      usage: null,
+      content: null,
+      outcome: "timeout",
+      error: error instanceof Error ? error.message : "timeout",
+      fellBack: true,
+    })
+    return
+  }
+  logAttempt(ctx, {
+    latencyMs: 0,
+    httpStatus: null,
+    finishReason: null,
+    usage: null,
+    content: null,
+    outcome: "http",
+    error: error instanceof Error ? error.message : "LLM request failed",
+    fellBack: true,
+  })
 }
 
 /** Visible assistant text only. Ignores reasoning traces, which may be null-content leftovers. */
@@ -529,8 +878,7 @@ function contentToString(content: unknown): string {
 }
 
 function isReasoningUnsupported(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  const text = error.message.toLowerCase()
+  const text = providerText(error).toLowerCase()
   return text.includes("reasoning") || text.includes("thinking")
 }
 

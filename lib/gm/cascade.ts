@@ -59,6 +59,7 @@ export async function fetchGmWithCascade(
   const first = await llmAiTurn(state, orders, {
     model: plan.primaryModel,
     timeoutMs: firstTimeout,
+    budgetDeadline: deadline,
   })
 
   logGmCall({
@@ -101,6 +102,7 @@ export async function fetchGmWithCascade(
       const second = await llmAiTurn(state, orders, {
         model: plan.escalationModel,
         timeoutMs: secondTimeout,
+        budgetDeadline: deadline,
       })
       logGmCall({
         tag: "ostfront.gm.call",
@@ -146,6 +148,7 @@ export async function fetchGmWithCascade(
     const second = await llmAiTurn(state, orders, {
       model: plan.escalationModel,
       timeoutMs: secondTimeout,
+      budgetDeadline: deadline,
     })
     logGmCall({
       tag: "ostfront.gm.call",
@@ -256,6 +259,8 @@ function failureOutcome(
       httpStatus: result.httpStatus,
       content: result.content,
       fallback: "staff-simulation",
+      finishReason: result.finishReason ?? null,
+      usage: result.usage ?? null,
     },
   }
 }
