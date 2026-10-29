@@ -396,8 +396,6 @@ export function GameApp() {
     <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden">
       <Hud
         state={game.state}
-        overlay={overlay}
-        onOverlay={setOverlay}
         armReset={armReset}
         onReset={reset}
         advisorOpen={advisorOpen}
@@ -442,6 +440,7 @@ export function GameApp() {
             orderMode={orderMode && !finished}
             onSelect={setSelectedId}
             onDraw={addArrow}
+            onOverlay={setOverlay}
           />
           <AdvisorPanel
             open={advisorOpen && !setupOpen}
@@ -453,7 +452,7 @@ export function GameApp() {
             onAccept={acceptAdvisorOrders}
           />
           {phase === "map" && !setupOpen && (
-            <div className="pointer-events-none absolute top-3 right-14 left-3 z-30 flex justify-center">
+            <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
                 className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/92 px-3 py-2 text-[#f3e2a8] shadow-lg"
                 data-testid="finale-banner"
