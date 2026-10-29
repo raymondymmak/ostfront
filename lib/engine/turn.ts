@@ -53,6 +53,7 @@ export type ResolveOptions = {
   notes?: string[]
   gmSource?: "mock" | "llm"
   warning?: string
+  gmDebug?: string
 }
 
 const MODIFY_LIMIT = 20
@@ -209,6 +210,7 @@ export function resolveTurn(
     notes: options.notes ?? [],
     gmSource: options.gmSource ?? "mock",
     warning: options.warning,
+    gmDebug: options.gmDebug,
   }
 
   if (!state.result) {

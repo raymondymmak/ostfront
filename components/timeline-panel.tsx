@@ -102,9 +102,17 @@ export function TimelinePanel({
             >
               <article className="flex flex-col gap-3 p-3 text-sm">
                 {record.warning && (
-                  <p className="rounded-md border border-destructive/40 px-2.5 py-2 text-destructive">
-                    {record.warning}
-                  </p>
+                  <div
+                    className="rounded-md border border-destructive/40 px-2.5 py-2 text-destructive"
+                    data-testid="gm-warning"
+                  >
+                    <p>{record.warning}</p>
+                    {record.gmDebug && (
+                      <p className="mt-1 font-mono text-[11px] leading-4 break-words text-destructive/80" data-testid="gm-debug">
+                        {record.gmDebug}
+                      </p>
+                    )}
+                  </div>
                 )}
                 {record.narration.split(/\n\n/).map((paragraph) => (
                   <p key={paragraph.slice(0, 24)} className="leading-6">

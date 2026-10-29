@@ -1,7 +1,8 @@
 import { resolveTurn } from "@/lib/engine/turn"
 import { findUnit } from "@/lib/engine/turn"
 import type { InterpretedOrders } from "@/lib/gm/interpret"
-import { llmAiTurn, resolveLlmModels } from "@/lib/gm/llm"
+import type { GmDebug, GmModelEnv } from "@/lib/gm/debug"
+import { llmAiTurn, resolveLlmModels, type LlmFailure, type LlmModels } from "@/lib/gm/llm"
 import { logGmCall } from "@/lib/gm/route-log"
 import { scoreTurn, type TurnTier } from "@/lib/gm/tier"
 import type {
@@ -42,7 +43,7 @@ export function planCascade(
 
 export type CascadeOutcome =
   | { ok: true; turn: GMTurn; warning?: string }
-  | { ok: false; warning: string }
+  | { ok: false; warning: string; debug: GmDebug }
 
 export async function fetchGmWithCascade(
   state: GameState,
@@ -115,10 +116,13 @@ export async function fetchGmWithCascade(
         error: second.ok ? undefined : sanitizeError(second.message),
       })
       if (second.ok) return { ok: true, turn: second.turn }
-      return {
-        ok: false,
-        warning: `Strong model retry failed (${second.message}).`,
-      }
+      return failureOutcome(`Strong model retry failed (${faultLabel(second)}).`, second, {
+        path: "cascade",
+        model: plan.escalationModel,
+        modelEnv: "LLM_MODEL_STRONG",
+        elapsedMs: first.latencyMs + second.latencyMs,
+        reason: `${second.abortReason} (after rejections)`,
+      })
     }
     return { ok: true, turn: first.turn }
   }
@@ -130,10 +134,13 @@ export async function fetchGmWithCascade(
   ) {
     const secondTimeout = timeoutForAttempt(deadline, false)
     if (secondTimeout < 3000) {
-      return {
-        ok: false,
-        warning: `Game master validation failed and there was no time to retry (${first.message}).`,
-      }
+      return failureOutcome("Game master validation failed and there was no time to retry.", first, {
+        path: "cascade",
+        model: plan.primaryModel,
+        modelEnv: modelEnvFor(plan.primaryModel, models),
+        elapsedMs: first.latencyMs,
+        reason: `time budget exhausted (${first.abortReason})`,
+      })
     }
     const second = await llmAiTurn(state, orders, {
       model: plan.escalationModel,
@@ -151,16 +158,21 @@ export async function fetchGmWithCascade(
       error: second.ok ? undefined : sanitizeError(second.message),
     })
     if (second.ok) return { ok: true, turn: second.turn }
-    return {
-      ok: false,
-      warning: `Game master could not produce valid JSON (${second.message}).`,
-    }
+    return failureOutcome("Game master could not produce valid JSON.", second, {
+      path: "cascade",
+      model: plan.escalationModel,
+      modelEnv: "LLM_MODEL_STRONG",
+      elapsedMs: first.latencyMs + second.latencyMs,
+      reason: `${second.abortReason} (after ${first.kind})`,
+    })
   }
 
-  return {
-    ok: false,
-    warning: `The game master could not be reached (${first.message}).`,
-  }
+  return failureOutcome(`${playerFault(first)}.`, first, {
+    path: "llm",
+    model: plan.primaryModel,
+    modelEnv: modelEnvFor(plan.primaryModel, models),
+    elapsedMs: first.latencyMs,
+  })
 }
 
 export function shouldEscalateOnRejections(rate: number): boolean {
@@ -197,6 +209,53 @@ export function buildStaffTurn(
     proposals: [...interpreted.proposals, ...staff],
     events: ai.events.slice(0, 3),
     diplomacy: ai.diplomacy.slice(0, 3),
+  }
+}
+
+function modelEnvFor(model: string, models: LlmModels): GmModelEnv {
+  return models.strong !== null && model === models.strong ? "LLM_MODEL_STRONG" : "LLM_MODEL"
+}
+
+function faultLabel(result: LlmFailure): string {
+  if (result.kind === "timeout") return "timeout"
+  if (result.kind === "empty") return "empty response"
+  if (result.kind === "zod") return "validation"
+  if (result.httpStatus) return `HTTP ${result.httpStatus}`
+  return "request failed"
+}
+
+function playerFault(result: LlmFailure): string {
+  if (result.kind === "timeout") return "The game master could not be reached (timeout)"
+  if (result.kind === "empty") return "The game master could not be reached (empty response)"
+  if (result.kind === "zod") return "The game master could not be reached (validation)"
+  if (result.httpStatus) return `The game master could not be reached (HTTP ${result.httpStatus})`
+  return "The game master could not be reached"
+}
+
+function failureOutcome(
+  warning: string,
+  result: LlmFailure,
+  extra: {
+    path: GmDebug["path"]
+    model: string
+    modelEnv: GmModelEnv
+    elapsedMs: number
+    reason?: string
+  },
+): Extract<CascadeOutcome, { ok: false }> {
+  return {
+    ok: false,
+    warning,
+    debug: {
+      path: extra.path,
+      reason: extra.reason ?? result.abortReason,
+      elapsedMs: extra.elapsedMs,
+      model: extra.model,
+      modelEnv: extra.modelEnv,
+      httpStatus: result.httpStatus,
+      content: result.content,
+      fallback: "staff-simulation",
+    },
   }
 }
 

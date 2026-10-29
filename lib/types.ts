@@ -184,6 +184,7 @@ export type TurnRecord = {
   notes: string[]
   gmSource: "mock" | "llm"
   warning?: string
+  gmDebug?: string
 }
 
 export type SaveGame = {
