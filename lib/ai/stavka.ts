@@ -47,7 +47,13 @@ const DIPLOMACY = [
   "Alekseev would rather lose a field than a corps. Empty ground is a gift he means to take back.",
 ]
 
-export function stavkaTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
+/**
+ * Russian orders are locked from the map as the fortnight opens.
+ * `orders` is accepted so callers can pass the player's list, and ignored:
+ * Stavka must not read it.
+ */
+export function stavkaTurn(state: GameState, orders: PlayerOrder[] = []): GMTurn {
+  void orders
   const difficulty = state.difficulty ?? "normal"
   const proposals: Proposal[] = []
   const used = new Set<string>()
@@ -66,7 +72,7 @@ export function stavkaTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
   if (recruit) proposals.push(recruit)
 
   return {
-    narration: narrate(state, orders, proposals),
+    narration: narrate(state, proposals),
     proposals,
     events: reactiveEvents(state),
     diplomacy: [DIPLOMACY[state.turn % DIPLOMACY.length]],
@@ -88,6 +94,11 @@ function planAttacks(
     for (const neighborId of [...province.neighbors].sort()) {
       const target = findProvince(state, neighborId)
       if (!target || target.controller !== "central") continue
+      // A Hard front that is already in contact does not wander off to a softer
+      // neighbor. It may strike only the column that threatens it.
+      if (holdsTheFront(state, province) && neighborId !== primaryThreatNeighbor(state, province)) {
+        continue
+      }
       const threshold = attackThreshold(difficulty, breach, target)
       if (!Number.isFinite(threshold)) continue
       const chosen = committedProng(spare, province, target, threshold)
@@ -227,6 +238,9 @@ function planReserveMoves(
   const movers: { id: string; from: string; step: string; distance: number }[] = []
   for (const province of russianProvinces(state)) {
     if (province.supply < 30 || province.id === goal.id) continue
+    // The garrison of a Hard province the enemy can already take stays put.
+    // Reserves still march. The front does not empty itself the same fortnight.
+    if (holdsTheFront(state, province)) continue
     const step = stepToward(state, province.id, goal.id)
     if (!step) continue
     const units = garrisonUnits(province).filter((unit) => !used.has(unit.id))
@@ -256,7 +270,7 @@ function planFortify(state: GameState): Proposal | null {
     .filter((province) => isVictoryCity(state, province.id) || province.depot === "russia")
     .filter((province) => province.fort < 3 && province.supply >= 40)
     .filter((province) => garrisonUnits(province).length > 0)
-    .sort((a, b) => threatRatio(state, b) - threatRatio(state, a) || a.id.localeCompare(b.id))
+    .sort((a, b) => compareFortify(state, a, b))
   const province = threatened[0]
   if (!province || threatRatio(state, province) < 0.95) return null
   return { type: "fortify", province: province.id }
@@ -285,15 +299,8 @@ function planRecruit(state: GameState, attacking: Set<string>): Proposal | null 
   return { type: "recruit", faction: "russia", province: yard.id, kind }
 }
 
-function narrate(state: GameState, orders: PlayerOrder[], proposals: Proposal[]): string {
-  const directive = orders
-    .filter((order) => order.type === "text")
-    .map((order) => order.text.trim())
-    .filter(Boolean)
-    .join(" ")
-  const opening = directive
-    ? `On ${state.date} the Central Powers directive reaches the staff: “${directive.slice(0, 320)}” Arrows and named orders are plotted; prose that names no province stays a wish.`
-    : `On ${state.date} the Central Powers issue no written directive. Formations without an arrow hold their trenches.`
+function narrate(state: GameState, proposals: Proposal[]): string {
+  const opening = `On ${state.date} Stavka locks its orders from the map as the fortnight opens. The Central Powers' arrows are not on that map.`
   const attacks = proposals.filter((proposal) => proposal.type === "attack")
   const prongsByTarget = new Map<string, number>()
   for (const proposal of attacks) {
@@ -334,6 +341,51 @@ function reactiveEvents(state: GameState): GMTurn["events"] {
   return [{ type: "partisans", province: restless.id, note: "The occupation is not quiet." }]
 }
 
+/**
+ * Hard only. The enemy already has the strength to take this province, so it
+ * is the fortnight's likely fight. Stavka reads the map, not the player's orders.
+ */
+function holdsTheFront(state: GameState, province: Province): boolean {
+  // Below 1 the enemy is not yet through, but a column that can still hurt the
+  // garrison will be back next fortnight. Hard does not treat that as a quiet front.
+  return state.difficulty === "hard" && threatRatio(state, province) >= 0.8
+}
+
+/** The Central Powers neighbor whose column bears on this province most heavily. */
+function primaryThreatNeighbor(state: GameState, province: Province): string | null {
+  let bestId: string | null = null
+  let best = 0
+  for (const neighborId of [...province.neighbors].sort()) {
+    const neighbor = findProvince(state, neighborId)
+    if (!neighbor || neighbor.controller !== "central") continue
+    const enemy = neighbor.units.filter((unit) => unit.faction === "central")
+    const power = attackerPower(enemy, neighbor.supply, province.terrain, province.fort)
+    if (power > best) {
+      best = power
+      bestId = neighborId
+    }
+  }
+  return bestId
+}
+
+function objectiveVp(state: GameState, id: string): number {
+  return scenarioSpec(state.scenario).objectives.find((item) => item.id === id)?.vp ?? 0
+}
+
+/**
+ * On Hard, dig the prize that is already in contact before a weaker city that
+ * merely has a worse local ratio. Other difficulties keep the old threat sort.
+ */
+function compareFortify(state: GameState, a: Province, b: Province): number {
+  if (state.difficulty === "hard") {
+    const contact = Number(holdsTheFront(state, b)) - Number(holdsTheFront(state, a))
+    if (contact) return contact
+    const value = objectiveVp(state, b.id) - objectiveVp(state, a.id)
+    if (value) return value
+  }
+  return threatRatio(state, b) - threatRatio(state, a) || a.id.localeCompare(b.id)
+}
+
 function bordersEnemy(state: GameState, province: Province): boolean {
   return province.neighbors.some((id) => findProvince(state, id)?.controller === "central")
 }
@@ -348,11 +400,25 @@ function garrisonUnits(province: Province): Unit[] {
   return independentFormations(province.units.filter((unit) => unit.faction === "russia"))
 }
 
+/**
+ * Hard depots keep two formations, so Warsaw is not uncovered.
+ * A one-corps reserve depot may march when some other province is already in
+ * contact. Rovno's corps can reach Lublin in the same fortnight.
+ */
+function hardDepotKeep(state: GameState, province: Province, units: Unit[]): number {
+  if (holdsTheFront(state, province)) return 2
+  const front = state.provinces.some(
+    (item) => item.id !== province.id && item.controller === "russia" && holdsTheFront(state, item),
+  )
+  if (front && units.length <= 1) return 0
+  return 2
+}
+
 function spareUnits(state: GameState, province: Province, units: Unit[]): Unit[] {
   const keep =
     mustKeepGarrison(state, province)
       ? province.depot === "russia" && state.difficulty === "hard"
-        ? 2
+        ? hardDepotKeep(state, province, units)
         : 1
       : 0
   if (units.length <= keep) return []

@@ -123,7 +123,7 @@ describe("concentric attacks", () => {
     )
     const attacks = first.record.resolutions.filter((item) => item.proposal.type === "attack")
     expect(attacks).toHaveLength(1)
-    expect(attacks[0].summary).toMatch(/Two-pronged attack from Kraków and Kielce into Lublin/)
+    expect(attacks[0].summary).toMatch(/Two-pronged attack from (Kraków and Kielce|Kielce and Kraków) into Lublin/)
     expect(attacks[0].summary).toMatch(/Volhynia/)
     const lublin = first.state.provinces.find((item) => item.id === "lublin")!
     expect(lublin.controller).toBe("central")
@@ -147,7 +147,7 @@ describe("concentric attacks", () => {
     )
   })
 
-  it("does not fold a later Russian counterattack into the Central Powers battle", () => {
+  it("does not let Russia attack a province it still holds when the fortnight opens", () => {
     const game = state([
       province({
         id: "krakow",
@@ -191,7 +191,10 @@ describe("concentric attacks", () => {
       .map((item) => item.summary)
     expect(summaries.some((line) => line.startsWith("Two-pronged"))).toBe(false)
     expect(summaries.some((line) => line.includes("Attack from Kraków"))).toBe(true)
-    expect(summaries.some((line) => line.includes("Attack from Warsaw"))).toBe(true)
+    expect(summaries.some((line) => /already held by your side/.test(line))).toBe(true)
+    expect(played.state.provinces.find((item) => item.id === "warszawa")!.units.map((item) => item.id)).toEqual([
+      "garrison",
+    ])
   })
 
   it("destroys a surrounded garrison and hurts it more than a garrison with an exit", () => {
@@ -287,9 +290,9 @@ describe("concentric attacks", () => {
       { rng: highRoll() },
     )
     const lines = played.record.resolutions.filter((item) => item.proposal.type === "attack")
-    expect(lines.map((item) => item.status)).toEqual(["rejected", "applied"])
-    expect(lines[0].summary).toMatch(/supply is 10/)
-    expect(lines[1].summary).toMatch(/^Attack from Kielce/)
+    expect(lines.map((item) => item.status).sort()).toEqual(["applied", "rejected"])
+    expect(lines.find((item) => item.status === "rejected")!.summary).toMatch(/supply is 10/)
+    expect(lines.find((item) => item.status === "applied")!.summary).toMatch(/^Attack from Kielce/)
   })
 
   it("has Stavka pinch a salient on Normal and stay quiet on Easy", () => {

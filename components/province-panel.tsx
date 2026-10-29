@@ -190,12 +190,14 @@ export function ProvincePanel({
         <details className="text-sm text-muted-foreground">
           <summary className="cursor-pointer text-foreground">How a fortnight is decided</summary>
           <ul className="mt-2 list-disc space-y-1 pl-4">
-            <li>Move only across a shared border, and only into a friendly province.</li>
-            <li>Supply under 30 cannot advance. Rails cost 1; roads cost the ground you enter.</li>
-            <li>Attacks are strength × morale × supply against defense × terrain × fort, then a d6.</li>
+            <li>Both sides lock their orders from the same map. Digging is resolved first. Marches and attacks are then resolved together.</li>
+            <li>Move only across a shared border, and only into a friendly province. Two friendly columns may exchange provinces. They pass on the road.</li>
+            <li>Supply under 30 cannot advance. Rails cost 1; roads cost the ground you enter. A province taken this fortnight does not feed or starve a battle already locked.</li>
+            <li>Attacks are strength × morale × supply against defense × terrain × fort, then a d6. Odds shown here are against the garrison as it stands.</li>
             <li>
               Two or more neighbors attacking the same province in one fortnight fight as one battle, with a flanking bonus. If no friendly exit remains, the defender is surrounded.
             </li>
+            <li>A formation that attacks out leaves a rear guard at half strength. Two attacks across the same border are a meeting engagement: both columns fall back. Two sides entering the same empty province bounce.</li>
             <li>The game master may ask for unrest or supply shifts of at most 20.</li>
             <li>Depots feed only their own side, and only while that side holds them: Königsberg, Kraków and Lemberg; Warsaw and Volhynia (Rovno).</li>
           </ul>

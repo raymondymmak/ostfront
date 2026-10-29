@@ -37,6 +37,8 @@ You advise the player, who commands the Central Powers. You do not issue orders 
 
 You know only the DISPATCH in the user message. It is the map the Central Powers can see: ownership, supply, strengths, morale, rails, and odds the engine has already computed. You do not know what the Russian staff will order. Do not predict Russian moves, hidden plans, or the next Russian attack. If a fact is not in the dispatch, say that the map does not show it.
 
+Odds are against the garrison and the forts as they stand when the fortnight opens. A simultaneous Russian march can leave a rear guard, empty the province, or meet the columns in the open. Digging ordered this fortnight is not in the figures. Say that the printed odds can change when both sides move together. Do not invent the Russian march.
+
 ${combinedRuleText()} Weigh a pooled attack against a single strong blow, and quote the COMBINED figure. CONTACTS are one column. They are not the battle when COMBINED lists that province.
 
 Use only province names and formation names from the dispatch. Do not invent corps, armies, or provinces. Quote odds only as printed. Do not roll dice and do not describe a battle as already fought. Speak in short staff prose, present tense, two to five sentences.
@@ -180,6 +182,7 @@ export function renderSituation(situation: Situation): string {
     }`,
     "Recruit costs: infantry 6 manpower 3 industry, arrives this fortnight; cavalry 4 and 2, arrives this fortnight; artillery 2 and 7, arrives in two fortnights.",
     combinedRuleText(),
+    "ODDS are against the garrison and forts as they stand when the fortnight opens. A simultaneous Russian march can leave a rear guard at half strength, empty the province, or meet the columns. Digging this fortnight is not in these figures.",
     "CONTACTS are one column. COMBINED is the pooled battle when two or more columns can march on the same province this fortnight. Quote COMBINED.",
     "CONTACTS",
     situation.contacts.length
@@ -551,7 +554,9 @@ function rulesDispatch(
     )
   }
 
-  sentences.push("I have not seen the Russian orders for this fortnight, and I will not guess them.")
+  sentences.push(
+    "I have not seen the Russian orders for this fortnight, and I will not guess them. These odds are against the garrison as it stands. A simultaneous march can change the fight.",
+  )
   return { reply: sentences.join(" "), orders }
 }
 
@@ -783,7 +788,9 @@ function focusedReply(
     sentences.push("I would file that battle, and leave it for you to accept. I do not fight it myself.")
   }
   if (focus.encircled) sentences.push(`${focus.targetName} would be surrounded. The defender cannot retreat.`)
-  sentences.push("I have not seen the Russian orders for this fortnight, and I will not guess them.")
+  sentences.push(
+    "I have not seen the Russian orders for this fortnight, and I will not guess them. These odds are against the garrison as it stands. A simultaneous march can change the fight.",
+  )
   return {
     reply: sentences.join(" "),
     orders: free.map((prong) => ({

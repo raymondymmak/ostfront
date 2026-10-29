@@ -271,14 +271,15 @@ function joinAnd(names: string[]): string {
 }
 
 function describeOdds(odds: EngagementPreview): string {
-  if (odds.empty && odds.origins < 2) return "Undefended, before the dice."
+  const caveat = " Against the garrison as it stands; a simultaneous enemy march can change the fight."
+  if (odds.empty && odds.origins < 2) return `Undefended, before the dice.${caveat}`
   const ratio = odds.empty || !Number.isFinite(odds.ratio) ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
   if (odds.origins >= 2) {
     const shape = odds.origins === 2 ? "two-pronged" : "concentric"
     const ring = odds.encircled ? ", and the defender is surrounded" : ""
-    return `One battle, ${odds.origins} directions, ${shape}, about ${ratio} before the dice${ring}.`
+    return `One battle, ${odds.origins} directions, ${shape}, about ${ratio} before the dice${ring}.${caveat}`
   }
-  return `About ${ratio} before the dice.`
+  return `About ${ratio} before the dice.${caveat}`
 }
 
 function describeProposal(
@@ -315,7 +316,7 @@ function describeProposal(
     const shape = odds && odds.origins > 1 ? (odds.origins === 2 ? "two-pronged " : "concentric ") : ""
     return `Will attack ${findProvince(state, proposal.target)?.name ?? proposal.target} from ${
       findProvince(state, proposal.from)?.name ?? proposal.from
-    } (${shape}${ratio} before the dice).`
+    } (${shape}${ratio} before the dice, against the garrison as it stands).`
   }
   return "Staff note."
 }

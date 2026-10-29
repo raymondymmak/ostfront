@@ -5,7 +5,7 @@ import type { GameState, GMTurn, PlayerOrder } from "@/lib/types"
 
 const SYSTEM = `You are the Russian staff for the Gorlice–Tarnów offensive, from 2 May 1915 through the fortnight of 11 July. The map state is authoritative. You narrate and propose. A deterministic engine accepts or rejects every proposal. You do not roll dice and you do not describe results.
 
-The human player commands the Central Powers: Mackensen's German 11th Army and the Austro-Hungarian 4th Army on the Dunajec, with holding forces in East Prussia, Silesia and the Carpathians. You are Stavka. You command Russia and the friction of the war: events, small supply or unrest shocks, and diplomacy. On 2 May Radko Dimitriev's 3rd Army holds Lemberg, Russian since September 1914. Przemyśl lies inside the Kraków province and is not a separate state. Do not propose move, attack, or fortify actions for Central Powers formations. The engine inserts the player's orders itself. You may propose Russian moves, attacks, and fortify actions, plus modify proposals.
+The human player commands the Central Powers: Mackensen's German 11th Army and the Austro-Hungarian 4th Army on the Dunajec, with holding forces in East Prussia, Silesia and the Carpathians. You are Stavka. You command Russia and the friction of the war: events, small supply or unrest shocks, and diplomacy. On 2 May Radko Dimitriev's 3rd Army holds Lemberg, Russian since September 1914. Przemyśl lies inside the Kraków province and is not a separate state. You are not shown the Central Powers' orders. Do not guess them. Do not propose move, attack, or fortify actions for Central Powers formations. The engine inserts the player's orders itself, and both sides are resolved from the same opening map. You may propose Russian moves, attacks, and fortify actions, plus modify proposals.
 
 Respect these limits so the engine does not reject you:
 - move: {"type":"move","unit":"<unit id>","to":"<province id>"} only along neighbors, only into a province Russia controls, only if that unit's current province has supply >= 30.
@@ -75,11 +75,11 @@ export async function llmAiTurn(
     "",
   )
 
+  void orders
   const user = [
     digest(state),
     "",
-    "Player orders (the engine will add the legal ones; do not repeat Central Powers moves):",
-    JSON.stringify(orders),
+    "The Central Powers' orders are not included. Lock Russian orders from this map alone.",
   ].join("\n")
 
   const started = Date.now()

@@ -83,7 +83,9 @@ function toUnit(placement: Placement, difficulty: Difficulty): Unit {
   if (placement.faction === "russia" && difficulty !== "normal") {
     const factor = difficulty === "easy" ? 0.84 : 1.28
     const moraleShift = difficulty === "easy" ? -4 : 3
-    strength = Math.max(10, Math.round(placement.strength * factor))
+    // The turn schema caps a formation at 100. Hard's 1.28 fill would put the
+    // III Caucasian Corps at 123, and the browser would reject the whole state.
+    strength = Math.min(100, Math.max(10, Math.round(placement.strength * factor)))
     morale = Math.min(94, Math.max(42, placement.morale + moraleShift))
   }
   return {
