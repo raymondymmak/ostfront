@@ -21,7 +21,8 @@ import { easternObjectives, standing } from "@/lib/engine/victory"
 import { KIND_LABEL, normalizeName } from "@/lib/format"
 import type { AdvisorCard, AdvisorChatMessage, AdvisorOrder, AdvisorResponse } from "@/lib/gm/advisor-types"
 import { leaveDepotGarrison } from "@/lib/orders"
-import { llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
+import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
+import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
 import type { Faction, GameState, PlayerOrder, Province, Unit, UnitKind } from "@/lib/types"
 
 const ADVISOR_TIMEOUT_MS = 20_000
@@ -250,10 +251,10 @@ export async function advise(input: {
     "Answer the latest question from the player. Use the dispatch only.",
   ].join("\n")
 
-  let modelText: string | null = null
   let failure: "empty" | "http" | "timeout" | null = null
+  let judged: AdvisorJson | null = null
   if (fixtureEnabled()) {
-    modelText = JSON.stringify({ reply: brief.reply, suggestions: brief.orders })
+    judged = classifyAdvisorJson(JSON.stringify({ reply: brief.reply, suggestions: brief.orders }))
   } else {
     const models = resolveLlmModels()
     const chat = await llmChat({
@@ -263,6 +264,8 @@ export async function advise(input: {
       timeoutMs: ADVISOR_TIMEOUT_MS,
       maxTokens: ADVISOR_MAX_TOKENS,
       temperature: 0.3,
+      gameTurn: input.state.turn,
+      gameDate: input.state.date,
     })
     console.log(
       JSON.stringify({
@@ -272,11 +275,30 @@ export async function advise(input: {
         outcome: chat.ok ? "ok" : chat.kind,
       }),
     )
-    if (chat.ok) modelText = chat.content
-    else failure = chat.kind === "unconfigured" ? "http" : chat.kind
+    if (chat.ok) {
+      judged = classifyAdvisorJson(chat.content)
+      scheduleLlmResponseLog({
+        kind: "advisor",
+        attempt: chat.exchange.attempt,
+        gameTurn: input.state.turn,
+        gameDate: input.state.date,
+        model: models.cheap,
+        latencyMs: chat.exchange.latencyMs,
+        httpStatus: chat.exchange.httpStatus,
+        finishReason: chat.exchange.finishReason,
+        usage: chat.exchange.usage,
+        content: chat.exchange.content,
+        outcome: judged.outcome,
+        error: judged.error,
+        fellBack: judged.outcome !== "ok",
+      })
+    } else {
+      failure = chat.kind === "unconfigured" ? "http" : chat.kind
+    }
   }
 
-  if (!modelText) {
+  const parsed = judged?.parsed ?? null
+  if (!parsed) {
     const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued)
     const wire =
       failure === "empty"
@@ -284,19 +306,6 @@ export async function advise(input: {
         : "The wire returned nothing I can file."
     return {
       reply: `${wire}\n\n${brief.reply}`,
-      source: "rules",
-      unavailable: false,
-      suggestions: suggestions.filter((card) => card.valid),
-      dropped: 0,
-      ordersClosed,
-    }
-  }
-
-  const parsed = parseModel(modelText)
-  if (!parsed) {
-    const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued)
-    return {
-      reply: `The wire returned nothing I can file.\n\n${brief.reply}`,
       source: "rules",
       unavailable: false,
       suggestions: suggestions.filter((card) => card.valid),
@@ -1336,35 +1345,23 @@ function inventsUnit(sentence: string, known: Set<string>): boolean {
   return ids.some((id) => !known.has(id))
 }
 
-function parseModel(text: string): { reply: string; suggestions: unknown[] } | null {
-  const stripped = stripFence(text)
-  const direct = readJson(stripped) ?? readJson(sliceObject(stripped))
-  if (!direct || typeof direct !== "object") return null
-  const record = direct as { reply?: unknown; suggestions?: unknown }
+type AdvisorJson = {
+  parsed: { reply: string; suggestions: unknown[] } | null
+  outcome: "ok" | "invalid_json" | "schema"
+  error: string | null
+}
+
+function classifyAdvisorJson(text: string): AdvisorJson {
+  const extracted = extractTopLevelJson(text)
+  if (!extracted.ok) return { parsed: null, outcome: "invalid_json", error: extracted.error }
+  if (!extracted.value || typeof extracted.value !== "object" || Array.isArray(extracted.value)) {
+    return { parsed: null, outcome: "schema", error: "Advisor JSON was not an object" }
+  }
+  const record = extracted.value as { reply?: unknown; suggestions?: unknown }
   const reply = typeof record.reply === "string" ? record.reply.trim() : ""
   const suggestions = Array.isArray(record.suggestions) ? record.suggestions : []
-  if (!reply && suggestions.length === 0) return null
-  return { reply, suggestions }
-}
-
-function readJson(text: string | null): unknown {
-  if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
+  if (!reply && suggestions.length === 0) {
+    return { parsed: null, outcome: "schema", error: "Advisor JSON had no reply or suggestions" }
   }
-}
-
-function sliceObject(text: string): string | null {
-  const start = text.indexOf("{")
-  const end = text.lastIndexOf("}")
-  if (start < 0 || end <= start) return null
-  return text.slice(start, end + 1)
-}
-
-function stripFence(text: string): string {
-  const trimmed = text.trim()
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i)
-  return fenced?.[1]?.trim() ?? trimmed
+  return { parsed: { reply, suggestions }, outcome: "ok", error: null }
 }

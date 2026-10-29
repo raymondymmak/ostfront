@@ -117,6 +117,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `npm test` — Vitest for the rules, Stavka, victory, and the turn API.
 - `npm run lint` — ESLint.
 - `npm run build` — production build.
+- `npm run llm-logs` — list stored LLM responses (`BLOB_READ_WRITE_TOKEN`). `vercel blob ls llm-log/` does the same.
 - `npm run map` — neighbor graph, and rail pairs that do not share a border.
 - `npx tsx scripts/balance-sim.ts` — scripted Central Powers opponents (greedy, frontier, sensible) through six seeds on Easy, Normal, and Hard. It clears any model key and plays against Stavka.
 
@@ -134,6 +135,10 @@ LLM_MODEL_STRONG=
 `LLM_BASE_URL` is any OpenAI-compatible chat-completions endpoint. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent when set. The chief of staff uses `LLM_MODEL`, the fast model. `LLM_MODEL_STRONG` stays on important Russian diplomacy turns.
 
 When a key is present, the server still asks Stavka for the Russian orders. The model is called only for diplomacy. Turns are classed routine, important, or critical (`lib/gm/tier.ts`). With `LLM_MODEL_STRONG` set, important and critical turns try the strong model first. A cheap reply may be retried once on the strong model if validation fails or more than 30 percent of that draft’s proposals would be rejected. The wall clock for both calls is about 90 seconds (`GM_BUDGET_MS`), and each call is capped at about 45 seconds (`LLM_TIMEOUT_MS`). The turn function allows 120 seconds, and the browser waits longer than that. One JSON line is logged per call (`ostfront.gm.call`), without the key or the prompt. If the model fails, Stavka’s own diplomacy is kept.
+
+OpenRouter calls ask for low reasoning effort and leave that trace out of the message, with a 4000-token completion cap. Invalid JSON, a schema miss, or an empty message (the budget was spent reasoning and `content` came back blank) is tried once more when about eight seconds of `GM_BUDGET_MS` remain. The player-facing debug line adds `finish length` when the reply was cut off, and token counts, including reasoning tokens, when the provider sent them.
+
+Set `BLOB_READ_WRITE_TOKEN` to keep every game-master and chief-of-staff response in a private Blob, one file per attempt at `llm-log/YYYY-MM-DD/<timestamp>-<turn|advisor>-<id>.json`. The upload does not block the turn. With no token, nothing is stored. List the files with `npm run llm-logs`.
 
 The turn route can be guarded when a deployment has a key:
 

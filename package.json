@@ -11,12 +11,15 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "llm-logs": "tsx scripts/list-llm-logs.ts",
     "map": "tsx scripts/map-graph.ts",
     "build:theater": "python3 scripts/build-hoi4-theater.py"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@tailwindcss/turbopack": "^4",
+    "@vercel/blob": "^2.8.2",
+    "@vercel/functions": "^3.10.4",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.0",
     "lucide-react": "^1.58.0",
