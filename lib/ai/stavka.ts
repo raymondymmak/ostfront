@@ -47,7 +47,13 @@ const DIPLOMACY = [
   "Alekseev would rather lose a field than a corps. Empty ground is a gift he means to take back.",
 ]
 
-export function stavkaTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
+/**
+ * Russian orders are locked from the map as the fortnight opens.
+ * `orders` is accepted so callers can pass the player's list, and ignored:
+ * Stavka must not read it.
+ */
+export function stavkaTurn(state: GameState, orders: PlayerOrder[] = []): GMTurn {
+  void orders
   const difficulty = state.difficulty ?? "normal"
   const proposals: Proposal[] = []
   const used = new Set<string>()
@@ -66,7 +72,7 @@ export function stavkaTurn(state: GameState, orders: PlayerOrder[]): GMTurn {
   if (recruit) proposals.push(recruit)
 
   return {
-    narration: narrate(state, orders, proposals),
+    narration: narrate(state, proposals),
     proposals,
     events: reactiveEvents(state),
     diplomacy: [DIPLOMACY[state.turn % DIPLOMACY.length]],
@@ -285,15 +291,8 @@ function planRecruit(state: GameState, attacking: Set<string>): Proposal | null 
   return { type: "recruit", faction: "russia", province: yard.id, kind }
 }
 
-function narrate(state: GameState, orders: PlayerOrder[], proposals: Proposal[]): string {
-  const directive = orders
-    .filter((order) => order.type === "text")
-    .map((order) => order.text.trim())
-    .filter(Boolean)
-    .join(" ")
-  const opening = directive
-    ? `On ${state.date} the Central Powers directive reaches the staff: “${directive.slice(0, 320)}” Arrows and named orders are plotted; prose that names no province stays a wish.`
-    : `On ${state.date} the Central Powers issue no written directive. Formations without an arrow hold their trenches.`
+function narrate(state: GameState, proposals: Proposal[]): string {
+  const opening = `On ${state.date} Stavka locks its orders from the map as the fortnight opens. The Central Powers' arrows are not on that map.`
   const attacks = proposals.filter((proposal) => proposal.type === "attack")
   const prongsByTarget = new Map<string, number>()
   for (const proposal of attacks) {

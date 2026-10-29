@@ -126,18 +126,32 @@ describe("move legality", () => {
   })
 
   it("lets a formation receive only one order a fortnight", () => {
-    const { record, state } = resolveTurn(
+    const forward = resolveTurn(
       front(),
       quiet([
         { type: "move", unit: "beskiden", to: "far" },
-        { type: "move", unit: "beskiden", to: "near" },
+        { type: "move", unit: "beskiden", to: "depot" },
       ]),
     )
-    expect(record.resolutions[0].status).toBe("applied")
-    expect(record.resolutions[1].status).toBe("rejected")
-    expect(record.resolutions[1].summary).toMatch(/already has orders/)
-    expect(
-      state.provinces.find((item) => item.id === "far")!.units.map((item) => item.id),
-    ).toEqual(["beskiden"])
+    const backward = resolveTurn(
+      front(),
+      quiet([
+        { type: "move", unit: "beskiden", to: "depot" },
+        { type: "move", unit: "beskiden", to: "far" },
+      ]),
+    )
+    for (const played of [forward, backward]) {
+      const applied = played.record.resolutions.filter((item) => item.status === "applied")
+      const rejected = played.record.resolutions.filter((item) => item.status === "rejected")
+      expect(applied).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].summary).toMatch(/already has orders/)
+      expect(played.state.provinces.find((item) => item.id === "depot")!.units.map((item) => item.id)).toContain(
+        "beskiden",
+      )
+    }
+    expect(backward.state.provinces.map((province) => province.units.map((unit) => unit.id))).toEqual(
+      forward.state.provinces.map((province) => province.units.map((unit) => unit.id)),
+    )
   })
 })

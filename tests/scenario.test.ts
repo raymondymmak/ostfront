@@ -67,6 +67,20 @@ describe("Gorlice–Tarnów, 2 May 1915", () => {
     expect(TurnRequestSchema.safeParse({ state, orders: [] }).success).toBe(true)
   })
 
+  it("keeps a Hard map inside the strength cap so the turn API accepts it", () => {
+    const state = createInitialState("hard")
+    const units = state.provinces.flatMap((province) => province.units)
+    expect(units.every((unit) => unit.strength <= 100 && (unit.maxStrength ?? 0) <= 100)).toBe(true)
+    const corps = units.find((unit) => unit.id === "g-wol-inf")
+    expect(corps?.strength).toBe(100)
+    expect(
+      TurnRequestSchema.safeParse({
+        state,
+        orders: [{ type: "attack", from: "bucovina", target: "lwow", unitIds: ["g-buc-inf"] }],
+      }).success,
+    ).toBe(true)
+  })
+
   it("reads an attack on Lemberg and resolves a mock fortnight", async () => {
     const state = createInitialState()
     const interpreted = interpretOrders(state, [

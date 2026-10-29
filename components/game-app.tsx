@@ -586,7 +586,7 @@ export function GameApp() {
               <p className="text-xs tracking-wide text-muted-foreground uppercase">Eastern Front, 1915</p>
               <p className="mt-1 font-display text-3xl leading-none">Gorlice–Tarnów</p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Nothing happens while you are away. Every order resolves when the fortnight closes.
+                Nothing happens while you are away. Both sides lock their orders, and the fortnight closes together.
               </p>
             </div>
             <div className="rounded-lg border border-primary bg-primary/10 p-3" data-testid="scenario-gorlice">
