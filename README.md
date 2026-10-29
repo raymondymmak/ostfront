@@ -85,9 +85,11 @@ Stavka is deterministic. Difficulty changes the Russian army, Russian income, an
 | Attacks in a fortnight | 1 | 2 | 3 |
 | Concentric prongs | never | up to 2 | up to 3 |
 
-On Easy and Hard those strength and morale adjustments stay inside a floor of 10 strength and a morale band of 42 to 94. Retaking a Russian province is 0.12 easier than the row above, and never below 1.
+On Easy and Hard those strength and morale adjustments stay inside a floor of 10 strength, a ceiling of 100, and a morale band of 42 to 94. Retaking a Russian province is 0.12 easier than the row above, and never below 1.
 
-On the first fortnight, Easy and Normal dig and raise troops. They do not attack or redeploy. Hard is already in motion. After that, Easy shifts reserves only on even turns. A second prong is added only when one province is short of the odds. On Normal that pair must clear 1.45, and only to retake Russian soil. Hard may pinch a Central Powers province at its ordinary odds. Once you hold Russian soil, attacks into a Central Powers province use a higher bar: Easy will not make them, Normal needs 2.35, and Hard needs 2.15. Depots, objectives, and provinces on your border keep a garrison. On Hard a Russian depot keeps two formations. The weakest stays.
+On the first fortnight, Easy and Normal dig and raise troops. They do not attack or redeploy. Hard is already in motion. After that, Easy shifts reserves only on even turns. A second prong is added only when one province is short of the odds. On Normal that pair must clear 1.45, and only to retake Russian soil. Hard may pinch a Central Powers province at its ordinary odds. Once you hold Russian soil, attacks into a Central Powers province use a higher bar: Easy will not make them, Normal needs 2.35, and Hard needs 2.15. Depots, objectives, and provinces on your border keep a garrison. On Hard a Russian depot keeps two formations, so Warsaw is not uncovered. A one-corps reserve depot may still march when some other province is already in contact. Rovno's corps can reach Lublin in that same fortnight.
+
+On Hard, a province the enemy can already hurt (their best neighbor is at least four-fifths of the defense) stands. Its garrison does not march off, and it may strike only the neighbor that threatens it. The dig goes to the in-contact objective worth the most victory points, so Lemberg is entrenched before a weaker city. Stavka still reads only the opening map.
 
 ## The map on 2 May 1915
 

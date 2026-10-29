@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { stavkaTurn } from "@/lib/ai/stavka"
 import { blankCampaign } from "@/lib/data/campaign"
-import { createInitialState } from "@/lib/data/scenario"
+import { createInitialState, createScenario } from "@/lib/data/scenario"
 import { applySupply } from "@/lib/data/scenario"
 import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engine/turn"
 import type { Faction, GameState, GMTurn, Proposal, Province, Unit } from "@/lib/types"
@@ -554,6 +554,26 @@ describe("simultaneous orders", () => {
     expect(shown.diplomacy).toEqual(blind.diplomacy)
     expect(shown.narration).not.toMatch(/Abandon Kraków/)
     expect(shown.narration).toMatch(/not on that map/)
+  })
+
+  it("on Hard, stands on a threatened front and still ignores the player's orders", () => {
+    const state = createScenario("gorlice", "hard")
+    const blind = stavkaTurn(state, [])
+    const shown = stavkaTurn(state, [
+      { type: "attack", from: "krakow", target: "lwow", unitIds: ["g-kra-11", "g-kra-grd", "g-kra-art"] },
+      { type: "text", text: "Abandon Kraków and throw the 11th Army at Lemberg." },
+    ])
+    expect(shown.proposals).toEqual(blind.proposals)
+    expect(shown.narration).toEqual(blind.narration)
+    expect(shown.narration).not.toMatch(/Abandon Kraków/)
+    const moves = shown.proposals.filter((proposal) => proposal.type === "move")
+    expect(moves.map((proposal) => (proposal.type === "move" ? proposal.unit : ""))).toEqual(
+      expect.arrayContaining(["g-wol-inf", "g-pro-inf"]),
+    )
+    expect(moves.some((proposal) => proposal.type === "move" && proposal.unit === "g-pol-inf")).toBe(false)
+    expect(shown.proposals.some((proposal) => proposal.type === "attack")).toBe(false)
+    expect(shown.proposals).toContainEqual({ type: "fortify", province: "lwow" })
+    expect(shown.proposals).toContainEqual({ type: "move", unit: "g-wol-inf", to: "lublin" })
   })
 })
 
