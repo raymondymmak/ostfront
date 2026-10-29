@@ -23,6 +23,7 @@ import {
   ordersLocked,
 } from "@/lib/finale"
 import type { AdvisorOrder } from "@/lib/gm/advisor-types"
+import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
@@ -214,6 +215,7 @@ export function GameApp() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: game.state, orders }),
+        signal: AbortSignal.timeout(CLIENT_TURN_TIMEOUT_MS),
       })
       const payload = (await response.json()) as {
         state?: GameState
@@ -387,6 +389,9 @@ export function GameApp() {
     return true
   }
 
+  const latest = game.log.at(-1)
+  const fallback = !error && latest?.warning ? latest : null
+
   return (
     <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden">
       <Hud
@@ -398,10 +403,33 @@ export function GameApp() {
         advisorOpen={advisorOpen}
         onAdvisor={() => setAdvisorOpen((value) => !value)}
       />
+      {busy && (
+        <p
+          className="border-b border-border bg-muted px-4 py-2 text-sm"
+          role="status"
+          data-testid="stavka-deliberating"
+        >
+          Stavka is deliberating…
+        </p>
+      )}
       {error && (
         <p className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive" role="alert">
           {error}
         </p>
+      )}
+      {!busy && fallback && (
+        <div
+          className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+          role="status"
+          data-testid="gm-fallback"
+        >
+          <p>{fallback.warning}</p>
+          {fallback.gmDebug && (
+            <p className="mt-1 font-mono text-xs leading-5 break-words" data-testid="gm-debug-banner">
+              {fallback.gmDebug}
+            </p>
+          )}
+        </div>
       )}
       <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem] lg:grid-rows-[minmax(0,1fr)_16.5rem]">
         <div className="relative isolate z-0 h-[58vh] min-h-[320px] overflow-hidden lg:h-full lg:min-h-0">

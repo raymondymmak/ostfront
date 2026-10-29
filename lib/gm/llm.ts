@@ -1,4 +1,5 @@
 import { childUnits, echelonOf, independentFormations } from "@/lib/engine/echelon"
+import { sanitizeGmText, type GmContentState } from "@/lib/gm/debug"
 import { GMTurnSchema, GM_JSON_SCHEMA } from "@/lib/schema"
 import type { GameState, GMTurn, PlayerOrder } from "@/lib/types"
 
@@ -22,6 +23,17 @@ export type LlmModels = {
   strong: string | null
 }
 
+export type LlmFailure = {
+  ok: false
+  latencyMs: number
+  kind: "http" | "timeout" | "empty" | "zod"
+  zodIssueCount?: number
+  message: string
+  httpStatus: number | null
+  content: GmContentState
+  abortReason: string
+}
+
 export type LlmCallResult =
   | {
       ok: true
@@ -29,13 +41,7 @@ export type LlmCallResult =
       latencyMs: number
       zodIssueCount: 0
     }
-  | {
-      ok: false
-      latencyMs: number
-      kind: "http" | "timeout" | "empty" | "zod"
-      zodIssueCount?: number
-      message: string
-    }
+  | LlmFailure
 
 export function resolveLlmModels(): LlmModels {
   const cheap = process.env.LLM_MODEL || "gpt-4o-mini"
@@ -55,12 +61,14 @@ export async function llmAiTurn(
 ): Promise<LlmCallResult> {
   const key = process.env.LLM_API_KEY
   if (!key) {
-    return {
-      ok: false,
+    return llmFailure({
       latencyMs: 0,
       kind: "http",
       message: "LLM_API_KEY is not set",
-    }
+      httpStatus: null,
+      content: "n/a",
+      abortReason: "LLM_API_KEY is not set",
+    })
   }
   const base = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(
     /\/$/,
@@ -90,22 +98,7 @@ export async function llmAiTurn(
       zodIssueCount: 0,
     }
   } catch (error) {
-    const latencyMs = Date.now() - started
-    if (error instanceof LlmZodError) {
-      return {
-        ok: false,
-        latencyMs,
-        kind: "zod",
-        zodIssueCount: error.issueCount,
-        message: error.message,
-      }
-    }
-    if (error instanceof LlmTimeoutError) {
-      return { ok: false, latencyMs, kind: "timeout", message: error.message }
-    }
-    const message = error instanceof Error ? error.message : String(error)
-    const kind = message.includes("empty message") ? "empty" : "http"
-    return { ok: false, latencyMs, kind, message }
+    return classifyLlmError(error, Date.now() - started)
   }
 }
 
@@ -116,11 +109,13 @@ async function completeWithFormatFallback(
   user: string,
   timeoutMs: number,
 ): Promise<GMTurn> {
+  const deadline = Date.now() + timeoutMs
+  const left = () => Math.max(1, deadline - Date.now())
   try {
-    return await complete(base, key, model, user, schemaFormat(), timeoutMs)
+    return await complete(base, key, model, user, schemaFormat(), left())
   } catch (error) {
     if (!isResponseFormatUnsupported(error)) throw error
-    return await complete(base, key, model, user, { type: "json_object" }, timeoutMs)
+    return await complete(base, key, model, user, { type: "json_object" }, left())
   }
 }
 
@@ -152,21 +147,21 @@ async function complete(
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
-    if (error instanceof Error && error.name === "TimeoutError") {
-      throw new LlmTimeoutError(`LLM timed out after ${timeoutMs}ms`)
-    }
+    if (isAbortTimeout(error)) throw new LlmTimeoutError(abortReasonOf(error))
     throw error
   }
 
   if (!response.ok) {
     const body = await response.text()
-    throw new Error(`LLM HTTP ${response.status}: ${body.slice(0, 240)}`)
+    throw new LlmHttpError(response.status, publicHttpReason(response.status, body))
   }
   const payload = (await response.json()) as {
-    choices?: { message?: { content?: string } }[]
+    choices?: { message?: { content?: string | null } }[]
   }
   const content = payload.choices?.[0]?.message?.content
-  if (!content) throw new Error("LLM returned an empty message")
+  if (content == null || (typeof content === "string" && content.trim() === "")) {
+    throw new LlmEmptyError("LLM returned an empty message")
+  }
   let parsed: unknown
   try {
     parsed = JSON.parse(stripFence(content))
@@ -200,6 +195,136 @@ class LlmTimeoutError extends Error {
     super(message)
     this.name = "LlmTimeoutError"
   }
+}
+
+class LlmHttpError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = "LlmHttpError"
+    this.status = status
+  }
+}
+
+class LlmEmptyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "LlmEmptyError"
+  }
+}
+
+function llmFailure(failure: Omit<LlmFailure, "ok">): LlmFailure {
+  return { ok: false, ...failure }
+}
+
+/** Map a thrown model error onto fields that are safe to show a player. */
+export function classifyLlmError(error: unknown, latencyMs: number): LlmFailure {
+  if (error instanceof LlmZodError) {
+    const reason = sanitizeGmText(error.message) || "validation failed"
+    return llmFailure({
+      latencyMs,
+      kind: "zod",
+      zodIssueCount: error.issueCount,
+      message: reason,
+      httpStatus: null,
+      content: "present",
+      abortReason: reason,
+    })
+  }
+  if (error instanceof LlmEmptyError || errorMessage(error).toLowerCase().includes("empty message")) {
+    return llmFailure({
+      latencyMs,
+      kind: "empty",
+      message: "LLM returned an empty message",
+      httpStatus: null,
+      content: "empty",
+      abortReason: "empty message",
+    })
+  }
+  if (error instanceof LlmHttpError) {
+    return llmFailure({
+      latencyMs,
+      kind: "http",
+      message: error.message,
+      httpStatus: error.status,
+      content: "n/a",
+      abortReason: error.message,
+    })
+  }
+  const status = httpStatusOf(errorMessage(error))
+  if (status) {
+    const reason = `LLM HTTP ${status}`
+    return llmFailure({
+      latencyMs,
+      kind: "http",
+      message: reason,
+      httpStatus: status,
+      content: "n/a",
+      abortReason: reason,
+    })
+  }
+  if (error instanceof LlmTimeoutError || isAbortTimeout(error)) {
+    const reason = abortReasonOf(error)
+    return llmFailure({
+      latencyMs,
+      kind: "timeout",
+      message: reason,
+      httpStatus: null,
+      content: "n/a",
+      abortReason: reason,
+    })
+  }
+  const reason = sanitizeGmText(errorMessage(error)) || "LLM request failed"
+  return llmFailure({
+    latencyMs,
+    kind: "http",
+    message: reason,
+    httpStatus: null,
+    content: "n/a",
+    abortReason: reason,
+  })
+}
+
+export function isAbortTimeout(error: unknown): boolean {
+  const name = errorName(error)
+  if (name === "TimeoutError" || name === "AbortError" || name === "LlmTimeoutError") return true
+  const message = errorMessage(error).toLowerCase()
+  return message.includes("aborted due to timeout") || message.includes("timed out")
+}
+
+function abortReasonOf(error: unknown): string {
+  return sanitizeGmText(errorMessage(error)) || "timeout"
+}
+
+function errorName(error: unknown): string {
+  if (error && typeof error === "object" && "name" in error && typeof (error as { name: unknown }).name === "string") {
+    return (error as { name: string }).name
+  }
+  return ""
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === "object" && "message" in error && typeof (error as { message: unknown }).message === "string") {
+    return (error as { message: string }).message
+  }
+  return String(error ?? "")
+}
+
+function httpStatusOf(message: string): number | null {
+  const match = message.match(/LLM HTTP (\d{3})/i)
+  if (!match) return null
+  const status = Number(match[1])
+  return status >= 100 && status <= 599 ? status : null
+}
+
+function publicHttpReason(status: number, body: string): string {
+  const snippet = sanitizeGmText(body)
+  if (!snippet || snippet.includes("[redacted]") || snippet.startsWith("{") || snippet.startsWith("[")) {
+    return `LLM HTTP ${status}`
+  }
+  const brief = snippet.slice(0, 80)
+  return brief ? `LLM HTTP ${status}: ${brief}` : `LLM HTTP ${status}`
 }
 
 function isResponseFormatUnsupported(error: unknown): boolean {
@@ -401,13 +526,6 @@ function contentToString(content: unknown): string {
       return ""
     })
     .join("")
-}
-
-class LlmEmptyError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "LlmEmptyError"
-  }
 }
 
 function isReasoningUnsupported(error: unknown): boolean {

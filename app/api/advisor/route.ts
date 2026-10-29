@@ -6,7 +6,8 @@ import {
 import { advise } from "@/lib/gm/advisor"
 import { AdvisorRequestSchema } from "@/lib/schema"
 
-export const maxDuration = 30
+/** Same 120s ceiling as the turn route. The chief of staff call itself stays shorter. */
+export const maxDuration = 120
 
 export async function POST(request: Request) {
   const { maxBody } = turnGuardConfig()

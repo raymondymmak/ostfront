@@ -1,6 +1,7 @@
 import { rebindState } from "@/lib/data/scenario"
 import { resolveTurn } from "@/lib/engine/turn"
 import { buildStaffTurn, fetchGmWithCascade } from "@/lib/gm/cascade"
+import { formatGmDebug } from "@/lib/gm/debug"
 import { interpretOrders } from "@/lib/gm/interpret"
 import { llmConfigured } from "@/lib/gm/llm"
 import { mockAiTurn } from "@/lib/gm/mock"
@@ -18,6 +19,7 @@ export async function playTurn(
   const interpreted = interpretOrders(rebound, orders)
   let source: "mock" | "llm" = "mock"
   let warning: string | undefined
+  let gmDebug: string | undefined
 
   const staff = mockAiTurn(rebound, orders)
   let gm
@@ -36,6 +38,7 @@ export async function playTurn(
       warning = fetched.warning
     } else {
       warning = `${fetched.warning} The staff simulation took the turn.`
+      gmDebug = formatGmDebug(fetched.debug)
       gm = buildStaffTurn(rebound, staff, interpreted)
     }
   }
@@ -44,5 +47,6 @@ export async function playTurn(
     notes: interpreted.notes,
     gmSource: source,
     warning,
+    gmDebug,
   })
 }

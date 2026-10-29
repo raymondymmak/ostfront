@@ -6,6 +6,9 @@ import {
 import { playTurn } from "@/lib/gm"
 import { TurnRequestSchema } from "@/lib/schema"
 
+/** 120s. Fluid Compute allows 300s on Hobby. The 90s game-master budget finishes inside this. */
+export const maxDuration = 120
+
 export async function POST(request: Request) {
   const { maxBody } = turnGuardConfig()
   const raw = await readBodyWithLimit(request, maxBody)
