@@ -23,6 +23,7 @@ import {
   ordersLocked,
 } from "@/lib/finale"
 import type { AdvisorOrder } from "@/lib/gm/advisor-types"
+import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
@@ -214,6 +215,7 @@ export function GameApp() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: game.state, orders }),
+        signal: AbortSignal.timeout(CLIENT_TURN_TIMEOUT_MS),
       })
       const payload = (await response.json()) as {
         state?: GameState
@@ -401,12 +403,21 @@ export function GameApp() {
         advisorOpen={advisorOpen}
         onAdvisor={() => setAdvisorOpen((value) => !value)}
       />
+      {busy && (
+        <p
+          className="border-b border-border bg-muted px-4 py-2 text-sm"
+          role="status"
+          data-testid="stavka-deliberating"
+        >
+          Stavka is deliberating…
+        </p>
+      )}
       {error && (
         <p className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive" role="alert">
           {error}
         </p>
       )}
-      {fallback && (
+      {!busy && fallback && (
         <div
           className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
           role="status"

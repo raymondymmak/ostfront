@@ -109,11 +109,13 @@ async function completeWithFormatFallback(
   user: string,
   timeoutMs: number,
 ): Promise<GMTurn> {
+  const deadline = Date.now() + timeoutMs
+  const left = () => Math.max(1, deadline - Date.now())
   try {
-    return await complete(base, key, model, user, schemaFormat(), timeoutMs)
+    return await complete(base, key, model, user, schemaFormat(), left())
   } catch (error) {
     if (!isResponseFormatUnsupported(error)) throw error
-    return await complete(base, key, model, user, { type: "json_object" }, timeoutMs)
+    return await complete(base, key, model, user, { type: "json_object" }, left())
   }
 }
 

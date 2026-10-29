@@ -215,7 +215,7 @@ export function OrderPanel({
           className="w-full"
           size="lg"
         >
-          {state.result ? "The campaign is over" : busy ? "Staff conference…" : "Close the fortnight"}
+          {state.result ? "The campaign is over" : busy ? "Stavka is deliberating…" : "Close the fortnight"}
         </Button>
         <Separator />
         <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Your formations</h3>

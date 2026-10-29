@@ -5,6 +5,7 @@ import type { GmDebug, GmModelEnv } from "@/lib/gm/debug"
 import { llmAiTurn, resolveLlmModels, type LlmFailure, type LlmModels } from "@/lib/gm/llm"
 import { logGmCall } from "@/lib/gm/route-log"
 import { scoreTurn, type TurnTier } from "@/lib/gm/tier"
+import { callTimeoutMs, resolveGmBudgetMs, resolveLlmTimeoutMs } from "@/lib/gm/timeouts"
 import type {
   GameState,
   GMTurn,
@@ -13,8 +14,6 @@ import type {
 } from "@/lib/types"
 
 export const REJECTION_ESCALATION_RATE = 0.3
-export const GM_TURN_BUDGET_MS = 28_000
-export const GM_SINGLE_CALL_TIMEOUT_MS = 14_000
 
 export type CascadePlan = {
   tier: TurnTier
@@ -52,9 +51,11 @@ export async function fetchGmWithCascade(
 ): Promise<CascadeOutcome> {
   const models = resolveLlmModels()
   const plan = planCascade(state, orders, models)
-  const deadline = Date.now() + GM_TURN_BUDGET_MS
+  const callCap = resolveLlmTimeoutMs()
+  const budget = resolveGmBudgetMs()
+  const deadline = Date.now() + budget
 
-  const firstTimeout = timeoutForAttempt(deadline, plan.mayEscalate)
+  const firstTimeout = callTimeoutMs(budget, plan.mayEscalate, callCap)
   const first = await llmAiTurn(state, orders, {
     model: plan.primaryModel,
     timeoutMs: firstTimeout,
@@ -79,7 +80,7 @@ export async function fetchGmWithCascade(
       plan.escalationModel &&
       shouldEscalateOnRejections(rejection.rate)
     ) {
-      const secondTimeout = timeoutForAttempt(deadline, false)
+      const secondTimeout = timeoutForAttempt(deadline, false, callCap)
       if (secondTimeout < 3000) {
         logGmCall({
           tag: "ostfront.gm.call",
@@ -132,7 +133,7 @@ export async function fetchGmWithCascade(
     plan.escalationModel &&
     (first.kind === "zod" || first.kind === "empty")
   ) {
-    const secondTimeout = timeoutForAttempt(deadline, false)
+    const secondTimeout = timeoutForAttempt(deadline, false, callCap)
     if (secondTimeout < 3000) {
       return failureOutcome("Game master validation failed and there was no time to retry.", first, {
         path: "cascade",
@@ -259,13 +260,8 @@ function failureOutcome(
   }
 }
 
-function timeoutForAttempt(deadline: number, anotherMayFollow: boolean): number {
-  const remaining = deadline - Date.now()
-  if (anotherMayFollow) {
-    const half = Math.floor(remaining / 2)
-    return Math.min(GM_SINGLE_CALL_TIMEOUT_MS, Math.max(3000, half))
-  }
-  return Math.min(GM_SINGLE_CALL_TIMEOUT_MS, Math.max(3000, remaining))
+function timeoutForAttempt(deadline: number, anotherMayFollow: boolean, callCap: number): number {
+  return callTimeoutMs(deadline - Date.now(), anotherMayFollow, callCap)
 }
 
 function outcomeFromFailure(
