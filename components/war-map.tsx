@@ -5,6 +5,7 @@ import * as maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 import { SvgMap } from "@/components/svg-map"
 import { MapLegend } from "@/components/map-legend"
+import { MapMode } from "@/components/map-mode"
 import {
   BACKDROP_OWNER_COLOR,
   BACKDROP_REGIONS,
@@ -52,9 +53,10 @@ type MapInput = {
   onDraw: (from: string, to: string, commitAll?: boolean) => void
 }
 
-/** Props the game screen passes. The rail toggle lives inside the map. */
+/** Props the game screen passes. Map mode and the rail toggle live on the map. */
 type WarMapProps = MapInput & {
   flashIds: string[]
+  onOverlay: (overlay: Overlay) => void
 }
 
 type Snapshot = MapInput & {
@@ -70,6 +72,7 @@ export function WarMap({
   orderMode,
   onSelect,
   onDraw,
+  onOverlay,
 }: WarMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const blitRef = useRef<HTMLCanvasElement>(null)
@@ -611,16 +614,21 @@ export function WarMap({
       )}
       {hoverTip && !failed && (
         <div
-          className="pointer-events-none absolute top-3 right-14 z-20 max-w-[14rem] rounded-md bg-[#241c14]/92 px-2.5 py-2 text-xs whitespace-pre-line text-[#f3e2a8] shadow-sm"
+          className={`pointer-events-none absolute left-2 z-20 max-w-[min(14rem,calc(100%-8.5rem))] rounded-md bg-[#241c14]/92 px-2.5 py-2 text-xs whitespace-pre-line text-[#f3e2a8] shadow-sm ${orderMode ? "top-12" : "top-2"}`}
           role="tooltip"
         >
           {hoverTip}
         </div>
       )}
-      <MapLegend showRails={showRails} onToggleRails={() => setShowRails((value) => !value)} />
+      <MapMode overlay={overlay} onOverlay={onOverlay} className={failed ? "right-2.5" : "right-12"} />
+      <MapLegend
+        showRails={showRails}
+        onToggleRails={() => setShowRails((value) => !value)}
+        overlay={overlay}
+      />
 
       {orderMode && (
-        <div className="pointer-events-none absolute top-3 left-3 rounded-md bg-[#241c14]/90 px-2.5 py-1.5 text-xs text-[#f3e2a8]">
+        <div className="pointer-events-none absolute top-2 left-2 z-20 max-w-[calc(100%-8.5rem)] rounded-md bg-[#241c14]/90 px-2.5 py-1.5 text-xs text-[#f3e2a8]">
           Drag from a province to a neighbor to order a move or an attack.
         </div>
       )}
