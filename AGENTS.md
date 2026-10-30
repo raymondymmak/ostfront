@@ -10,5 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## QA before merge
 
-After implementing or changing player-visible behavior, run `npm run demo-check` against your Vercel preview URL (`DEMO_URL=… npm run demo-check` or `npm run demo-check -- --url …`). Attach the printed step summary and relevant screenshots from `demo-check-output/` when marking work done. Update **`FEATURES.md`** whenever you add or change a feature (selectors, routes, proof). Install the browser once with `npx playwright install chromium`.
+After implementing or changing player-visible behavior, run `npm run demo-check` against the live game or your Vercel preview (`DEMO_URL=… npm run demo-check` or `npm run demo-check -- --url …`; default **`https://raymondymmak-ostfront.vercel.app`**). Attach the printed step summary and relevant screenshots from `demo-check-output/` when marking work done. Update **`FEATURES.md`** whenever you add or change a feature (selectors, routes, proof). Install the browser once with `npx playwright install chromium`.
+
+**Protected previews:** If deployment protection blocks Playwright, set `VERCEL_AUTOMATION_BYPASS_SECRET` in the environment (never commit it or paste it into logs). The script sends `x-vercel-protection-bypass` and `x-vercel-set-bypass-cookie: true` on every request. Alternatively, set `DEMO_URL` to a share link that includes `_vercel_share=…`; the script opens that URL once to set the cookie, then continues on the same origin at the app path without re-appending the query (avoids redirect loops).
 

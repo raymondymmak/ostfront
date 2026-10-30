@@ -7,7 +7,7 @@ import { chromium } from "playwright"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { join } from "node:path"
 
-const DEFAULT_URL = "https://ostfront-two.vercel.app"
+const DEFAULT_URL = "https://raymondymmak-ostfront.vercel.app"
 const OUT_DIR = "demo-check-output"
 const VIEWPORT = { width: 1440, height: 900 }
 const MAP_SETTLE_MS = 3200
@@ -21,11 +21,63 @@ function parseUrl(argv) {
   return DEFAULT_URL
 }
 
-const baseUrl = parseUrl(process.argv.slice(2))
+/** @param {string} raw */
+function resolveTargets(raw) {
+  const parsed = new URL(raw)
+  const appUrl = `${parsed.origin}${parsed.pathname || "/"}`
+  const shareEntryUrl = parsed.searchParams.has("_vercel_share") ? parsed.href : null
+  return { appUrl, shareEntryUrl, displayUrl: raw }
+}
+
+function vercelBypassHeaders() {
+  const secret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim()
+  if (!secret) return null
+  return {
+    "x-vercel-protection-bypass": secret,
+    "x-vercel-set-bypass-cookie": "true",
+  }
+}
+
+async function assertReachable(page) {
+  const body = (await page.textContent("body")) ?? ""
+  if (body.includes("DEPLOYMENT_NOT_FOUND") || body.includes("The deployment could not be found")) {
+    throw new Error("Deployment not found at this URL.")
+  }
+  if (body.includes("Protected by Vercel Authentication")) {
+    throw new Error(
+      "Blocked by Vercel deployment protection. Set VERCEL_AUTOMATION_BYPASS_SECRET or pass DEMO_URL with _vercel_share=…",
+    )
+  }
+}
+
+/** @param {import('playwright').Page} page @param {{ appUrl: string, shareEntryUrl: string | null }} targets */
+async function openApplication(page, targets) {
+  if (targets.shareEntryUrl) {
+    await page.goto(targets.shareEntryUrl, { waitUntil: "domcontentloaded", timeout: 90_000 })
+    await assertReachable(page)
+  }
+  const current = new URL(page.url())
+  const target = new URL(targets.appUrl)
+  const onAppPath =
+    current.origin === target.origin &&
+    current.pathname === target.pathname &&
+    !current.search &&
+    !current.hash
+  if (!onAppPath) {
+    await page.goto(targets.appUrl, { waitUntil: "domcontentloaded", timeout: 90_000 })
+    await assertReachable(page)
+  }
+}
+
+const displayUrl = parseUrl(process.argv.slice(2))
+const targets = resolveTargets(displayUrl)
 
 mkdirSync(OUT_DIR, { recursive: true })
 const logPath = join(OUT_DIR, "run.log")
-writeFileSync(logPath, `demo-check ${new Date().toISOString()}\nURL: ${baseUrl}\n\n`)
+writeFileSync(
+  logPath,
+  `demo-check ${new Date().toISOString()}\nURL: ${displayUrl}\nApp: ${targets.appUrl}\n`,
+)
 
 function log(line) {
   appendFileSync(logPath, `${line}\n`)
@@ -38,16 +90,13 @@ const steps = [
     id: "01-load",
     name: "Load game (clean save)",
     async run({ page }) {
-      await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 90_000 })
-      const body = await page.textContent("body")
-      if (body?.includes("DEPLOYMENT_NOT_FOUND") || body?.includes("The deployment could not be found")) {
-        throw new Error(`URL not reachable or deployment missing: ${baseUrl}`)
-      }
+      await openApplication(page, targets)
       await page.evaluate(() => {
         localStorage.removeItem("ostfront-1915-v1")
         sessionStorage.removeItem("ostfront-advisor-v1")
       })
       await page.reload({ waitUntil: "domcontentloaded" })
+      await assertReachable(page)
       await page.waitForSelector("[data-testid=scenario-picker]", { timeout: 60_000 })
     },
   },
@@ -260,12 +309,19 @@ async function expectAttr(locator, name, value) {
   if (got !== value) throw new Error(`Expected ${name}=${value}, got ${got}`)
 }
 
+const bypassHeaders = vercelBypassHeaders()
+if (bypassHeaders) log("Vercel automation bypass headers: enabled")
+
 const browser = await chromium.launch({
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--use-gl=angle", "--use-angle=swiftshader"],
 })
 
-const page = await browser.newPage({ viewport: VIEWPORT })
+const context = await browser.newContext({
+  viewport: VIEWPORT,
+  ...(bypassHeaders ? { extraHTTPHeaders: bypassHeaders } : {}),
+})
+const page = await context.newPage()
 const issues = []
 
 page.on("console", (msg) => {
@@ -299,6 +355,7 @@ for (const step of steps) {
   }
 }
 
+await context.close()
 await browser.close()
 
 if (issues.length) {
@@ -307,7 +364,20 @@ if (issues.length) {
   writeFileSync(join(OUT_DIR, "issues.log"), issues.join("\n") + "\n")
 }
 
-writeFileSync(join(OUT_DIR, "summary.json"), JSON.stringify({ url: baseUrl, results, issueCount: issues.length }, null, 2))
+writeFileSync(
+  join(OUT_DIR, "summary.json"),
+  JSON.stringify(
+    {
+      url: displayUrl,
+      appUrl: targets.appUrl,
+      vercelBypass: Boolean(bypassHeaders),
+      results,
+      issueCount: issues.length,
+    },
+    null,
+    2,
+  ),
+)
 
 log("\n=== Summary ===")
 for (const row of results) {

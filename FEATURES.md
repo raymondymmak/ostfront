@@ -31,8 +31,8 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 
 ```bash
 npx playwright install chromium   # once per machine
-DEMO_URL=https://your-preview.vercel.app npm run demo-check
-# or: npm run demo-check -- --url https://ostfront-two.vercel.app
+DEMO_URL=https://raymondymmak-ostfront.vercel.app npm run demo-check
+# or: npm run demo-check -- --url https://your-preview.vercel.app
 ```
 
 Writes screenshots and logs under `demo-check-output/` (gitignored). LLM steps (advisor, turn close) use long timeouts (~45s / ~140s).
