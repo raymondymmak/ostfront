@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import type { AdvisorCard, AdvisorChatMessage, AdvisorOrder, AdvisorResponse } from "@/lib/gm/advisor-types"
+import {
+  advisorCardAction,
+  type AdvisorCard,
+  type AdvisorChatMessage,
+  type AdvisorOrder,
+  type AdvisorResponse,
+} from "@/lib/gm/advisor-types"
 import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
 
@@ -42,7 +48,7 @@ type AdvisorPanelProps = {
   closed: boolean
   epoch: number
   onClose: () => void
-  onAccept: (orders: AdvisorOrder[]) => boolean
+  onAccept: (orders: AdvisorOrder[], mode: "accept" | "override") => boolean
 }
 
 export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAccept }: AdvisorPanelProps) {
@@ -208,13 +214,27 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
             >
               {message.role === "user" ? `You. ${message.content}` : message.content}
             </p>
-            {message.suggestions?.map((card) => (
+            {message.suggestions?.map((card) => {
+              const action = advisorCardAction(card)
+              const orders = [card.order, ...(card.companions ?? [])]
+              return (
               <article
                 key={card.id}
                 className="rounded-md border border-[#c6a15a]/35 bg-[#1a140e]/80 p-2.5"
                 data-testid="advisor-suggestion"
+                data-advisor-state={card.queue}
               >
                 <p className="text-sm">{card.label}</p>
+                {card.queue === "duplicate" && (
+                  <p className="mt-1 text-xs text-[#f3e2a8]/75" data-testid="advisor-queue">
+                    Already queued
+                  </p>
+                )}
+                {card.queue === "conflict" && card.conflict && (
+                  <p className="mt-1 text-xs text-[#f3e2a8]/75" data-testid="advisor-queue">
+                    Conflicts with: {card.conflict}
+                  </p>
+                )}
                 {card.valid && card.detail && (
                   <p className="mt-1 text-xs text-[#f3e2a8]/75" data-testid="advisor-odds">
                     {card.detail}
@@ -224,17 +244,33 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                   <p className="mt-1 text-xs text-[#e07a6a]">The engine rejects this. {card.note}</p>
                 )}
                 <div className="mt-2 flex gap-2">
-                  {card.valid && !closed && (
+                  {action === "accept" && !closed && (
                     <Button
                       type="button"
                       size="xs"
                       data-testid="advisor-accept"
                       onClick={() => {
-                        const orders = [card.order, ...(card.companions ?? [])]
-                        if (onAccept(orders)) dismiss(index, card.id)
+                        if (onAccept(orders, "accept")) dismiss(index, card.id)
                       }}
                     >
                       {card.companions?.length ? "Accept all" : "Accept"}
+                    </Button>
+                  )}
+                  {action === "override" && !closed && (
+                    <Button
+                      type="button"
+                      size="xs"
+                      data-testid="advisor-override"
+                      onClick={() => {
+                        if (onAccept(orders, "override")) dismiss(index, card.id)
+                      }}
+                    >
+                      Override
+                    </Button>
+                  )}
+                  {action === "disabled" && !closed && (
+                    <Button type="button" size="xs" data-testid="advisor-accept" disabled>
+                      Accept
                     </Button>
                   )}
                   <Button
@@ -248,7 +284,8 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                   </Button>
                 </div>
               </article>
-            ))}
+              )
+            })}
           </div>
         ))}
         {busy && (

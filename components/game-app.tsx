@@ -12,7 +12,6 @@ import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { BRIEFING } from "@/lib/data/scenario"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
-import { findUnit } from "@/lib/engine/turn"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
 import { gradeLabel } from "@/lib/engine/victory"
 import {
@@ -25,7 +24,7 @@ import {
 import type { AdvisorOrder } from "@/lib/gm/advisor-types"
 import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
-import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { applyAdvisorToQueue, leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
 import { WarMap, type MapProvince } from "@/components/war-map"
@@ -281,119 +280,17 @@ export function GameApp() {
     setChatEpoch((value) => value + 1)
   }
 
-  function noteQueued() {
-    setHint("Filed in the queue. The engine resolves it when the fortnight closes.")
-    setSideTab("orders")
-  }
-
-  function acceptAdvisorOrders(orders: AdvisorOrder[]): boolean {
+  function acceptAdvisorOrders(orders: AdvisorOrder[], mode: "accept" | "override"): boolean {
     if (ordersLocked(Boolean(game.state.result))) return false
-    const attacks = orders.filter(
-      (order): order is Extract<AdvisorOrder, { type: "attack" }> => order.type === "attack",
+    const filed = applyAdvisorToQueue(game.state, queue, orders, mode)
+    if (!filed.accepted) return false
+    setQueue(filed.queue)
+    setHint(
+      mode === "override"
+        ? "Replaced the queued order. The engine resolves it when the fortnight closes."
+        : "Filed in the queue. The engine resolves it when the fortnight closes.",
     )
-    const others = orders.filter((order) => order.type !== "attack")
-    let accepted = false
-    for (const order of others) {
-      if (acceptAdvisorOrder(order)) accepted = true
-    }
-    if (attacks.length > 1) accepted = queueAttackSet(attacks) || accepted
-    else if (attacks.length === 1 && acceptAdvisorOrder(attacks[0])) accepted = true
-    return accepted
-  }
-
-  function queueAttackSet(orders: Extract<AdvisorOrder, { type: "attack" }>[]): boolean {
-    const claimed = new Set(queue.flatMap((item) => item.unitIds))
-    const additions: QueuedOrder[] = []
-    for (const order of orders) {
-      if (queue.some((item) => item.kind === "attack" && item.from === order.from && item.to === order.target)) {
-        continue
-      }
-      if (additions.some((item) => item.from === order.from && item.to === order.target)) continue
-      const unitIds = order.unitIds.filter(
-        (id) => !claimed.has(id) && !additions.some((item) => item.unitIds.includes(id)),
-      )
-      if (!unitIds.length) continue
-      for (const id of unitIds) claimed.add(id)
-      additions.push({
-        id: crypto.randomUUID(),
-        kind: "attack",
-        from: order.from,
-        to: order.target,
-        unitIds,
-      })
-    }
-    if (!additions.length) return false
-    setQueue((current) => [...current, ...additions])
-    noteQueued()
-    return true
-  }
-
-  function acceptAdvisorOrder(order: AdvisorOrder): boolean {
-    if (ordersLocked(Boolean(game.state.result))) return false
-    if (order.type === "fortify") {
-      if (queue.some((item) => item.kind === "fortify" && item.from === order.provinceId)) return false
-      fortify(order.provinceId)
-      noteQueued()
-      return true
-    }
-    if (order.type === "recruit") {
-      if (queue.some((item) => item.kind === "recruit" && item.from === order.provinceId && item.unitKind === order.unitKind)) {
-        return false
-      }
-      recruit(order.provinceId, order.unitKind)
-      noteQueued()
-      return true
-    }
-    if (order.type === "cancelRecruit") {
-      if (queue.some((item) => item.kind === "cancelRecruit" && item.buildId === order.buildId)) return false
-      cancelRecruit(order.buildId)
-      noteQueued()
-      return true
-    }
-    if (order.type === "move") {
-      const located = findUnit(game.state, order.unitId)
-      if (!located || located.unit.faction !== "central") return false
-      if (queue.some((item) => item.unitIds.includes(order.unitId))) return false
-      setQueue((current) => {
-        const existing = current.find(
-          (item) => item.kind === "move" && item.from === located.province.id && item.to === order.to,
-        )
-        if (existing) {
-          return current.map((item) =>
-            item.id === existing.id ? { ...item, unitIds: [...item.unitIds, order.unitId] } : item,
-          )
-        }
-        return [
-          ...current,
-          {
-            id: crypto.randomUUID(),
-            kind: "move",
-            from: located.province.id,
-            to: order.to,
-            unitIds: [order.unitId],
-          },
-        ]
-      })
-      noteQueued()
-      return true
-    }
-    const claimed = new Set(queue.flatMap((item) => item.unitIds))
-    const unitIds = order.unitIds.filter((id) => !claimed.has(id))
-    if (!unitIds.length) return false
-    if (queue.some((item) => item.kind === "attack" && item.from === order.from && item.to === order.target)) {
-      return false
-    }
-    setQueue((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        kind: "attack",
-        from: order.from,
-        to: order.target,
-        unitIds,
-      },
-    ])
-    noteQueued()
+    setSideTab("orders")
     return true
   }
 

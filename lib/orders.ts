@@ -1,5 +1,6 @@
 import { RECRUIT } from "@/lib/engine/economy"
-import { combinedEngagementOdds, findProvince, type EngagementPreview } from "@/lib/engine/turn"
+import { combinedEngagementOdds, findProvince, findUnit, type EngagementPreview } from "@/lib/engine/turn"
+import type { AdvisorOrder } from "@/lib/gm/advisor-types"
 import type { GameState, PlayerOrder, Purse, UnitKind } from "@/lib/types"
 
 export function leaveDepotGarrison<T extends { id: string; strength: number }>(
@@ -114,6 +115,103 @@ export function provinceActionState(
     recruit,
     yardSlotsLeft,
   }
+}
+
+/**
+ * File advisor orders onto the queue.
+ * `override` removes those divisions from the orders that already claim them,
+ * then files the new order. An existing column that still has other divisions
+ * stays. A column with the same type, origin, and target is extended, not copied.
+ */
+export function applyAdvisorToQueue(
+  state: GameState,
+  queue: QueuedOrder[],
+  orders: AdvisorOrder[],
+  mode: "accept" | "override",
+): { queue: QueuedOrder[]; accepted: boolean } {
+  const drafts = advisorDrafts(state, orders)
+  if (!drafts.length) return { queue, accepted: false }
+
+  let next = queue.map((item) => ({ ...item, unitIds: [...item.unitIds] }))
+  if (mode === "override") {
+    const replacing = new Set(drafts.flatMap((draft) => draft.unitIds))
+    next = next.flatMap((item) => {
+      if ((item.kind !== "move" && item.kind !== "attack") || !item.unitIds.some((id) => replacing.has(id))) {
+        return [item]
+      }
+      const unitIds = item.unitIds.filter((id) => !replacing.has(id))
+      if (!unitIds.length) return []
+      return [{ ...item, unitIds }]
+    })
+  }
+
+  let accepted = false
+  for (const draft of drafts) {
+    if (draft.kind === "fortify" || draft.kind === "recruit" || draft.kind === "cancelRecruit") {
+      if (next.some((item) => sameQueued(item, draft))) continue
+      next = [...next, { ...draft, id: crypto.randomUUID() }]
+      accepted = true
+      continue
+    }
+    const claimed = new Set(next.flatMap((item) => item.unitIds))
+    if (draft.unitIds.some((id) => claimed.has(id))) continue
+    const index = next.findIndex(
+      (item) => item.kind === draft.kind && item.from === draft.from && item.to === draft.to,
+    )
+    if (index >= 0) {
+      const existing = next[index]
+      const unitIds = [...existing.unitIds]
+      for (const id of draft.unitIds) {
+        if (!unitIds.includes(id)) unitIds.push(id)
+      }
+      next = next.map((item, itemIndex) => (itemIndex === index ? { ...existing, unitIds } : item))
+      accepted = true
+      continue
+    }
+    next = [...next, { ...draft, id: crypto.randomUUID(), unitIds: [...draft.unitIds] }]
+    accepted = true
+  }
+  return { queue: next, accepted }
+}
+
+function advisorDrafts(state: GameState, orders: AdvisorOrder[]): QueuedOrder[] {
+  const drafts: QueuedOrder[] = []
+  for (const order of orders) {
+    if (order.type === "fortify") {
+      drafts.push({ id: "", kind: "fortify", from: order.provinceId, unitIds: [] })
+    } else if (order.type === "recruit") {
+      drafts.push({
+        id: "",
+        kind: "recruit",
+        from: order.provinceId,
+        unitIds: [],
+        unitKind: order.unitKind,
+      })
+    } else if (order.type === "cancelRecruit") {
+      drafts.push({ id: "", kind: "cancelRecruit", from: "", unitIds: [], buildId: order.buildId })
+    } else if (order.type === "move") {
+      const located = findUnit(state, order.unitId)
+      if (!located) continue
+      drafts.push({ id: "", kind: "move", from: located.province.id, to: order.to, unitIds: [order.unitId] })
+    } else {
+      drafts.push({
+        id: "",
+        kind: "attack",
+        from: order.from,
+        to: order.target,
+        unitIds: [...order.unitIds],
+      })
+    }
+  }
+  return drafts
+}
+
+function sameQueued(a: QueuedOrder, b: QueuedOrder): boolean {
+  if (a.kind !== b.kind) return false
+  if (a.kind === "fortify") return a.from === b.from
+  if (a.kind === "recruit") return a.from === b.from && a.unitKind === b.unitKind
+  if (a.kind === "cancelRecruit") return a.buildId === b.buildId
+  return false
 }
 
 export type QueuedOrder = {

@@ -38,11 +38,13 @@ You advise the player, who commands the Central Powers. You do not issue orders 
 
 You know only the DISPATCH in the user message. It is the map the Central Powers can see: ownership, supply, strengths, morale, rails, and odds the engine has already computed. You do not know what the Russian staff will order. Do not predict Russian moves, hidden plans, or the next Russian attack. If a fact is not in the dispatch, say that the map does not show it.
 
-Odds are against the garrison and the forts as they stand when the fortnight opens. A simultaneous Russian march can leave a rear guard, empty the province, or meet the columns in the open. Digging ordered this fortnight is not in the figures. Say that the printed odds can change when both sides move together. Do not invent the Russian march.
+Odds in the dispatch are against the garrison and the forts as they stand when the fortnight opens. A simultaneous Russian march can leave a rear guard, empty the province, or meet the columns in the open. Digging ordered this fortnight is not in the figures. Do not invent the Russian march.
 
-${combinedRuleText()} Weigh a pooled attack against a single strong blow, and quote the COMBINED figure. CONTACTS are one column. They are not the battle when COMBINED lists that province.
+The dispatch prints odds so you can compare blows. Do not write odds figures in the reply. No ratios, no colon-one figures, and nothing "before the dice". The engine prints odds on the order cards, and the reply stays prose.
 
-Use only province names and formation names from the dispatch. Do not invent corps, armies, or provinces. Quote odds only as printed. Do not roll dice and do not describe a battle as already fought. Speak in short staff prose, present tense, two to five sentences.
+${combinedRuleText()} Weigh a pooled attack against a single strong blow, using the COMBINED line in the dispatch. Do not copy those figures into the reply. CONTACTS are one column. They are not the battle when COMBINED lists that province.
+
+Use only province names and formation names from the dispatch. A formation may be named by its id, its full name, or a unique short name such as "German 11th Army". Do not invent corps, armies, or provinces. Do not roll dice and do not describe a battle as already fought. Speak in short staff prose, present tense, two to five sentences.
 
 Return one JSON object and no markdown:
 {"reply":"...","suggestions":[]}
@@ -55,7 +57,7 @@ suggestions is zero to three orders, using ids from the dispatch:
 {"type":"recruit","provinceId":"<province id>","unitKind":"infantry"|"cavalry"|"artillery"}
 {"type":"cancelRecruit","buildId":"<id>"}
 
-Several attack orders on one target, or one attacks object, are one battle. Prefer the stronger of a pooled attack and a single blow, using the figures in the dispatch. Leave a garrison on a depot. Do not repeat an order already in the queue. If the dispatch says the campaign is over, suggestions must be empty.`
+Several attack orders on one target, or one attacks object, are one battle. Prefer the stronger of a pooled attack and a single blow. If you name the provinces and not the formations, name the provinces clearly. Leave a garrison on a depot. You may suggest an order that is already queued, or a different order for a formation that is already queued. The engine marks those. If the dispatch says the campaign is over, suggestions must be empty.`
 
 export type UnitSnap = {
   id: string
@@ -216,7 +218,7 @@ export function scrubAdvisorReply(reply: string, state: GameState): string {
     .filter((sentence) => !leaksRussianPlan(sentence))
     .filter((sentence) => !deniesCombined(sentence))
     .filter((sentence) => !inventsUnit(sentence, knownUnits))
-  return sentences.join(" ").trim()
+  return presentReply(sentences.join(" "))
 }
 
 export async function advise(input: {
@@ -233,7 +235,7 @@ export async function advise(input: {
   if (!llmConfigured() && !fixtureEnabled()) {
     const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued)
     return {
-      reply: `${OFFLINE_LINE}\n\n${brief.reply}`,
+      reply: presentReply(`${OFFLINE_LINE}\n\n${brief.reply}`),
       source: "rules",
       unavailable: true,
       suggestions: suggestions.filter((card) => card.valid),
@@ -305,7 +307,7 @@ export async function advise(input: {
         ? "The wire returned nothing I can file. Reasoning spent the dispatch before a reply was written."
         : "The wire returned nothing I can file."
     return {
-      reply: `${wire}\n\n${brief.reply}`,
+      reply: presentReply(`${wire}\n\n${brief.reply}`),
       source: "rules",
       unavailable: false,
       suggestions: suggestions.filter((card) => card.valid),
@@ -318,7 +320,7 @@ export async function advise(input: {
   const raw = parsed.suggestions.slice(0, 12)
   if (ordersClosed) {
     return {
-      reply: reply || brief.reply,
+      reply: reply || presentReply(brief.reply),
       source: "llm",
       unavailable: false,
       suggestions: [],
@@ -327,13 +329,24 @@ export async function advise(input: {
     }
   }
 
-  const { cards, dropped } = classifySuggestions(prepared, raw, queued)
+  const classified = classifySuggestions(prepared, raw, queued)
+  const cards = ensureAcceptable(prepared, classified.cards, queued, brief.orders)
+  if (classified.dropped > 0) {
+    console.log(
+      JSON.stringify({
+        tag: "ostfront.advisor.dropped",
+        dropped: classified.dropped,
+        kept: cards.length,
+        reasons: classified.reasons,
+      }),
+    )
+  }
   return {
-    reply: reply || brief.reply,
+    reply: reply || presentReply(brief.reply),
     source: "llm",
     unavailable: false,
     suggestions: cards,
-    dropped,
+    dropped: classified.dropped,
     ordersClosed: false,
   }
 }
@@ -539,7 +552,7 @@ function rulesDispatch(
       sentences.push("I would file that attack, and leave it for you to accept. I do not fight it myself.")
     } else if (!weakest.empty && Number.isFinite(weakest.ratio) && weakest.ratio < 1) {
       sentences.push(
-        `I would not spend the fortnight on ${weakest.targetName}. The engine's odds are under 1 : 1 before the dice.`,
+        `I would not spend the fortnight on ${weakest.targetName}. The blow is too weak to file.`,
       )
     } else {
       sentences.push("I would not pull the armies off the Gorlice front for a softer contact elsewhere.")
@@ -564,7 +577,7 @@ function rulesDispatch(
   }
 
   sentences.push(
-    "I have not seen the Russian orders for this fortnight, and I will not guess them. These odds are against the garrison as it stands. A simultaneous march can change the fight.",
+    "I have not seen the Russian orders for this fortnight, and I will not guess them. This is against the garrison as it stands. A simultaneous march can change the fight.",
   )
   return { reply: sentences.join(" "), orders }
 }
@@ -579,8 +592,7 @@ function describeContact(contact: FrontContact): string {
   const garrison = contact.garrisonName
     ? ` ${contact.garrisonName} stays on the ${contact.fromName} depot.`
     : ""
-  const odds = contact.odds.endsWith(".") ? contact.odds : `${contact.odds}.`
-  return `${contact.targetName} is ${contact.terrain}, fort ${contact.fort}, supply ${contact.targetSupply}, held by ${defenders}. From ${contact.fromName} (supply ${contact.fromSupply}) the engine rates ${attackers} at ${odds}${garrison}`
+  return `${contact.targetName} is ${contact.terrain}, fort ${contact.fort}, supply ${contact.targetSupply}, held by ${defenders}. From ${contact.fromName} (supply ${contact.fromSupply}) I would march ${attackers}.${garrison}`
 }
 
 /** The Gorlice–Tarnów blow, not the holding front in East Prussia and Courland. */
@@ -755,18 +767,13 @@ function renderBattle(battle: CombinedBattle): string {
   return `${battle.targetId} ${battle.targetName} | ${battle.origins} directions | flank ×${battle.multiplier} | ${battle.odds}${ring}${adding} | columns ${columns}`
 }
 
-function soften(odds: string): string {
-  if (!odds) return odds
-  return odds.charAt(0).toLowerCase() + odds.slice(1)
-}
-
 function poolSentence(battle: CombinedBattle): string {
   const names = joinAnd(battle.prongs.map((prong) => prong.fromName))
-  const lead = `${names} into ${battle.targetName} are one battle, ${soften(battle.odds)} The flank multiplier is ${battle.multiplier}.`
+  const lead = `${names} into ${battle.targetName} are one battle. The flank multiplier is ${battle.multiplier}.`
   const queued = battle.prongs.filter((prong) => prong.queued)
   const free = battle.prongs.filter((prong) => !prong.queued)
-  if (queued.length && free.length && battle.queuedRatio !== null) {
-    return `${lead} With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes it ${printRatio(battle.ratio)}.`
+  if (queued.length && free.length) {
+    return `${lead} With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} is that same battle.`
   }
   return lead
 }
@@ -777,28 +784,27 @@ function focusedReply(
 ): { reply: string; orders: AdvisorOrder[] } {
   const names = joinAnd(focus.prongs.map((prong) => prong.fromName))
   const sentences = [
-    `${situation.date}. Doing it together is one battle. The engine pools the columns before the dice.`,
-    `${names} into ${focus.targetName} are one battle, ${soften(focus.odds)} The flank multiplier on ${focus.origins} directions is ${focus.multiplier}.`,
+    `${situation.date}. Doing it together is one battle. The engine pools the columns.`,
+    `${names} into ${focus.targetName} are one battle. The flank multiplier on ${focus.origins} directions is ${focus.multiplier}.`,
   ]
   const queued = focus.prongs.filter((prong) => prong.queued)
   const free = focus.prongs.filter((prong) => !prong.queued)
-  if (queued.length && free.length && focus.queuedRatio !== null) {
+  if (queued.length && free.length) {
     sentences.push(
-      `With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes it ${printRatio(focus.ratio)}. The queued columns alone are ${printRatio(focus.queuedRatio)}.`,
+      `With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} is that same battle.`,
     )
   }
   const chosen = chooseContact(axisContacts(situation.contacts))
   if (chosen && chosen.targetId !== focus.targetId && Number.isFinite(chosen.ratio) && chosen.ratio > focus.ratio) {
-    const odds = soften(chosen.odds.endsWith(".") ? chosen.odds : `${chosen.odds}.`)
-    sentences.push(
-      `${chosen.fromName} into ${chosen.targetName} is still the stronger blow, ${odds} I can file the ${focus.targetName} battle for you to accept.`,
-    )
+      sentences.push(
+        `${chosen.fromName} into ${chosen.targetName} is still the stronger blow. I can file the ${focus.targetName} battle for you to accept.`,
+      )
   } else {
     sentences.push("I would file that battle, and leave it for you to accept. I do not fight it myself.")
   }
   if (focus.encircled) sentences.push(`${focus.targetName} would be surrounded. The defender cannot retreat.`)
   sentences.push(
-    "I have not seen the Russian orders for this fortnight, and I will not guess them. These odds are against the garrison as it stands. A simultaneous march can change the fight.",
+    "I have not seen the Russian orders for this fortnight, and I will not guess them. This is against the garrison as it stands. A simultaneous march can change the fight.",
   )
   return {
     reply: sentences.join(" "),
@@ -845,35 +851,67 @@ function classifySuggestions(
   prepared: Prepared,
   raw: unknown[],
   queued: PlayerOrder[],
-): { cards: AdvisorCard[]; dropped: number } {
+): { cards: AdvisorCard[]; dropped: number; reasons: string[] } {
   let dropped = 0
+  const reasons: string[] = []
   const cards: AdvisorCard[] = []
   const accepted: AdvisorOrder[] = []
+  const drop = (count: number, reason: string) => {
+    dropped += count
+    reasons.push(reason)
+  }
   for (const item of raw) {
     const parsed = normalizeOrders(prepared.map, item)
     if (!parsed.orders.length) {
-      dropped += Math.max(1, parsed.skipped)
+      drop(Math.max(1, parsed.skipped), `unresolved ${rawHint(item)}`)
       continue
     }
-    dropped += parsed.skipped
+    if (parsed.skipped) drop(parsed.skipped, `unresolved prong ${rawHint(item)}`)
     for (const order of parsed.orders) {
       if (
         accepted.some((prior) => sameOrder(prior, order)) ||
         cards.some((card) => sameOrder(card.order, order) || card.companions.some((prior) => sameOrder(prior, order)))
       ) {
-        dropped += 1
+        drop(1, "repeat")
         continue
       }
       const card = assessOne(prepared, order, queued, accepted)
       if (!card) {
-        dropped += 1
+        drop(1, `not on our map ${rawHint(item)}`)
+        continue
+      }
+      if (!card.valid) {
+        drop(1, card.note ?? "illegal")
         continue
       }
       cards.push(card)
-      if (card.valid) accepted.push(order)
+      accepted.push(order)
     }
   }
-  return { cards: groupAttackCards(prepared.map, cards, queued).slice(0, MAX_SUGGESTIONS), dropped }
+  const grouped = stampQueue(prepared.map, groupAttackCards(prepared.map, cards, queued), queued)
+  return { cards: grouped.slice(0, MAX_SUGGESTIONS), dropped, reasons }
+}
+
+function ensureAcceptable(
+  prepared: Prepared,
+  cards: AdvisorCard[],
+  queued: PlayerOrder[],
+  rules: AdvisorOrder[],
+): AdvisorCard[] {
+  if (cards.some((card) => card.queue === "new" || card.queue === "conflict")) {
+    return cards.slice(0, MAX_SUGGESTIONS)
+  }
+  const extra = assessOrders(prepared, rules, queued).filter(
+    (card) => !cards.some((existing) => sameCard(existing, card)),
+  )
+  return [...cards, ...extra].slice(0, MAX_SUGGESTIONS)
+}
+
+function sameCard(a: AdvisorCard, b: AdvisorCard): boolean {
+  const left = [a.order, ...a.companions]
+  const right = [b.order, ...b.companions]
+  if (left.length !== right.length) return false
+  return left.every((order, index) => sameOrder(order, right[index]))
 }
 
 function assessOrders(prepared: Prepared, orders: AdvisorOrder[], queued: PlayerOrder[]): AdvisorCard[] {
@@ -929,6 +967,8 @@ function mergeAttackCard(
     note: null,
     odds,
     detail: detailForAttacks(map, orders, queuedNames, odds),
+    queue: "new",
+    conflict: null,
   }
 }
 
@@ -940,6 +980,21 @@ function assessOne(
 ): AdvisorCard | null {
   const gate = centralGate(prepared.map, order)
   if (gate === "drop") return null
+  const odds = order.type === "attack" ? oddsFor(prepared.map, order, queued, accepted) : null
+  if (queueMark(prepared.map, [order], queued).state === "duplicate") {
+    return {
+      id: crypto.randomUUID(),
+      order,
+      companions: [],
+      label: labelFor(prepared.map, order),
+      valid: true,
+      note: null,
+      odds,
+      detail: detailFor(prepared.map, order, odds),
+      queue: "duplicate",
+      conflict: null,
+    }
+  }
   const clone = structuredClone(prepared.map)
   if (order.type === "recruit" || order.type === "cancelRecruit") {
     clone.treasury = {
@@ -948,10 +1003,9 @@ function assessOne(
     }
     clone.queue = prepared.purse.queue.map((job) => ({ ...job }))
   }
-  const resolution = applyConcrete(clone, order, new Set(prepared.used), new Set(prepared.fortified))
+  const resolution = applyConcrete(clone, order, legalityUsed(prepared, order), legalityFortified(prepared, order))
   const valid = !gate && resolution.status === "applied"
   if (valid) commit(prepared, order, clone)
-  const odds = order.type === "attack" ? oddsFor(prepared.map, order, queued, accepted) : null
   return {
     id: crypto.randomUUID(),
     order,
@@ -961,7 +1015,77 @@ function assessOne(
     note: valid ? null : gate || resolution.summary,
     odds,
     detail: valid ? detailFor(prepared.map, order, odds) : null,
+    queue: "new",
+    conflict: null,
   }
+}
+
+function legalityUsed(prepared: Prepared, order: AdvisorOrder): Set<string> {
+  const used = new Set(prepared.used)
+  const queuedIds = new Set(prepared.queued.flatMap((item) => unitsOf(prepared.map, item)))
+  for (const id of unitsOf(prepared.map, order)) {
+    if (queuedIds.has(id)) used.delete(id)
+  }
+  return used
+}
+
+function legalityFortified(prepared: Prepared, order: AdvisorOrder): Set<string> {
+  const fortified = new Set(prepared.fortified)
+  if (
+    order.type === "fortify" &&
+    prepared.queued.some((item) => item.type === "fortify" && item.provinceId === order.provinceId)
+  ) {
+    fortified.delete(order.provinceId)
+  }
+  return fortified
+}
+
+function stampQueue(map: GameState, cards: AdvisorCard[], queued: PlayerOrder[]): AdvisorCard[] {
+  return cards.map((card) => {
+    const mark = queueMark(map, [card.order, ...card.companions], queued)
+    return { ...card, queue: mark.state, conflict: mark.conflict }
+  })
+}
+
+function queueMark(
+  map: GameState,
+  orders: AdvisorOrder[],
+  queued: PlayerOrder[],
+): { state: "new" | "duplicate" | "conflict"; conflict: string | null } {
+  const concrete = queued.filter(isAdvisorOrder)
+  if (!orders.length) return { state: "new", conflict: null }
+  const overlaps: AdvisorOrder[] = []
+  let inexact = false
+  let exactOrders = 0
+  for (const order of orders) {
+    if (concrete.some((item) => sameOrder(order, item))) {
+      exactOrders += 1
+      continue
+    }
+    for (const item of concrete) {
+      if (!sharesCommitment(map, order, item)) continue
+      inexact = true
+      if (!overlaps.some((prior) => sameOrder(prior, item))) overlaps.push(item)
+    }
+  }
+  if (!inexact && exactOrders === orders.length) return { state: "duplicate", conflict: null }
+  if (inexact) {
+    return { state: "conflict", conflict: overlaps.map((item) => labelFor(map, item)).join("; ") }
+  }
+  return { state: "new", conflict: null }
+}
+
+function sharesCommitment(map: GameState, order: AdvisorOrder, queued: AdvisorOrder): boolean {
+  const left = new Set(unitsOf(map, order))
+  for (const id of unitsOf(map, queued)) {
+    if (left.has(id)) return true
+  }
+  if (order.type === "fortify" && queued.type === "fortify") return order.provinceId === queued.provinceId
+  if (order.type === "recruit" && queued.type === "recruit") {
+    return order.provinceId === queued.provinceId && order.unitKind === queued.unitKind
+  }
+  if (order.type === "cancelRecruit" && queued.type === "cancelRecruit") return order.buildId === queued.buildId
+  return false
 }
 
 function oddsFor(
@@ -1204,6 +1328,9 @@ function centralGate(map: GameState, order: AdvisorOrder): string | null | "drop
 function normalizeOrders(map: GameState, raw: unknown): { orders: AdvisorOrder[]; skipped: number } {
   if (!raw || typeof raw !== "object") return { orders: [], skipped: 0 }
   const item = raw as Record<string, unknown>
+  if (!item.type && item.order && typeof item.order === "object") {
+    return normalizeOrders(map, item.order)
+  }
   if (item.type !== "attacks") {
     const order = normalizeOrder(map, raw)
     return order ? { orders: [order], skipped: 0 } : { orders: [], skipped: 0 }
@@ -1230,7 +1357,7 @@ function normalizeOrder(map: GameState, raw: unknown): AdvisorOrder | null {
   const type = item.type
   if (type === "move") {
     const unitRaw = stringField(item.unitId) ?? stringField(item.unit)
-    const toRaw = stringField(item.to)
+    const toRaw = stringField(item.to) ?? stringField(item.target)
     if (!unitRaw || !toRaw) return null
     const unitId = resolveUnit(map, unitRaw)
     const to = resolveProvince(map, toRaw)
@@ -1238,18 +1365,25 @@ function normalizeOrder(map: GameState, raw: unknown): AdvisorOrder | null {
     return { type: "move", unitId, to }
   }
   if (type === "attack") {
-    const fromRaw = stringField(item.from)
-    const targetRaw = stringField(item.target)
-    const ids = stringList(item.unitIds) ?? stringList(item.units)
-    if (!fromRaw || !targetRaw || !ids?.length) return null
+    const fromRaw = stringField(item.from) ?? stringField(item.fromId)
+    const targetRaw = stringField(item.target) ?? stringField(item.to)
+    if (!fromRaw || !targetRaw) return null
     const from = resolveProvince(map, fromRaw)
     const target = resolveProvince(map, targetRaw)
     if (!from || !target) return null
+    const listed = coerceIdList(item.unitIds) ?? coerceIdList(item.units) ?? coerceIdList(item.unitId)
     const unitIds: string[] = []
-    for (const id of ids) {
-      const resolved = resolveUnit(map, id)
-      if (!resolved) return null
-      unitIds.push(resolved)
+    if (listed) {
+      for (const id of listed) {
+        const resolved = resolveUnit(map, id, from)
+        if (resolved && !unitIds.includes(resolved)) unitIds.push(resolved)
+      }
+    }
+    if (!unitIds.length) {
+      if (listed?.length) return null
+      const repaired = defaultMarchers(map, from)
+      if (!repaired) return null
+      unitIds.push(...repaired)
     }
     return { type: "attack", from, target, unitIds }
   }
@@ -1276,23 +1410,93 @@ function normalizeOrder(map: GameState, raw: unknown): AdvisorOrder | null {
   return null
 }
 
+/** Names the map folds into a province but the catalog does not list. */
+const ADVISOR_ALIASES: Record<string, string[]> = {
+  krakow: ["gorlice", "dunajec"],
+}
+
 function resolveProvince(map: GameState, raw: string): string | null {
   const needle = normalizeName(raw)
+  const compact = raw.trim().toLowerCase()
+  const labelsOf = (id: string, name: string) => [
+    id,
+    name,
+    ...(CATALOG_BY_ID[id]?.aliases ?? []),
+    ...(ADVISOR_ALIASES[id] ?? []),
+  ]
   for (const province of map.provinces) {
-    const labels = [province.id, province.name, ...(CATALOG_BY_ID[province.id]?.aliases ?? [])]
-    if (labels.some((label) => normalizeName(label) === needle)) return province.id
+    if (province.id.toLowerCase() === compact) return province.id
+    if (labelsOf(province.id, province.name).some((label) => normalizeName(label) === needle)) return province.id
   }
+  if (needle.length < 4) return null
+  const partial = map.provinces.filter((province) =>
+    labelsOf(province.id, province.name).some((label) => {
+      const norm = normalizeName(label)
+      return norm.startsWith(`${needle} `) || needle.startsWith(`${norm} `)
+    }),
+  )
+  return partial.length === 1 ? partial[0].id : null
+}
+
+const GENERIC_UNIT_TOKENS = new Set(["army", "corps", "artillery", "infantry", "cavalry", "garrison", "group", "heavy"])
+
+function resolveUnit(map: GameState, raw: string, provinceId?: string): string | null {
+  const trimmed = raw.trim()
+  const direct = matchUnit(map, trimmed, provinceId)
+  if (direct) return direct
+  const leading = trimmed.split(/\s+/)[0]
+  if (leading && leading !== trimmed && leading.includes("-")) return matchUnit(map, leading, provinceId)
   return null
 }
 
-function resolveUnit(map: GameState, raw: string): string | null {
+function matchUnit(map: GameState, raw: string, provinceId?: string): string | null {
   const needle = normalizeName(raw)
+  const compact = raw.trim().toLowerCase()
+  if (!needle) return null
+  const hits: { id: string; provinceId: string; rank: number }[] = []
   for (const province of map.provinces) {
     for (const unit of province.units) {
-      if (unit.id === raw || normalizeName(unit.name) === needle) return unit.id
+      const name = normalizeName(unit.name)
+      const rank = unitRank(unit.id, name, needle, compact)
+      if (rank === null) continue
+      hits.push({ id: unit.id, provinceId: province.id, rank })
     }
   }
-  return null
+  if (!hits.length) return null
+  const best = Math.min(...hits.map((hit) => hit.rank))
+  let tied = hits.filter((hit) => hit.rank === best)
+  if (provinceId) {
+    const local = tied.filter((hit) => hit.provinceId === provinceId)
+    if (local.length === 1) return local[0].id
+    if (local.length > 1) tied = local
+  }
+  return tied.length === 1 ? tied[0].id : null
+}
+
+function unitRank(id: string, name: string, needle: string, compact: string): number | null {
+  if (id.toLowerCase() === compact || normalizeName(id) === needle || name === needle) return 0
+  if (needle.length >= 4 && (name.startsWith(`${needle} `) || needle.startsWith(`${name} `))) return 1
+  const needleTokens = needle.split(" ").filter(Boolean)
+  if (needle.length < 4 || !needleTokens.length) return null
+  if (needleTokens.length === 1 && GENERIC_UNIT_TOKENS.has(needleTokens[0])) return null
+  return containsSequence(name.split(" "), needleTokens) ? 2 : null
+}
+
+function containsSequence(tokens: string[], needle: string[]): boolean {
+  if (!needle.length || needle.length > tokens.length) return false
+  for (let start = 0; start <= tokens.length - needle.length; start += 1) {
+    if (needle.every((token, index) => tokens[start + index] === token)) return true
+  }
+  return false
+}
+
+function defaultMarchers(map: GameState, fromId: string): string[] | null {
+  const from = findProvince(map, fromId)
+  if (!from || from.controller !== "central") return null
+  const available = independentFormations(from.units.filter((unit) => unit.faction === "central"))
+  if (!available.length) return null
+  const chosen = leaveDepotGarrison(available, from.depot === "central", false)
+  return chosen.length ? chosen.map((unit) => unit.id) : null
 }
 
 function isKind(value: string | null): value is UnitKind {
@@ -1303,10 +1507,39 @@ function stringField(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
-function stringList(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return null
-  const ids = value.map((item) => item.trim()).filter(Boolean)
+function coerceIdList(value: unknown): string[] | null {
+  if (typeof value === "string") {
+    const ids = value.split(/[,;/]+/).map((item) => item.trim()).filter(Boolean)
+    return ids.length ? ids : null
+  }
+  if (!Array.isArray(value)) return null
+  const ids: string[] = []
+  for (const item of value) {
+    if (typeof item === "string") {
+      const text = item.trim()
+      if (text) ids.push(text)
+      continue
+    }
+    if (!item || typeof item !== "object") return null
+    const record = item as Record<string, unknown>
+    const text =
+      stringField(record.id) ??
+      stringField(record.unitId) ??
+      stringField(record.unit) ??
+      stringField(record.name)
+    if (!text) return null
+    ids.push(text)
+  }
   return ids.length ? ids : null
+}
+
+function rawHint(item: unknown): string {
+  if (!item || typeof item !== "object") return "empty"
+  const record = item as Record<string, unknown>
+  const bits = [record.type, record.from, record.target, record.to, record.unitId, record.provinceId].filter(
+    (bit) => typeof bit === "string",
+  )
+  return bits.join(" ").slice(0, 120) || "order"
 }
 
 function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
@@ -1314,7 +1547,36 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
 }
 
 function sameOrder(a: AdvisorOrder, b: AdvisorOrder): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
+  if (a.type !== b.type) return false
+  if (a.type === "attack" && b.type === "attack") {
+    return a.from === b.from && a.target === b.target && sameIds(a.unitIds, b.unitIds)
+  }
+  if (a.type === "move" && b.type === "move") return a.unitId === b.unitId && a.to === b.to
+  if (a.type === "fortify" && b.type === "fortify") return a.provinceId === b.provinceId
+  if (a.type === "recruit" && b.type === "recruit") {
+    return a.provinceId === b.provinceId && a.unitKind === b.unitKind
+  }
+  if (a.type === "cancelRecruit" && b.type === "cancelRecruit") return a.buildId === b.buildId
+  return false
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const right = new Set(b)
+  return a.every((id) => right.has(id))
+}
+
+function presentReply(reply: string): string {
+  return stripOddsFigures(reply)
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +([,.;])/g, "$1")
+    .trim()
+}
+
+function stripOddsFigures(text: string): string {
+  return text
+    .replace(/\s+(?:at|about|of)\s+\d+(?:\.\d+)?\s*:\s*1\b/gi, "")
+    .replace(/\b\d+(?:\.\d+)?\s*:\s*1\b/g, "")
 }
 
 function snap(unit: Unit): UnitSnap {
@@ -1357,9 +1619,13 @@ function classifyAdvisorJson(text: string): AdvisorJson {
   if (!extracted.value || typeof extracted.value !== "object" || Array.isArray(extracted.value)) {
     return { parsed: null, outcome: "schema", error: "Advisor JSON was not an object" }
   }
-  const record = extracted.value as { reply?: unknown; suggestions?: unknown }
+  const record = extracted.value as { reply?: unknown; suggestions?: unknown; orders?: unknown }
   const reply = typeof record.reply === "string" ? record.reply.trim() : ""
-  const suggestions = Array.isArray(record.suggestions) ? record.suggestions : []
+  const suggestions = Array.isArray(record.suggestions)
+    ? record.suggestions
+    : Array.isArray(record.orders)
+      ? record.orders
+      : []
   if (!reply && suggestions.length === 0) {
     return { parsed: null, outcome: "schema", error: "Advisor JSON had no reply or suggestions" }
   }

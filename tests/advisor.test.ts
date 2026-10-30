@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
@@ -5,8 +6,8 @@ import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engin
 import { advise, buildSituation, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
 import { readMessageContent } from "@/lib/gm/llm"
 import { resetTurnGuardStateForTests } from "@/lib/api/turn-guard"
-import { combinedQueueLines } from "@/lib/orders"
-import type { AdvisorCard, AdvisorOrder, AdvisorResponse } from "@/lib/gm/advisor-types"
+import { applyAdvisorToQueue, combinedQueueLines } from "@/lib/orders"
+import { advisorCardAction, type AdvisorCard, type AdvisorOrder, type AdvisorResponse } from "@/lib/gm/advisor-types"
 
 async function postAdvisor(body: unknown, headers: Record<string, string> = {}) {
   const { POST } = await import("@/app/api/advisor/route")
@@ -182,7 +183,7 @@ describe("advisor grounding", () => {
       { fromId: "gdynia", unitIds: ["g-gdy-inf"] },
       { fromId: "katowice", unitIds: ["g-kat-inf"] },
     ])
-    expect(payload.reply).toContain(preview!.ratio.toFixed(2))
+    expect(payload.reply).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
     expect(payload.reply).toMatch(/one battle/i)
     expect(payload.reply).toContain(String(flankMultiplier(4)))
     expect(payload.reply).not.toMatch(/does not show combined|each column separately|cannot promise|dispersion/i)
@@ -337,10 +338,9 @@ describe("advisor grounding", () => {
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("no-such-corps"))).toBe(false)
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("g-kie-inf"))).toBe(false)
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("not-a-province"))).toBe(false)
-    const dig = payload.suggestions.find((card) => card.order.type === "fortify")
-    expect(dig?.valid).toBe(false)
-    expect(dig?.note).toMatch(/level 3/)
-    expect(payload.dropped).toBeGreaterThanOrEqual(3)
+    expect(payload.suggestions.some((card) => card.order.type === "fortify")).toBe(false)
+    expect(payload.suggestions.every((card) => card.valid)).toBe(true)
+    expect(payload.dropped).toBeGreaterThanOrEqual(4)
     expect(state).toEqual(snapshot)
     await advise({
       state,
@@ -456,7 +456,7 @@ describe("advisor grounding", () => {
           llmPayload(
             JSON.stringify({
               reply: "The 11th Army is already committed.",
-              suggestions: [{ type: "move", unitId: "g-kra-11", to: "katowice" }],
+              suggestions: [{ type: "move", unitId: "German 11th Army", to: "Katowice" }],
             }),
           ),
         ),
@@ -469,8 +469,11 @@ describe("advisor grounding", () => {
     })
     const payload = (await response.json()) as AdvisorResponse
     const card = payload.suggestions.find((item) => item.order.type === "move")
-    expect(card?.valid).toBe(false)
-    expect(card?.note).toMatch(/already has orders/)
+    expect(card?.valid).toBe(true)
+    expect(card?.queue).toBe("conflict")
+    expect(card?.conflict).toMatch(/Attack Kielce from Kraków/)
+    expect(card?.order).toMatchObject({ type: "move", unitId: "g-kra-11", to: "katowice" })
+    expect(payload.dropped).toBe(0)
   })
 
   it("scrubs a forecast of Russian movement", () => {
@@ -490,7 +493,160 @@ describe("advisor grounding", () => {
       createInitialState(),
     )
     expect(text).toContain("Łódź is one battle")
+    expect(text).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
     expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
+  })
+
+  it("shows an exact queued order and disables accept", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "That attack is already on the slate.",
+              suggestions: [
+                { type: "attack", from: "Kraków", target: "Kielce", unitIds: "G-KRA-11" },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "Repeat the Kielce attack." }],
+      queuedOrders: [{ type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] }],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    const card = payload.suggestions.find(
+      (item) => item.order.type === "attack" && item.order.unitIds.includes("g-kra-11"),
+    )
+    expect(card?.queue).toBe("duplicate")
+    expect(card?.valid).toBe(true)
+    expect(advisorCardAction(card!)).toBe("disabled")
+    expect(payload.dropped).toBe(0)
+    expect(payload.reply).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
+  })
+
+  it("repairs an attack that names the provinces and not the formations", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "March from Gorlice on Kielce.",
+              suggestions: [{ type: "attack", from: "Gorlice", target: "Kielce" }],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    const card = payload.suggestions.find((item) => item.order.type === "attack" && item.order.target === "kielce")
+    expect(card?.valid).toBe(true)
+    expect(card?.queue).toBe("new")
+    expect(card?.order.type === "attack" && card.order.unitIds.length).toBeGreaterThan(0)
+    expect(payload.dropped).toBe(0)
+  })
+
+  it("falls back to a rules card when every model suggestion is illegal", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "Hold.",
+              suggestions: [{ type: "move", unitId: "no-such-corps", to: "nowhere" }],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.dropped).toBeGreaterThanOrEqual(1)
+    expect(payload.suggestions.some((card) => card.valid && card.queue === "new")).toBe(true)
+    expect(payload.reply).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
+  })
+})
+
+describe("advisor queue override", () => {
+  it("replaces one division and keeps the rest of the column", () => {
+    const state = createInitialState()
+    const queue = [
+      { id: "a", kind: "attack" as const, from: "krakow", to: "kielce", unitIds: ["g-kra-11", "g-kra-x"] },
+      { id: "b", kind: "move" as const, from: "poznan", to: "lodz", unitIds: ["g-pos-inf"] },
+    ]
+    const filed = applyAdvisorToQueue(
+      state,
+      queue,
+      [{ type: "move", unitId: "g-kra-11", to: "katowice" }],
+      "override",
+    )
+    expect(filed.accepted).toBe(true)
+    const attack = filed.queue.find((order) => order.kind === "attack")
+    expect(attack?.unitIds).toEqual(["g-kra-x"])
+    expect(attack?.to).toBe("kielce")
+    expect(filed.queue.filter((order) => order.kind === "attack")).toHaveLength(1)
+    const moved = filed.queue.find((order) => order.kind === "move" && order.to === "katowice")
+    expect(moved?.unitIds).toEqual(["g-kra-11"])
+    expect(filed.queue.some((order) => order.unitIds.includes("g-pos-inf"))).toBe(true)
+  })
+
+  it("replaces a column instead of adding a second one", () => {
+    const state = createInitialState()
+    const queue = [{ id: "a", kind: "attack" as const, from: "krakow", to: "kielce", unitIds: ["g-kra-11"] }]
+    const filed = applyAdvisorToQueue(
+      state,
+      queue,
+      [{ type: "attack", from: "krakow", target: "lwow", unitIds: ["g-kra-11"] }],
+      "override",
+    )
+    expect(filed.accepted).toBe(true)
+    expect(filed.queue).toHaveLength(1)
+    expect(filed.queue[0]?.to).toBe("lwow")
+    expect(filed.queue[0]?.unitIds).toEqual(["g-kra-11"])
+  })
+
+  it("does not file an exact duplicate a second time", () => {
+    const state = createInitialState()
+    const queue = [{ id: "a", kind: "attack" as const, from: "krakow", to: "kielce", unitIds: ["g-kra-11"] }]
+    const filed = applyAdvisorToQueue(
+      state,
+      queue,
+      [{ type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] }],
+      "accept",
+    )
+    expect(filed.accepted).toBe(false)
+    expect(filed.queue).toHaveLength(1)
+    expect(filed.queue[0]?.id).toBe("a")
+  })
+})
+
+describe("advisor card markup", () => {
+  const panel = readFileSync("components/advisor-panel.tsx", "utf8")
+
+  it("marks duplicate, conflict, and new cards for the demo", () => {
+    expect(panel).toContain('data-advisor-state={card.queue}')
+    expect(panel).toContain("Already queued")
+    expect(panel).toContain("Conflicts with:")
+    expect(panel).toContain('data-testid="advisor-override"')
+    expect(panel).toContain("advisorCardAction")
   })
 })
 

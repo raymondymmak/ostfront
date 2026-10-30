@@ -24,6 +24,23 @@ export type AdvisorCard = {
   odds: string | null
   /** Strengths, supply, and rails copied from the engine. */
   detail: string | null
+  /**
+   * How the card sits against the player's queue.
+   * `duplicate` is the same order already queued. `conflict` reuses a division
+   * for a different order. `new` does not touch the queue.
+   */
+  queue: AdvisorQueueState
+  /** Queued order text when `queue` is `conflict`. */
+  conflict: string | null
+}
+
+export type AdvisorQueueState = "new" | "duplicate" | "conflict"
+
+/** What the suggestion card may do. Duplicates stay visible with Accept disabled. */
+export function advisorCardAction(card: Pick<AdvisorCard, "valid" | "queue">): "accept" | "override" | "disabled" {
+  if (!card.valid || card.queue === "duplicate") return "disabled"
+  if (card.queue === "conflict") return "override"
+  return "accept"
 }
 
 export type AdvisorChatMessage = {

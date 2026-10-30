@@ -83,7 +83,7 @@ describe("event gate", () => {
     expect(played.state.cpStrengthLost).toBe(quiet.state.cpStrengthLost)
   })
 
-  it("drops the same events at the game-master boundary, with one note each", () => {
+  it("keeps engine-rejected game-master events on the turn, marked rejected", () => {
     const state = createInitialState("normal")
     const interpreted = { proposals: [] as Proposal[], notes: [] as string[] }
     const gm = buildStaffTurn(
@@ -91,9 +91,13 @@ describe("event gate", () => {
       turn({ proposals: [], events: blocked }),
       interpreted,
     )
-    expect(gm.events).toEqual([])
-    expect(interpreted.notes).toHaveLength(4)
-    expect(interpreted.notes.every((note) => note.startsWith("Game master event rejected:"))).toBe(true)
+    expect(gm.events).toEqual(blocked.slice(0, 3))
+    expect(interpreted.notes).toEqual([])
+    const played = resolveTurn(structuredClone(state), gm)
+    expect(played.record.events.map((item) => item.status)).toEqual(["rejected", "rejected", "rejected"])
+    expect(played.record.events.every((item) => item.summary.includes("Central Powers home soil"))).toBe(
+      true,
+    )
   })
 
   it("still applies partisans in an occupied province with unrest of 60", () => {
