@@ -115,8 +115,11 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 - `npm test` — Vitest for the rules, Stavka, victory, and the turn API.
+- `npm run typecheck` — generate Next types, then `tsc --noEmit`.
 - `npm run lint` — ESLint.
 - `npm run build` — production build.
+
+CI runs typecheck, lint (0 warnings), test and build on every PR.
 - `npm run llm-logs` — list stored LLM responses (`BLOB_READ_WRITE_TOKEN`). `vercel blob ls llm-log/` does the same.
 - `npm run map` — neighbor graph, and rail pairs that do not share a border.
 - `npx tsx scripts/balance-sim.ts` — scripted Central Powers opponents (greedy, frontier, sensible) through six seeds on Easy, Normal, and Hard. It clears any model key and plays against Stavka.

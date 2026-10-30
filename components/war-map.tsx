@@ -522,13 +522,14 @@ export function WarMap({
     })
     observer.observe(container.parentElement ?? container)
 
+    const markers = markersRef.current
     return () => {
       observer.disconnect()
       if (blitFrameRef.current !== null) cancelAnimationFrame(blitFrameRef.current)
       loadedRef.current = false
       fittedRef.current = false
-      markersRef.current.forEach((marker) => marker.remove())
-      markersRef.current.clear()
+      markers.forEach((marker) => marker.remove())
+      markers.clear()
       if (typeof window !== "undefined") {
         delete (window as Window & { __ostfrontMap?: maplibregl.Map }).__ostfrontMap
       }

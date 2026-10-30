@@ -34,12 +34,6 @@ async function capture(name, width, height, after) {
   await page.close()
 }
 
-async function mapCanvas(page) {
-  const canvas = page.locator(".maplibregl-canvas")
-  await canvas.waitFor({ state: "visible", timeout: 30000 })
-  return canvas.boundingBox()
-}
-
 await capture("map-desktop-1440x900", 1440, 900)
 await capture("map-portrait-390x844", 390, 844)
 await capture("map-desktop-selection-tarnow", 1440, 900, async (page) => {
