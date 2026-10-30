@@ -2,7 +2,7 @@ import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { applySupply, rebindState } from "@/lib/data/scenario"
 import { scenarioSpec } from "@/lib/data/objectives"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
-import { independentFormations, partyOf } from "@/lib/engine/echelon"
+import { fightingUnits, independentFormations, partyOf } from "@/lib/engine/echelon"
 import { projectIncome, RECRUIT, recruitmentYard, spendable } from "@/lib/engine/economy"
 import { decaySupplyModifier } from "@/lib/engine/supply"
 import {
@@ -375,32 +375,222 @@ export function reconcileReplyWithCards(reply: string, cards: AdvisorCard[], map
 }
 
 function reconcileSentence(sentence: string, cards: AdvisorCard[], map: GameState): string | null {
-  const named = provincesInSentence(sentence, map)
-  const relevant = cards.filter((card) => {
-    const target = card.order.type === "attack" ? card.order.target : null
-    return target !== null && named.has(target)
-  })
-  if (!relevant.length) return sentence
+  const mentions = provinceSpans(sentence, map)
+  const named = new Set(mentions.map((span) => span.id))
   const byTarget = new Map<string, AdvisorCard[]>()
-  for (const card of relevant) {
-    if (card.order.type !== "attack") continue
+  for (const card of cards) {
+    if (card.order.type !== "attack" || !named.has(card.order.target)) continue
     const group = byTarget.get(card.order.target) ?? []
     group.push(card)
     byTarget.set(card.order.target, group)
   }
-  if ([...byTarget.values()].every((group) => group.every((card) => !card.valid))) return null
-  let next = sentence
-  for (const group of byTarget.values()) {
-    const valid = group.find((card) => card.valid && card.order.type === "attack")
-    if (!valid || valid.ratio == null || !Number.isFinite(valid.ratio)) continue
-    const printed = valid.ratio.toFixed(2)
-    next = next.replace(/(\d+(?:\.\d+)?)\s*:\s*1\b/g, (match, raw: string) => {
-      if (Math.abs(Number(raw) - Number(printed)) > 0.05) return `${printed} : 1`
-      return match
-    })
-    next = reshapeProngs(next, 1 + valid.companions.filter((order) => order.type === "attack").length)
+  if (byTarget.size > 0 && [...byTarget.values()].every((group) => group.every((card) => !card.valid))) return null
+
+  const figures = [...sentence.matchAll(/(\d+(?:\.\d+)?)\s*:\s*1\b/g)]
+  const edits: { start: number; end: number; text: string }[] = []
+  for (const figure of figures) {
+    const raw = figure[1]
+    const start = figure.index ?? 0
+    const end = start + figure[0].length
+    const targetId = nearestPrecedingTarget(sentence, mentions, start, map, byTarget)
+    if (!targetId) continue
+    const replacement = oddsReplacement(sentence, start, raw, targetId, byTarget.get(targetId), map)
+    if (!replacement) continue
+    edits.push({ start: replacement.start, end, text: replacement.text })
   }
+
+  let next = sentence
+  if (edits.length) {
+    let cursor = 0
+    let built = ""
+    for (const edit of edits.sort((a, b) => a.start - b.start)) {
+      built += sentence.slice(cursor, edit.start)
+      built += edit.text
+      cursor = edit.end
+    }
+    next = built + sentence.slice(cursor)
+  }
+
+  next = mapClauses(next, (clause) => {
+    const clauseNames = new Set(provinceSpans(clause, map).map((span) => span.id))
+    let text = clause
+    for (const id of clauseNames) {
+      const valid = byTarget.get(id)?.find((card) => card.valid && card.order.type === "attack")
+      if (!valid) continue
+      text = reshapeProngs(text, 1 + valid.companions.filter((order) => order.type === "attack").length)
+    }
+    return text
+  })
   return next.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.;!?])/g, "$1").trim()
+}
+
+/**
+ * An odds figure belongs to the nearest province named before it.
+ * The same clause wins over an earlier clause. A Central Powers province
+ * is an origin ("from Kraków"), so it does not take the figure unless a
+ * card actually attacks that province.
+ */
+function nearestPrecedingTarget(
+  sentence: string,
+  mentions: ProvinceSpan[],
+  figureStart: number,
+  map: GameState,
+  byTarget: Map<string, AdvisorCard[]>,
+): string | null {
+  const inSentence = mentions.filter((span) => span.end <= figureStart)
+  const clauseAt = clauseStart(sentence, figureStart)
+  const inClause = inSentence.filter((span) => span.start >= clauseAt)
+  return pickTarget(inClause, map, byTarget) ?? pickTarget(inSentence, map, byTarget)
+}
+
+function pickTarget(
+  spans: ProvinceSpan[],
+  map: GameState,
+  byTarget: Map<string, AdvisorCard[]>,
+): string | null {
+  const ordered = [...spans].sort((a, b) => b.end - a.end || b.start - a.start)
+  for (const span of ordered) {
+    if (byTarget.has(span.id)) return span.id
+    if (findProvince(map, span.id)?.controller !== "central") return span.id
+  }
+  return null
+}
+
+function clauseStart(sentence: string, index: number): number {
+  let start = 0
+  const marks = /[,;]/g
+  for (const mark of sentence.matchAll(marks)) {
+    const at = mark.index ?? 0
+    if (at >= index) break
+    start = at + 1
+  }
+  return start
+}
+
+function mapClauses(sentence: string, edit: (clause: string) => string): string {
+  return sentence
+    .split(/([,;])/)
+    .map((part, index) => (index % 2 === 1 ? part : edit(part)))
+    .join("")
+}
+
+type OddsEdit = { start: number; text: string }
+
+function oddsReplacement(
+  sentence: string,
+  figureStart: number,
+  raw: string,
+  targetId: string,
+  group: AdvisorCard[] | undefined,
+  map: GameState,
+): OddsEdit | null {
+  const valid = group?.find((card) => card.valid && card.order.type === "attack")
+  if (valid) {
+    if (valid.ratio == null) return stripOdds(sentence, figureStart)
+    if (!Number.isFinite(valid.ratio)) return wordOdds(sentence, figureStart, "undefended")
+    const printed = valid.ratio.toFixed(2)
+    if (Math.abs(Number(raw) - Number(printed)) > 0.05) return { start: figureStart, text: `${printed} : 1` }
+    return null
+  }
+  if (group?.length) return stripOdds(sentence, figureStart)
+
+  const engine = engineFigures(map, targetId)
+  if (figureMatches(raw, engine.ratios)) return null
+  if (engine.empty) return wordOdds(sentence, figureStart, "undefended")
+  if (engine.best != null) {
+    const printed = engine.best.toFixed(2)
+    if (Math.abs(Number(raw) - Number(printed)) > 0.05) return { start: figureStart, text: `${printed} : 1` }
+    return null
+  }
+  return stripOdds(sentence, figureStart)
+}
+
+function figureMatches(raw: string, ratios: number[]): boolean {
+  return ratios.some((ratio) => Math.abs(Number(raw) - Number(ratio.toFixed(2))) <= 0.05)
+}
+
+/** Where the leading "about" / "only" starts, so a stripped figure does not leave it behind. */
+function hedgeStart(sentence: string, figureStart: number): number {
+  const prefix = sentence.slice(0, figureStart)
+  const hedge = prefix.match(/(?:about|only|around|nearly|roughly|at)\s+$/i)
+  return hedge ? figureStart - hedge[0].length : figureStart
+}
+
+function stripOdds(sentence: string, figureStart: number): OddsEdit {
+  return { start: hedgeStart(sentence, figureStart), text: "" }
+}
+
+function wordOdds(sentence: string, figureStart: number, word: string): OddsEdit {
+  return { start: hedgeStart(sentence, figureStart), text: word }
+}
+
+/**
+ * Ratios the combat engine can actually print for `targetId` from the
+ * provinces that can march. `best` is the strongest single column.
+ */
+function engineFigures(map: GameState, targetId: string): { empty: boolean; ratios: number[]; best: number | null } {
+  const target = findProvince(map, targetId)
+  if (!target) return { empty: false, ratios: [], best: null }
+  const defenders = fightingUnits(target.units.filter((unit) => unit.faction === target.controller))
+  const empty = defenders.length === 0
+  const ratios: number[] = []
+  const columns: number[] = []
+  const prongs: { fromId: string; unitIds: string[] }[] = []
+  for (const province of map.provinces) {
+    if (province.controller !== "central" || province.supply < 30) continue
+    if (!province.neighbors.includes(targetId)) continue
+    const available = independentFormations(province.units.filter((unit) => unit.faction === "central"))
+    const chosen = leaveDepotGarrison(available, province.depot === "central", false)
+    if (!chosen.length) continue
+    const unitIds = chosen.map((unit) => unit.id)
+    prongs.push({ fromId: province.id, unitIds })
+    const preview = engagementOdds(map, province.id, targetId, unitIds)
+    if (!preview || preview.empty || !Number.isFinite(preview.ratio)) continue
+    ratios.push(preview.ratio)
+    columns.push(preview.ratio)
+  }
+  if (prongs.length >= 2) {
+    const preview = combinedEngagementOdds(map, targetId, prongs)
+    if (preview && !preview.empty && Number.isFinite(preview.ratio)) ratios.push(preview.ratio)
+  }
+  const best = columns.length ? Math.max(...columns) : null
+  return { empty, ratios, best }
+}
+
+type ProvinceSpan = { id: string; start: number; end: number }
+
+function provinceSpans(sentence: string, map: GameState): ProvinceSpan[] {
+  const spans: ProvinceSpan[] = []
+  for (const province of map.provinces) {
+    const catalog = CATALOG_BY_ID[province.id]
+    const labels = [province.name, ...(catalog?.aliases ?? [])]
+    for (const label of labels) {
+      for (const hit of findLabel(sentence, label)) spans.push({ id: province.id, ...hit })
+    }
+  }
+  spans.sort((a, b) => a.start - b.start || b.end - a.end)
+  const kept: ProvinceSpan[] = []
+  for (const span of spans) {
+    if (kept.some((prior) => prior.start < span.end && span.start < prior.end)) continue
+    kept.push(span)
+  }
+  return kept
+}
+
+function findLabel(sentence: string, label: string): { start: number; end: number }[] {
+  const words = normalizeName(label).split(" ").filter(Boolean)
+  if (!words.length) return []
+  const tokens = [...sentence.matchAll(/[\p{L}\p{N}]+/gu)].map((match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+    norm: normalizeName(match[0]),
+  }))
+  const hits: { start: number; end: number }[] = []
+  for (let i = 0; i <= tokens.length - words.length; i++) {
+    if (!words.every((word, offset) => tokens[i + offset]?.norm === word)) continue
+    hits.push({ start: tokens[i].start, end: tokens[i + words.length - 1].end })
+  }
+  return hits
 }
 
 function reshapeProngs(sentence: string, prongs: number): string {
@@ -408,24 +598,6 @@ function reshapeProngs(sentence: string, prongs: number): string {
   const word = prongs === 2 ? "two-pronged" : "concentric"
   if (!/\b(?:two-pronged|concentric)\b/i.test(sentence)) return sentence
   return sentence.replace(/\b(?:two-pronged|concentric)\b/gi, word)
-}
-
-function provincesInSentence(sentence: string, map: GameState): Set<string> {
-  const hay = ` ${normalizeName(sentence)} `
-  const ids = new Set<string>()
-  for (const province of map.provinces) {
-    const catalog = CATALOG_BY_ID[province.id]
-    const labels = [province.name, ...(catalog?.aliases ?? [])]
-    if (
-      labels.some((label) => {
-        const needle = normalizeName(label)
-        return needle.length > 0 && hay.includes(` ${needle} `)
-      })
-    ) {
-      ids.add(province.id)
-    }
-  }
-  return ids
 }
 
 function fixtureEnabled(): boolean {

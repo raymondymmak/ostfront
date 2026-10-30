@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
+import { independentFormations } from "@/lib/engine/echelon"
 import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engine/turn"
 import { advise, buildSituation, reconcileReplyWithCards, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
 import { readMessageContent } from "@/lib/gm/llm"
 import { resetTurnGuardStateForTests } from "@/lib/api/turn-guard"
-import { combinedQueueLines } from "@/lib/orders"
+import { combinedQueueLines, leaveDepotGarrison } from "@/lib/orders"
+import type { GameState } from "@/lib/types"
 import type { AdvisorCard, AdvisorOrder, AdvisorResponse } from "@/lib/gm/advisor-types"
 
 async function postAdvisor(body: unknown, headers: Record<string, string> = {}) {
@@ -552,25 +554,101 @@ describe("advisor grounding", () => {
     }
   })
 
-  it("leaves odds alone when no card covers the province, or the figure already matches", () => {
+  it("keeps a figure that already matches its card", () => {
     const map = createInitialState()
-    const cards: AdvisorCard[] = [
-      {
-        id: "kielce",
-        order: { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] },
-        companions: [],
-        label: "Attack Kielce from Kraków",
-        valid: true,
-        note: null,
-        odds: "About 2.09 : 1 before the dice.",
-        ratio: 2.09,
-        detail: null,
-      },
-    ]
     const reply = "Kielce is about 2.09 : 1. Warsaw is about 4.00 : 1."
-    expect(reconcileReplyWithCards(reply, cards, map)).toBe(reply)
+    const out = reconcileReplyWithCards(reply, [attackCard("kielce", "kielce", 2.09)], map)
+    expect(out.startsWith("Kielce is about 2.09 : 1.")).toBe(true)
+    expect(out).not.toContain("4.00")
+    const warsaw = out.split(/(?<=[.!?])\s+/).find((sentence) => /warsaw/i.test(sentence)) ?? ""
+    expect(warsaw).not.toMatch(/2\.09/)
+    expect(quotedOdds(warsaw, marchRatios(map, "warszawa"))).toBe(true)
+  })
+
+  it("replaces each odds figure with only that target's card", () => {
+    const map = createInitialState()
+    const reply = "Kielce is about 2.50 : 1, while Lublin is only 1.20 : 1."
+    const out = reconcileReplyWithCards(
+      reply,
+      [attackCard("kielce", "kielce", 2.09), attackCard("lublin", "lublin", 0.55)],
+      map,
+    )
+    expect(out).toBe("Kielce is about 2.09 : 1, while Lublin is only 0.55 : 1.")
+  })
+
+  it("drops an invented figure when the target has no defenders", () => {
+    const map = createInitialState()
+    const memel = map.provinces.find((province) => province.id === "klaipeda")
+    expect(memel?.units).toEqual([])
+    const out = reconcileReplyWithCards("Memel is open country at 9.99 : 1.", [], map)
+    expect(out.toLowerCase()).toContain("undefended")
+    expect(out).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
+    expect(out).not.toContain("9.99")
+  })
+
+  it("corrects the card's target and does not copy that ratio onto the other one", () => {
+    const map = createInitialState()
+    const reply = "Kielce is about 2.50 : 1, while Warsaw is about 4.00 : 1."
+    const out = reconcileReplyWithCards(reply, [attackCard("kielce", "kielce", 2.09)], map)
+    expect(out).toContain("Kielce is about 2.09 : 1")
+    expect(out).not.toContain("2.50")
+    expect(out).not.toContain("4.00")
+    const warsaw = out.split(",")[1] ?? ""
+    expect(warsaw).not.toMatch(/2\.09/)
+    expect(quotedOdds(warsaw, marchRatios(map, "warszawa"))).toBe(true)
+  })
+
+  it("replaces an invented figure with the column the engine can march", () => {
+    const map = createInitialState()
+    const ratios = marchRatios(map, "kielce")
+    expect(ratios.length).toBeGreaterThan(0)
+    const best = Math.max(...ratios).toFixed(2)
+    const out = reconcileReplyWithCards("Kielce is about 9.99 : 1.", [], map)
+    expect(out).toBe(`Kielce is about ${best} : 1.`)
+    expect(out).not.toContain("9.99")
   })
 })
+
+function attackCard(id: string, target: string, ratio: number, companions: AdvisorOrder[] = []): AdvisorCard {
+  return {
+    id,
+    order: { type: "attack", from: "krakow", target, unitIds: ["g-kra-11"] },
+    companions,
+    label: `Attack ${target}`,
+    valid: true,
+    note: null,
+    odds: `About ${ratio.toFixed(2)} : 1 before the dice.`,
+    ratio,
+    detail: null,
+  }
+}
+
+/** Single-column ratios a supplied Central Powers neighbor can actually march. */
+function marchRatios(map: GameState, targetId: string): number[] {
+  const ratios: number[] = []
+  for (const province of map.provinces) {
+    if (province.controller !== "central" || province.supply < 30) continue
+    if (!province.neighbors.includes(targetId)) continue
+    const available = independentFormations(province.units.filter((unit) => unit.faction === "central"))
+    const chosen = leaveDepotGarrison(available, province.depot === "central", false)
+    if (!chosen.length) continue
+    const preview = engagementOdds(
+      map,
+      province.id,
+      targetId,
+      chosen.map((unit) => unit.id),
+    )
+    if (preview && !preview.empty && Number.isFinite(preview.ratio)) ratios.push(preview.ratio)
+  }
+  return ratios
+}
+
+/** A quoted N : 1 is absent, or it is one of the engine's ratios. */
+function quotedOdds(text: string, ratios: number[]): boolean {
+  const figure = text.match(/(\d+(?:\.\d+)?)\s*:\s*1/)
+  if (!figure) return !/\d+(?:\.\d+)?\s*:\s*1/.test(text)
+  return ratios.some((ratio) => Math.abs(Number(figure[1]) - Number(ratio.toFixed(2))) <= 0.05)
+}
 
 describe("advisor guard", () => {
   beforeEach(() => {
