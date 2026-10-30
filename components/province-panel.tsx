@@ -88,6 +88,7 @@ export function ProvincePanel({
             : ""}
         </p>
         {friendly && !closed ? (
+<<<<<<< HEAD
           <div className="flex flex-col gap-1">
             <Button
               type="button"
@@ -108,6 +109,15 @@ export function ProvincePanel({
               </p>
             ) : null}
           </div>
+=======
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onFortify(province.id)}
+          >
+            Fortify {province.name}
+          </Button>
+>>>>>>> 267885c (QA fixes: redact secrets, fail-fast, expanded demo path)
         ) : null}
         {friendly && !closed && recruitmentYard(province, "central") ? (
           <div data-testid="recruit-panel" className="flex flex-col gap-2">

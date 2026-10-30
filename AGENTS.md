@@ -10,7 +10,14 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## QA before merge
 
-After implementing or changing player-visible behavior, run `npm run demo-check` against the live game or your Vercel preview (`DEMO_URL=… npm run demo-check` or `npm run demo-check -- --url …`; default **`https://raymondymmak-ostfront.vercel.app`**). Attach the printed step summary and relevant screenshots from `demo-check-output/` when marking work done. Update **`FEATURES.md`** whenever you add or change a feature (selectors, routes, proof). Install the browser once with `npx playwright install chromium`.
+**You must pass your Vercel preview URL** — do not rely on the production default:
 
-**Protected previews:** If deployment protection blocks Playwright, set `VERCEL_AUTOMATION_BYPASS_SECRET` in the environment (never commit it or paste it into logs). The script sends `x-vercel-protection-bypass` and `x-vercel-set-bypass-cookie: true` on every request. Alternatively, set `DEMO_URL` to a share link that includes `_vercel_share=…`; the script opens that URL once to set the cookie, then continues on the same origin at the app path without re-appending the query (avoids redirect loops).
+`DEMO_URL=https://<your-preview>.vercel.app npm run demo-check`
 
+(or `npm run demo-check -- --url …`). Attach the printed step summary and screenshots from `demo-check-output/` when marking work done. Update **`FEATURES.md`** when you change player-visible behavior. Install Chromium once: `npx playwright install chromium`.
+
+If neither `DEMO_URL` nor `--url` is set, the script **warns** and tests production `https://raymondymmak-ostfront.vercel.app` (for local smoke only).
+
+**Protected previews:** Set `VERCEL_AUTOMATION_BYPASS_SECRET` in the environment (never commit it; logs redact secrets). The script sends the Vercel automation bypass headers on every request. Or use a share link in `DEMO_URL` with `_vercel_share=…`; the script visits it once, then continues on the same origin without keeping the query (avoids redirect loops). Share tokens and bypass values are **redacted** in stdout, `run.log`, `summary.json`, and `issues.log`.
+
+**Flags:** `--continue` runs all steps after a failure; `--allow-fallback` allows **Staff simulation** instead of **Game master** in chronicle checks; `--force-fail` / `DEMO_FORCE_FAIL=1` fails one step deliberately to verify non-zero exit.
