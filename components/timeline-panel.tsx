@@ -13,7 +13,7 @@ type TimelinePanelProps = {
   log: TurnRecord[]
   active: number
   onActive: (index: number) => void
-  briefing?: string
+  briefing?: string[]
   phase?: FinalePhase
 }
 
@@ -68,7 +68,21 @@ export function TimelinePanel({
         >
           <div className="p-4">
             <p className="font-display text-lg">2 May 1915, Gorlice–Tarnów</p>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{briefing}</p>
+            {briefing.map((paragraph, index) =>
+              index === 0 ? (
+                <p
+                  key="briefing-task"
+                  data-testid="briefing-task"
+                  className="mt-2 max-w-3xl text-sm leading-6 font-medium text-foreground"
+                >
+                  {paragraph}
+                </p>
+              ) : (
+                <p key={paragraph.slice(0, 24)} className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+                  {paragraph}
+                </p>
+              ),
+            )}
           </div>
         </ScrollArea>
       ) : (
