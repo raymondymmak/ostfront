@@ -491,9 +491,13 @@ export function GameApp() {
             className="min-h-0 flex-1 gap-0"
           >
             <TabsList className="mx-3 mt-3 w-[calc(100%-1.5rem)]">
-              <TabsTrigger value="orders">Orders</TabsTrigger>
-              <TabsTrigger value="front">Province</TabsTrigger>
-              <TabsTrigger value="chronicle" className="lg:hidden">
+              <TabsTrigger value="orders" data-testid="tab-orders">
+                Orders
+              </TabsTrigger>
+              <TabsTrigger value="front" data-testid="tab-province">
+                Province
+              </TabsTrigger>
+              <TabsTrigger value="chronicle" className="lg:hidden" data-testid="tab-chronicle">
                 Chronicle
               </TabsTrigger>
             </TabsList>
@@ -528,7 +532,7 @@ export function GameApp() {
                 queue={queue}
               />
             </TabsContent>
-            <TabsContent value="chronicle" className="min-h-0 flex-1 lg:hidden">
+            <TabsContent value="chronicle" className="min-h-0 flex-1 lg:hidden" data-testid="mobile-chronicle-panel">
             <TimelinePanel
               log={game.log}
               active={game.log.length ? activeLog : 0}

@@ -60,6 +60,7 @@ export function OrderPanel({
             size="sm"
             variant={orderMode ? "default" : "outline"}
             aria-pressed={orderMode}
+            data-testid="draw-arrows"
             disabled={closed}
             onClick={() => {
               if (closed) return
@@ -117,7 +118,7 @@ export function OrderPanel({
         {queue.length === 0 && (
           <p className="text-sm text-muted-foreground">No arrows yet. Unordered formations hold.</p>
         )}
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-2" data-testid="queued-orders">
           {queue.map((order) => {
             const from = findProvince(state, order.from)
             const to = order.to ? findProvince(state, order.to) : undefined
