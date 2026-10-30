@@ -38,11 +38,11 @@ const HOME_WHILE_BREACH: Record<Difficulty, number> = {
   hard: 2.15,
 }
 
-const DIPLOMACY = [
+export const DIPLOMACY = [
   "Dimitriev asked to fall back to the San. Ivanov refused. The 3rd Army will stand at Lemberg.",
   "Ivanov asks for shells. The yards at Warsaw and Rovno answer with men before guns.",
   "The Grand Duke will not uncover Warsaw to feed the breakthrough. Garrisons stay on the fortresses.",
-  "Falkenhayn has sent Mackensen and will send no more from the west. This fortnight is fought with the rails already in Galicia.",
+  "Our agents put Mackensen's army in Galicia, brought from the west. Stavka doubts the Germans can spare another.",
   "Bucharest stays neutral. Brusilov's 8th Army keeps the Dniester without a new front.",
   "Alekseev would rather lose a field than a corps. Empty ground is a gift he means to take back.",
 ]
@@ -72,7 +72,7 @@ export function stavkaTurn(state: GameState, orders: PlayerOrder[] = []): GMTurn
   if (recruit) proposals.push(recruit)
 
   return {
-    narration: narrate(state, proposals),
+    narration: narrateStavka(state, proposals),
     proposals,
     events: reactiveEvents(state),
     diplomacy: [DIPLOMACY[state.turn % DIPLOMACY.length]],
@@ -299,37 +299,54 @@ function planRecruit(state: GameState, attacking: Set<string>): Proposal | null 
   return { type: "recruit", faction: "russia", province: yard.id, kind }
 }
 
-function narrate(state: GameState, proposals: Proposal[]): string {
+const PRONG_WORDS: Record<number, string> = { 3: "three", 4: "four" }
+
+/** Offline Chronicle. Exported so tests can assert the attack sentence without running the planner. */
+export function narrateStavka(state: GameState, proposals: Proposal[]): string {
   const opening = `On ${state.date} Stavka locks its orders from the map as the fortnight opens. The Central Powers' arrows are not on that map.`
-  const attacks = proposals.filter((proposal) => proposal.type === "attack")
   const prongsByTarget = new Map<string, number>()
-  for (const proposal of attacks) {
+  for (const proposal of proposals) {
     if (proposal.type !== "attack") continue
     prongsByTarget.set(proposal.target, (prongsByTarget.get(proposal.target) ?? 0) + 1)
   }
-  const names = [...prongsByTarget.entries()]
+  const targets = [...prongsByTarget.entries()]
     .map(([id, count]) => {
       const name = findProvince(state, id)?.name
-      if (!name) return undefined
-      if (count === 2) return `a two-pronged attack at ${name}`
-      if (count > 2) return `a concentric attack at ${name}`
-      return name
+      return name ? { name, count } : undefined
     })
-    .filter((name): name is string => !!name)
+    .filter((target): target is { name: string; count: number } => !!target)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+
+  const clauses: string[] = []
+  const singles: string[] = []
+  for (const target of targets) {
+    if (target.count >= 3) {
+      const sides = target.count >= 5 ? "all" : (PRONG_WORDS[target.count] ?? "all")
+      clauses.push(`closes on ${target.name} from ${sides} sides`)
+    } else if (target.count === 2) {
+      clauses.push(`attacks ${target.name} from two sides`)
+    } else {
+      singles.push(target.name)
+    }
+  }
+  if (singles.length) clauses.push(`strikes at ${list(singles)}`)
+
   const recruit = proposals.find((proposal) => proposal.type === "recruit")
   const raising =
     recruit && recruit.type === "recruit"
       ? ` The yards at ${findProvince(state, recruit.province)?.name ?? "the depot"} start another formation.`
       : ""
-  const second = !names.length
+  const attackSentence =
+    clauses.length === 0
+      ? ""
+      : clauses.length === 1
+        ? `Stavka ${clauses[0]}.`
+        : clauses.length === 2
+          ? `Stavka ${clauses[0]} and ${clauses[1]}.`
+          : `Stavka ${clauses.slice(0, -1).join(", ")}, and ${clauses[clauses.length - 1]}.`
+  const second = !clauses.length
     ? `Stavka declines a general offensive and shifts reserves toward the threatened fortresses.${raising}`
-    : `${
-        names.length === 1 && names[0].startsWith("a ")
-          ? `Stavka commits ${names[0]}`
-          : names.length === 1
-            ? `Stavka commits an attack at ${names[0]}`
-            : `Stavka commits attacks at ${list(names)}`
-      }. Garrisons stay behind, and the dice still belong to the engine.${raising}`
+    : `${attackSentence} Garrisons stay behind, and the dice still belong to the engine.${raising}`
   return `${opening}\n\n${second}`
 }
 
