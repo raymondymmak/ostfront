@@ -186,6 +186,7 @@ describe("advisor grounding", () => {
     ])
     expect(payload.reply).toMatch(/one battle/i)
     expect(payload.reply).toContain(String(flankMultiplier(4)))
+    expect(payload.reply).toContain(preview!.ratio.toFixed(2))
     expect(payload.reply).not.toMatch(/does not show combined|each column separately|cannot promise|dispersion/i)
     expect(payload.reply).not.toMatch(/Stavka|will attack/i)
     const card = payload.suggestions.find(
@@ -539,35 +540,6 @@ describe("advisor grounding", () => {
     expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
   })
 
-  it("resolves a card token to the engine odds", async () => {
-    process.env.LLM_API_KEY = "test-key"
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json(
-          llmPayload(
-            JSON.stringify({
-              reply: "Kielce stands at {odds:card1}.",
-              suggestions: [{ type: "attack", from: "Kraków", target: "Kielce", unitIds: ["g-kra-11"] }],
-            }),
-          ),
-        ),
-      ),
-    )
-    const state = createInitialState()
-    const response = await postAdvisor({
-      state,
-      messages: [{ role: "user", content: "What should I do this fortnight?" }],
-      queuedOrders: [],
-    })
-    const payload = (await response.json()) as AdvisorResponse
-    const card = payload.suggestions.find((item) => item.order.type === "attack" && item.order.target === "kielce")
-    const figure = card?.odds?.match(/\d+\.\d+\s*:\s*1/)?.[0].replace(/\s*:\s*/, " : ")
-    expect(figure).toBeTruthy()
-    expect(payload.reply).toBe(`Kielce stands at ${figure}.`)
-    expect(payload.reply).not.toMatch(/[{}\uFF5B\uFF5D]|odds:/)
-  })
-
   it("shows an exact queued order and disables accept", async () => {
     process.env.LLM_API_KEY = "test-key"
     vi.stubGlobal(
@@ -657,28 +629,21 @@ describe("advisor grounding", () => {
 })
 
 describe("advisor placeholder tokens", () => {
-  const figure = "6.51 : 1"
-  const cards = [
-    {
-      odds: "About 6.51 : 1 before the dice.",
-      order: { type: "attack" as const, from: "krakow", target: "kielce", unitIds: ["g-kra-11"] },
-    },
-  ]
   const forms: { text: string; keep: string }[] = [
-    { text: "Kielce stands at {odds:card1}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {card1}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {kielce_odds}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {odds:kielce}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {{odds:card1}}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {odds:{odds:card1}}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at ｛odds:card1｝.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at ｛｛odds:card1｝｝.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {odds:card1.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at odds:card1}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at { odds:card1 }.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {ODDS:card1}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Kielce stands at {odds:CARD1}.", keep: `Kielce stands at ${figure}.` },
-    { text: "Use {card1} and {kielce_odds}.", keep: `Use ${figure} and ${figure}.` },
+    { text: "Kielce stands at {odds:card1}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {card1}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {kielce_odds}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {odds:kielce}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {{odds:card1}}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {odds:{odds:card1}}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at ｛odds:card1｝.", keep: "Kielce stands at." },
+    { text: "Kielce stands at ｛｛odds:card1｝｝.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {odds:card1.", keep: "Kielce stands at." },
+    { text: "Kielce stands at odds:card1}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at { odds:card1 }.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {ODDS:card1}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {odds:CARD1}.", keep: "Kielce stands at." },
+    { text: "Use {card1} and {kielce_odds}.", keep: "Use and." },
     { text: "{{odds:x}}", keep: "" },
     { text: "{odds}", keep: "" },
     { text: "{", keep: "" },
@@ -690,22 +655,73 @@ describe("advisor placeholder tokens", () => {
     { text: "{card99}", keep: "" },
     { text: "{not_a_place_odds}", keep: "" },
     { text: "odds:card99}", keep: "" },
-    { text: "{odds:card1}} extra", keep: `${figure} extra` },
-    { text: "Hold { the shoulder", keep: "Hold" },
-    { text: "See {odds:card1} now.", keep: `See ${figure} now.` },
+    { text: "{odds:card1}} extra", keep: "extra" },
+    { text: "Hold { the shoulder", keep: "Hold the shoulder" },
+    { text: "See {odds:card1} now.", keep: "See now." },
     { text: "Mix ｛odds:x｝ and } stray {", keep: "Mix and stray" },
+    { text: "{odds: card1}", keep: "" },
+    { text: "{ odds : card1 }", keep: "" },
+    { text: "{ odds:card1}", keep: "" },
+    { text: "{odds :card1}", keep: "" },
+    { text: "Kielce stands at {odds: card1}.", keep: "Kielce stands at." },
+    { text: "Before {odds: card1} after.", keep: "Before after." },
+    { text: "Before { odds : card1 } after.", keep: "Before after." },
+    { text: "Hold { the shoulder and march.", keep: "Hold the shoulder and march." },
+    { text: "card1 stays.", keep: "card1 stays." },
+    { text: "The word card1 is not a token.", keep: "The word card1 is not a token." },
+    { text: "kielce_odds stays without braces.", keep: "kielce_odds stays without braces." },
+    { text: "March on. {odds:card1} The depot holds.", keep: "March on. The depot holds." },
+    { text: "{odds:card1} Kielce is the shoulder.", keep: "Kielce is the shoulder." },
+    { text: "Unclosed {odds:card1 and the corps stays.", keep: "Unclosed and the corps stays." },
+    { text: "Unclosed {card1 and the corps stays.", keep: "Unclosed and the corps stays." },
+    { text: "Line with { only the brace.", keep: "Line with only the brace." },
+    { text: "End } only.", keep: "End only." },
+    { text: "Left ｛odds: card1｝ right.", keep: "Left right." },
+    { text: "Doubled {{odds: card1}} tail.", keep: "Doubled tail." },
+    { text: "Nested {odds:{card1}} tail.", keep: "Nested tail." },
+    { text: "Nested {odds:{ odds : card1 }} tail.", keep: "Nested tail." },
+    { text: "Stray } in the middle of the line stays words.", keep: "Stray in the middle of the line stays words." },
+    { text: "{placeholder} and the map.", keep: "and the map." },
+    { text: "See {PLACEHOLDER} here.", keep: "See here." },
+    { text: "{ODDS} alone next word.", keep: "alone next word." },
+    { text: "odds:card1 without a brace goes.", keep: "without a brace goes." },
+    { text: "The odds: kielce hold.", keep: "The hold." },
+    { text: "First line.\nSecond {odds:card1} line stays.", keep: "First line.\nSecond line stays." },
+    { text: "Start {odds:card1\nNext line stays.", keep: "Start\nNext line stays." },
+    { text: "Hold {\nThe shoulder stays.", keep: "Hold\nThe shoulder stays." },
+    { text: "Mixed {odds:card1｝ stays.", keep: "Mixed stays." },
+    { text: "Mixed ｛odds:card1} stays.", keep: "Mixed stays." },
+    { text: "A {odds:card1}{card1} B", keep: "A B" },
+    { text: "Also {odds:card2} card2 remains.", keep: "Also card2 remains." },
+    { text: "Read {kielce_odds} on the card.", keep: "Read on the card." },
+    { text: "{}", keep: "" },
+    { text: "{ }", keep: "" },
+    { text: "{odds:}", keep: "" },
+    { text: "{odds: }", keep: "" },
+    { text: "odds:", keep: "" },
+    { text: "Ratio 6.51 : 1 stays.", keep: "Ratio 6.51 : 1 stays." },
+    { text: "About 6.51 : 1 before the dice.", keep: "About 6.51 : 1 before the dice." },
+    { text: "Gen. Mackensen holds {odds:card1} Kraków.", keep: "Gen. Mackensen holds Kraków." },
+    { text: "{odds:card1}.", keep: "." },
+    { text: "Tail survives {odds:x}!", keep: "Tail survives!" },
+    { text: "A {odds:x}, B.", keep: "A, B." },
+    { text: "Word} stays.", keep: "Word stays." },
+    { text: "{not_a_place_odds} and more.", keep: "and more." },
+    { text: "Keep 2 to 3 corps {odds:card1} here.", keep: "Keep 2 to 3 corps here." },
+    { text: "05:00 is a clock {odds}.", keep: "05:00 is a clock." },
+    { text: "Province count is 18 to 21 {card1} along.", keep: "Province count is 18 to 21 along." },
   ]
 
-  it("resolves real card tokens and removes every malformed form", () => {
-    expect(forms).toHaveLength(29)
+  it("strips only the token and keeps the text around it", () => {
+    expect(forms).toHaveLength(80)
     for (const item of forms) {
-      expect(finishAdvisorReply(item.text, cards), item.text).toBe(item.keep)
+      expect(finishAdvisorReply(item.text), item.text).toBe(item.keep)
     }
   })
 
   it("never leaves a brace or an odds: fragment", () => {
     for (const item of forms) {
-      expect(finishAdvisorReply(item.text, cards), item.text).not.toMatch(/[{}\uFF5B\uFF5D]|odds:/)
+      expect(finishAdvisorReply(item.text), item.text).not.toMatch(/[{}\uFF5B\uFF5D]|odds:/)
     }
   })
 })

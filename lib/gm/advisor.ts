@@ -237,7 +237,7 @@ export async function advise(input: {
   if (!llmConfigured() && !fixtureEnabled()) {
     const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued).filter((card) => card.valid)
     return {
-      reply: finishAdvisorReply(`${OFFLINE_LINE}\n\n${brief.reply}`, suggestions),
+      reply: finishAdvisorReply(`${OFFLINE_LINE}\n\n${brief.reply}`),
       source: "rules",
       unavailable: true,
       suggestions,
@@ -309,7 +309,7 @@ export async function advise(input: {
         ? "The wire returned nothing I can file. Reasoning spent the dispatch before a reply was written."
         : "The wire returned nothing I can file."
     return {
-      reply: finishAdvisorReply(`${wire}\n\n${brief.reply}`, suggestions),
+      reply: finishAdvisorReply(`${wire}\n\n${brief.reply}`),
       source: "rules",
       unavailable: false,
       suggestions,
@@ -322,7 +322,7 @@ export async function advise(input: {
   const raw = parsed.suggestions.slice(0, 12)
   if (ordersClosed) {
     return {
-      reply: finishAdvisorReply(reply || brief.reply, []),
+      reply: finishAdvisorReply(reply || brief.reply),
       source: "llm",
       unavailable: false,
       suggestions: [],
@@ -344,7 +344,7 @@ export async function advise(input: {
     )
   }
   return {
-    reply: finishAdvisorReply(reply || brief.reply, cards),
+    reply: finishAdvisorReply(reply || brief.reply),
     source: "llm",
     unavailable: false,
     suggestions: cards,
@@ -1518,117 +1518,38 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
   return order.type !== "text"
 }
 
-const BRACE_OPEN = /[{\uFF5B]/
-const BRACE_CLOSE = /[}\uFF5D]/
+const TOKEN_INTERIOR = /^(?:odds\s*:\s*)?[A-Za-z_][A-Za-z0-9_]*$|^odds\s*:?\s*$/i
 
-/** Ratio text the order card shows, such as `6.51 : 1`. */
-export function cardOddsFigure(odds: string | null | undefined): string | null {
-  if (!odds) return null
-  const match = odds.match(/\d+\.\d+\s*:\s*1/)
-  if (!match) return null
-  return match[0].replace(/\s*:\s*/, " : ")
-}
-
-function oddsFigures(cards: Pick<AdvisorCard, "odds" | "order">[]): Map<string, string> {
-  const figures = new Map<string, string>()
-  const put = (key: string, figure: string) => {
-    const normalized = key.toLowerCase()
-    if (!figures.has(normalized)) figures.set(normalized, figure)
-  }
-  cards.forEach((card, index) => {
-    const figure = cardOddsFigure(card.odds)
-    if (!figure) return
-    const number = String(index + 1)
-    put(`card${number}`, figure)
-    put(`odds:card${number}`, figure)
-    if (card.order.type === "attack") {
-      put(`${card.order.target}_odds`, figure)
-      put(`odds:${card.order.target}`, figure)
-    }
-  })
-  return figures
-}
-
-function expandOddsToken(text: string, keyStart: number, keyEnd: number, min: number): [number, number] {
-  let start = keyStart
-  let end = keyEnd
-  for (let guard = 0; guard < text.length + 2; guard++) {
-    let left = start
-    while (left > min && /\s/.test(text[left - 1])) left--
-    let right = end
-    while (right < text.length && /\s/.test(text[right])) right++
-    const prev = left > min ? text[left - 1] : ""
-    const next = text[right] ?? ""
-    if (BRACE_OPEN.test(prev) && BRACE_CLOSE.test(next)) {
-      start = left - 1
-      end = right + 1
-      continue
-    }
-    if (BRACE_OPEN.test(prev)) {
-      start = left - 1
-      continue
-    }
-    if (BRACE_CLOSE.test(next)) {
-      end = right + 1
-      continue
-    }
-    const oddsPrefix = text.slice(min, start).match(/odds:$/i)
-    if (oddsPrefix) {
-      const at = start - oddsPrefix[0].length
-      const before = at > min ? text[at - 1] : ""
-      if (before === "" || BRACE_OPEN.test(before) || /\s/.test(before)) {
-        start = at
-        continue
-      }
-    }
-    break
-  }
-  return [start, end]
-}
-
-function resolveOddsTokens(text: string, figures: Map<string, string>): string {
-  const keys = [...figures.keys()].sort((a, b) => b.length - a.length)
-  if (!keys.length) return text
-  const pattern = new RegExp(keys.map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi")
-  let result = ""
-  let cursor = 0
-  for (const match of text.matchAll(pattern)) {
-    const index = match.index ?? 0
-    if (index < cursor) continue
-    const figure = figures.get(match[0].toLowerCase())
-    if (!figure) continue
-    const [start, end] = expandOddsToken(text, index, index + match[0].length, cursor)
-    result += text.slice(cursor, start)
-    result += figure
-    cursor = end
-  }
-  return result + text.slice(cursor)
-}
-
-function sanitizeTokenText(text: string): string {
+function stripBalancedTokens(text: string): string {
+  const group = /\{([^{}]*)\}/g
   let current = text
-  const balanced = /[{\uFF5B][^{}\uFF5B\uFF5D]*[}\uFF5D]/g
   let previous = ""
   while (current !== previous) {
     previous = current
-    current = current.replace(balanced, "")
+    current = current.replace(group, (_match, inner: string) => (TOKEN_INTERIOR.test(inner.trim()) ? "" : inner))
   }
   return current
-    .replace(/[{\uFF5B][^}\uFF5D]*/g, "")
-    .replace(/[}\uFF5D]+/g, "")
-    .replace(/odds:[A-Za-z0-9_]*/gi, "")
-    .replace(/odds:/gi, "")
+}
+
+function tidyReply(text: string): string {
+  return text
     .replace(/[ \t]{2,}/g, " ")
-    .replace(/ +([,.;!?])/g, "$1")
+    .replace(/[ \t]+([,.;!?])/g, "$1")
+    .replace(/[ \t]+\n/g, "\n")
     .trim()
 }
 
-/**
- * Replace a token that names a real card or target with that card's odds,
- * then remove leftover brace tokens and `odds:` fragments.
- */
-export function finishAdvisorReply(reply: string, cards: Pick<AdvisorCard, "odds" | "order">[]): string {
-  return sanitizeTokenText(resolveOddsTokens(reply, oddsFigures(cards)))
+/** Strip placeholder tokens. The rest of the reply, including bare words, stays. */
+export function finishAdvisorReply(reply: string): string {
+  const normalized = reply.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
+  const balanced = stripBalancedTokens(normalized)
+  const opened = balanced
+    .replace(/\{[ \t]*odds[ \t]*:[ \t]*[A-Za-z0-9_]*/gi, "")
+    .replace(/\{[A-Za-z_][A-Za-z0-9_]*/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/odds:[ \t]*[A-Za-z0-9_]*/gi, "")
+    .replace(/odds:[ \t]*/gi, "")
+  return tidyReply(opened)
 }
 
 function snap(unit: Unit): UnitSnap {
