@@ -213,13 +213,14 @@ export function renderSituation(situation: Situation): string {
 
 export function scrubAdvisorReply(reply: string, state: GameState): string {
   const knownUnits = new Set(state.provinces.flatMap((province) => province.units.map((unit) => unit.id)))
-  const sentences = splitStaffSentences(reply)
+  const sentences = reply
+    .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean)
     .filter((sentence) => !leaksRussianPlan(sentence))
     .filter((sentence) => !deniesCombined(sentence))
     .filter((sentence) => !inventsUnit(sentence, knownUnits))
-  return presentReply(sentences.join(" "))
+  return stripPlaceholderTokens(sentences.join(" "))
 }
 
 export async function advise(input: {
@@ -236,7 +237,7 @@ export async function advise(input: {
   if (!llmConfigured() && !fixtureEnabled()) {
     const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued)
     return {
-      reply: presentReply(`${OFFLINE_LINE}\n\n${brief.reply}`),
+      reply: stripPlaceholderTokens(`${OFFLINE_LINE}\n\n${brief.reply}`),
       source: "rules",
       unavailable: true,
       suggestions: suggestions.filter((card) => card.valid),
@@ -308,7 +309,7 @@ export async function advise(input: {
         ? "The wire returned nothing I can file. Reasoning spent the dispatch before a reply was written."
         : "The wire returned nothing I can file."
     return {
-      reply: presentReply(`${wire}\n\n${brief.reply}`),
+      reply: stripPlaceholderTokens(`${wire}\n\n${brief.reply}`),
       source: "rules",
       unavailable: false,
       suggestions: suggestions.filter((card) => card.valid),
@@ -321,7 +322,7 @@ export async function advise(input: {
   const raw = parsed.suggestions.slice(0, 12)
   if (ordersClosed) {
     return {
-      reply: reply || presentReply(brief.reply),
+      reply: reply || stripPlaceholderTokens(brief.reply),
       source: "llm",
       unavailable: false,
       suggestions: [],
@@ -343,7 +344,7 @@ export async function advise(input: {
     )
   }
   return {
-    reply: reply || presentReply(brief.reply),
+    reply: reply || stripPlaceholderTokens(brief.reply),
     source: "llm",
     unavailable: false,
     suggestions: cards,
@@ -883,7 +884,7 @@ function classifySuggestions(
         drop(1, `not on our map ${rawHint(item)}`)
         continue
       }
-      if (!card.valid && !flaggedFortify(card)) {
+      if (!card.valid) {
         drop(1, `illegal ${card.note ?? rawHint(item)}`)
         continue
       }
@@ -1028,11 +1029,6 @@ function assessOne(
     conflict: null,
     depotWarning: valid ? warning : null,
   }
-}
-
-/** A level-3 fortify is shown, with the engine's reason. Every other illegal order is dropped. */
-function flaggedFortify(card: AdvisorCard): boolean {
-  return card.order.type === "fortify" && /level 3/i.test(card.note ?? "")
 }
 
 function depotWarningFor(map: GameState, orders: AdvisorOrder[], queued: PlayerOrder[]): string | null {
@@ -1522,142 +1518,14 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
   return order.type !== "text"
 }
 
-const SPELLED_NUMBER =
-  "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred"
-const NUMBER_TOKEN = `(?:\\d+(?:\\.\\d+)?|${SPELLED_NUMBER})`
-const PLACEHOLDER = /\{[^{}]+\}/
-const ODDS_WORD =
-  /\b(?:odds|ratio|probability|likelihood|chances?|percent|per\s+cent)\b|%|\btimes stronger\b|\bx\s+edge\b/i
-const COLON_TO_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s*(?::+|∶|꞉|：)\\s*(?:1\\b|one\\b)`, "i")
-const TO_ONE = new RegExp(
-  `\\b${NUMBER_TOKEN}(?:\\s*[-–]\\s*|\\s+)to(?:\\s*[-–]\\s*|\\s+)(?:1\\b|one\\b)`,
-  "i",
-)
-const HYPHEN_TO_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s*-\\s*(?:1\\b|one\\b)`, "i")
-const VERSUS_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s+(?:versus|vs\\.?)\\s+(?:1\\b|one\\b)`, "i")
-const AGAINST_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s+against\\s+(?:1\\b|one\\b)`, "i")
-const IN_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s+in\\s+(?:1\\b|one\\b)`, "i")
-const DECIMAL_PAIR = /\d+\.\d+\s+(?:against|versus|vs\.?|to)\s+(?:\S+\s+){0,6}?\d+\.\d+/i
-const X_EDGE = /\b\d+(?:\.\d+)?\s*x\s+edge\b/i
-const RATIO_SIGNALS = [COLON_TO_ONE, TO_ONE, HYPHEN_TO_ONE, VERSUS_ONE, AGAINST_ONE, IN_ONE, DECIMAL_PAIR, X_EDGE]
-const ABBREVIATIONS = new Set([
-  "gen",
-  "approx",
-  "st",
-  "col",
-  "lt",
-  "capt",
-  "maj",
-  "dr",
-  "mr",
-  "mrs",
-  "ms",
-  "no",
-  "fig",
-  "sgt",
-  "cpl",
-  "pvt",
-  "jr",
-  "sr",
-  "etc",
-  "ie",
-  "eg",
-  "cf",
-  "al",
-  "vol",
-  "dept",
-  "corp",
-])
-
-/** Sentence ends on . ! ? , but not on decimals or staff abbreviations such as Gen. and approx. */
-export function splitStaffSentences(text: string): string[] {
-  const sentences: string[] = []
-  let start = 0
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]
-    if (ch !== "." && ch !== "!" && ch !== "?") continue
-    if (ch === "." && isDecimalPoint(text, i)) continue
-    if (ch === "." && isAbbreviation(text, i)) continue
-    const next = text[i + 1]
-    if (next && !/\s/.test(next)) continue
-    const sentence = text.slice(start, i + 1).trim()
-    if (sentence) sentences.push(sentence)
-    let j = i + 1
-    while (j < text.length && /\s/.test(text[j])) j++
-    start = j
-    i = j - 1
-  }
-  const tail = text.slice(start).trim()
-  if (tail) sentences.push(tail)
-  return sentences
-}
-
-function isDecimalPoint(text: string, index: number): boolean {
-  const prev = text[index - 1]
-  const next = text[index + 1]
-  return !!prev && !!next && /\d/.test(prev) && /\d/.test(next)
-}
-
-function isAbbreviation(text: string, index: number): boolean {
-  let start = index - 1
-  while (start >= 0 && /[A-Za-z]/.test(text[start])) start--
-  const word = text.slice(start + 1, index)
-  if (!word) return false
-  if (ABBREVIATIONS.has(word.toLowerCase())) return true
-  return word.length === 1 && /[A-Z]/.test(word)
-}
-
-export function sentenceMentionsOdds(sentence: string): boolean {
-  if (PLACEHOLDER.test(sentence) || ODDS_WORD.test(sentence)) return true
-  return RATIO_SIGNALS.some((pattern) => pattern.test(sentence))
-}
-
-export function dropOddsSentences(text: string): string {
-  const chunks = text.split(/(\n+)/)
-  return chunks
-    .map((chunk) => {
-      if (/^\n+$/.test(chunk)) return chunk
-      return splitStaffSentences(chunk)
-        .map((sentence) => keptSentence(sentence))
-        .filter((sentence): sentence is string => Boolean(sentence))
-        .join(" ")
-    })
-    .join("")
+/** Remove literal {odds:...} and {placeholder} tokens. The rest of the reply stays. */
+function stripPlaceholderTokens(reply: string): string {
+  return reply
+    .replace(/\{\s*odds\s*:[^{}]*\}/gi, "")
+    .replace(/\{\s*placeholder\s*\}/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ +([,.;])/g, "$1")
     .trim()
-}
-
-/**
- * A sentence that is only a ratio is dropped. A factual clause with a trailing
- * ratio, and no odds word, keeps the clause. A dangling fragment is dropped
- * with the ratio.
- */
-function keptSentence(sentence: string): string | null {
-  const trimmed = sentence.trim()
-  if (!trimmed || !sentenceMentionsOdds(trimmed)) return trimmed || null
-  if (PLACEHOLDER.test(trimmed) || ODDS_WORD.test(trimmed)) return null
-  return salvageFact(trimmed)
-}
-
-function salvageFact(sentence: string): string | null {
-  let cut = sentence.length
-  for (const pattern of RATIO_SIGNALS) {
-    const match = pattern.exec(sentence)
-    if (match && match.index < cut) cut = match.index
-  }
-  if (cut === sentence.length) return null
-  let head = sentence.slice(0, cut).trim()
-  head = head.replace(/[\s,]+(?:at|about|approximately|approx\.?|roughly|nearly|almost|of|some)$/i, "").trim()
-  head = head.replace(/[.:;,]+$/, "").trim()
-  const words = head.split(/\s+/).filter(Boolean)
-  if (words.length < 3) return null
-  if (/^(?:is|are|was|were|at|about|of|a|an|the)$/i.test(words[words.length - 1] ?? "")) return null
-  return `${head}.`
-}
-
-function presentReply(reply: string): string {
-  return dropOddsSentences(reply)
 }
 
 function snap(unit: Unit): UnitSnap {

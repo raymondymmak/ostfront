@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
 import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engine/turn"
-import { advise, buildSituation, dropOddsSentences, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
+import { advise, buildSituation, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
 import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
 import { readMessageContent } from "@/lib/gm/llm"
 import { resetTurnGuardStateForTests } from "@/lib/api/turn-guard"
@@ -310,10 +310,23 @@ describe("advisor grounding", () => {
       }),
     )
 
+    const logged: string[] = []
+    const spy = vi.spyOn(console, "log").mockImplementation((message?: unknown) => {
+      logged.push(String(message))
+    })
     const response = await postAdvisor({
       state,
       messages: [{ role: "user", content: "Where is the Russian line weakest?" }],
       queuedOrders: [],
+    })
+    spy.mockRestore()
+    const dropReasons = logged.flatMap((line) => {
+      try {
+        const parsed = JSON.parse(line) as { tag?: string; reasons?: string[] }
+        return parsed.tag === "ostfront.advisor.dropped" ? (parsed.reasons ?? []) : []
+      } catch {
+        return []
+      }
     })
     expect(response.status).toBe(200)
     const payload = (await response.json()) as AdvisorResponse
@@ -339,10 +352,10 @@ describe("advisor grounding", () => {
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("no-such-corps"))).toBe(false)
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("g-kie-inf"))).toBe(false)
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("not-a-province"))).toBe(false)
-    const dig = payload.suggestions.find((card) => card.order.type === "fortify")
-    expect(dig?.valid).toBe(false)
-    expect(dig?.note).toMatch(/level 3/)
-    expect(payload.dropped).toBeGreaterThanOrEqual(3)
+    expect(payload.suggestions.some((card) => card.order.type === "fortify")).toBe(false)
+    expect(payload.suggestions.some((card) => card.queue === "new" && card.order.type === "fortify")).toBe(false)
+    expect(payload.dropped).toBeGreaterThanOrEqual(4)
+    expect(dropReasons.some((reason) => /already fortified to level 3/i.test(reason))).toBe(true)
     expect(state).toEqual(snapshot)
     await advise({
       state,
@@ -523,10 +536,20 @@ describe("advisor grounding", () => {
       "The map does not show combined odds. The engine previews each column separately. I cannot promise the dice or the engine will pool these attacks. Łódź is one battle at 3.53 : 1.",
       createInitialState(),
     )
-    expect(text).toContain("Łódź is one battle")
-    expect(text).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
+    expect(text).toContain("Łódź is one battle at 3.53 : 1")
     expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
-    expect(text).not.toBe("")
+  })
+
+  it("strips placeholder tokens and leaves the model's odds prose", () => {
+    const text = scrubAdvisorReply(
+      "Kielce is 8.34 : 1. Use {odds:card1} on the card. See {placeholder}.",
+      createInitialState(),
+    )
+    expect(text).toContain("Kielce is 8.34 : 1.")
+    expect(text).toContain("Use")
+    expect(text).toContain("on the card.")
+    expect(text).toContain("See")
+    expect(text).not.toMatch(/\{odds:[^{}]*\}|\{placeholder\}/i)
   })
 
   it("shows an exact queued order and disables accept", async () => {
@@ -978,101 +1001,6 @@ describe("advisor card refresh and ranking", () => {
         (card) => card.order.type === "attack" && card.order.unitIds.length === 1 && card.order.unitIds[0] === "g-kra-art",
       ),
     ).toBe(false)
-  })
-})
-
-describe("advisor odds sentences", () => {
-  const cases: { text: string; keep: string }[] = [
-    { text: "The shoulder is 2.55 : 1.", keep: "" },
-    { text: "The shoulder is 2.55:1.", keep: "" },
-    { text: "The shoulder is 2.55∶1.", keep: "" },
-    { text: "The shoulder is 2.55꞉1.", keep: "" },
-    { text: "The shoulder is 2.55：1.", keep: "" },
-    { text: "The shoulder is 8.34 :: 1.", keep: "" },
-    { text: "Kielce is 3 to 1.", keep: "" },
-    { text: "Kielce is 3-to-1.", keep: "" },
-    { text: "The figure is 8.34-1.", keep: "" },
-    { text: "It is three to one.", keep: "" },
-    { text: "It is three-to-one.", keep: "" },
-    { text: "It is twelve to one.", keep: "" },
-    { text: "It is twenty to one.", keep: "" },
-    { text: "It is 2 to one.", keep: "" },
-    { text: "The column is 8.34 versus 1.", keep: "" },
-    { text: "The column is 8.34 vs 1.", keep: "" },
-    { text: "The column is 8.34 against 1.", keep: "" },
-    { text: "8.34 against Lublin's 3.06.", keep: "" },
-    { text: "Sixty is written 60%.", keep: "" },
-    { text: "Forty is written 40 percent.", keep: "" },
-    { text: "That is 40 per cent of the corps.", keep: "" },
-    { text: "That happens sixty percent of the time.", keep: "" },
-    { text: "The line is even odds.", keep: "" },
-    { text: "Mackensen is odds-on at Kielce.", keep: "" },
-    { text: "The odds on Kielce are 2 : 1.", keep: "" },
-    { text: "The odds on Kielce are.", keep: "" },
-    { text: "Kielce is about 2.55 : 1.", keep: "" },
-    { text: "The figure is about 13.01 : 1.", keep: "" },
-    { text: "Use {odds:card1} here.", keep: "" },
-    { text: "Use {placeholder} here.", keep: "" },
-    { text: "The ratio is 4.", keep: "" },
-    { text: "The ratio is three.", keep: "" },
-    { text: "The ratio of the staff work is patience.", keep: "" },
-    { text: "A 1:1 fight is a grind.", keep: "" },
-    { text: "Quote 4 to 1 and stop.", keep: "" },
-    { text: "The probability is 0.89.", keep: "" },
-    { text: "The likelihood of success is 0.89.", keep: "" },
-    { text: "There are nine chances in ten.", keep: "" },
-    { text: "Mackensen has a 3x edge.", keep: "" },
-    { text: "The blow is three times stronger.", keep: "" },
-    { text: "Kielce, approx. 2.55 : 1.", keep: "" },
-    { text: "Łódź is one battle at 3.53 : 1.", keep: "Łódź is one battle." },
-    { text: "Send 2 to 3 corps to Kielce.", keep: "Send 2 to 3 corps to Kielce." },
-    { text: "We hold 6/9 victory points.", keep: "We hold 6/9 victory points." },
-    { text: "Fortnight 2/6 closes on 16 May 1915.", keep: "Fortnight 2/6 closes on 16 May 1915." },
-    { text: "On 15/16 May the columns step off.", keep: "On 15/16 May the columns step off." },
-    { text: "The column steps off at 05:00.", keep: "The column steps off at 05:00." },
-    { text: "Province count is 18 to 21 along the front.", keep: "Province count is 18 to 21 along the front." },
-    { text: "Łódź is one battle.", keep: "Łódź is one battle." },
-    { text: "It is five to two.", keep: "It is five to two." },
-    { text: "The fraction is 3/2.", keep: "The fraction is 3/2." },
-    { text: "The fraction is 3 / 2.", keep: "The fraction is 3 / 2." },
-    { text: "The fight is 3:2.", keep: "The fight is 3:2." },
-    { text: "The fight is 3∶2.", keep: "The fight is 3∶2." },
-    { text: "The fight is 3꞉2.", keep: "The fight is 3꞉2." },
-    { text: "The fight is 3：2.", keep: "The fight is 3：2." },
-    { text: "2 May 1915.", keep: "2 May 1915." },
-    { text: "The 11th Army is at Kraków.", keep: "The 11th Army is at Kraków." },
-    { text: "Fortnight 3 of 6.", keep: "Fortnight 3 of 6." },
-    { text: "The 11th Army has strength 64.", keep: "The 11th Army has strength 64." },
-    { text: "0 of 9 victory points are in hand.", keep: "0 of 9 victory points are in hand." },
-    { text: "Supply at Kraków is 80.", keep: "Supply at Kraków is 80." },
-    { text: "The fort at Kraków is level 2.", keep: "The fort at Kraków is level 2." },
-    { text: "Three corps hold the line.", keep: "Three corps hold the line." },
-    { text: "Turn 4 opens on the Vistula.", keep: "Turn 4 opens on the Vistula." },
-    { text: "11 July 1915.", keep: "11 July 1915." },
-    { text: "Manpower is 120 and industry is 40.", keep: "Manpower is 120 and industry is 40." },
-    { text: "Nine provinces are quiet.", keep: "Nine provinces are quiet." },
-    { text: "March from Kraków to Kielce.", keep: "March from Kraków to Kielce." },
-    { text: "Leave one garrison on the depot.", keep: "Leave one garrison on the depot." },
-    { text: "The 4th Army stays in Kraków.", keep: "The 4th Army stays in Kraków." },
-    { text: "Gen. Mackensen holds Kraków.", keep: "Gen. Mackensen holds Kraków." },
-    { text: "St. Petersburg is not on this map.", keep: "St. Petersburg is not on this map." },
-    { text: "Kielce, approx. the shoulder is thin.", keep: "Kielce, approx. the shoulder is thin." },
-  ]
-
-  it("drops whole sentences that mention odds and keeps ordinary numbers", () => {
-    expect(cases.length).toBeGreaterThanOrEqual(57)
-    for (const item of cases) {
-      expect(dropOddsSentences(item.text), item.text).toBe(item.keep)
-    }
-    const mixed = dropOddsSentences("Hold Kraków. The odds are 2 : 1. March the 11th Army on 2 May.")
-    expect(mixed).toBe("Hold Kraków. March the 11th Army on 2 May.")
-    expect(mixed).not.toMatch(/about 2-/)
-    expect(dropOddsSentences("Kielce is about 2.55 : 1. Hold the shoulder.")).toBe("Hold the shoulder.")
-    expect(dropOddsSentences("The odds on Kielce are. Hold the shoulder.")).toBe("Hold the shoulder.")
-    expect(dropOddsSentences("Gen. Mackensen holds Kraków. Kielce, approx. 2.55 : 1.")).toBe(
-      "Gen. Mackensen holds Kraków.",
-    )
-    expect(dropOddsSentences("Kielce, approx. 2.55 : 1.")).toBe("")
   })
 })
 
