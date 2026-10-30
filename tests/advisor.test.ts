@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
 import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engine/turn"
-import { advise, buildSituation, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
+import { advise, buildSituation, dropOddsSentences, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
+import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
 import { readMessageContent } from "@/lib/gm/llm"
 import { resetTurnGuardStateForTests } from "@/lib/api/turn-guard"
 import { applyAdvisorToQueue, combinedQueueLines } from "@/lib/orders"
@@ -338,9 +339,10 @@ describe("advisor grounding", () => {
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("no-such-corps"))).toBe(false)
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("g-kie-inf"))).toBe(false)
     expect(payload.suggestions.some((card) => JSON.stringify(card.order).includes("not-a-province"))).toBe(false)
-    expect(payload.suggestions.some((card) => card.order.type === "fortify")).toBe(false)
-    expect(payload.suggestions.every((card) => card.valid)).toBe(true)
-    expect(payload.dropped).toBeGreaterThanOrEqual(4)
+    const dig = payload.suggestions.find((card) => card.order.type === "fortify")
+    expect(dig?.valid).toBe(false)
+    expect(dig?.note).toMatch(/level 3/)
+    expect(payload.dropped).toBeGreaterThanOrEqual(3)
     expect(state).toEqual(snapshot)
     await advise({
       state,
@@ -456,6 +458,35 @@ describe("advisor grounding", () => {
           llmPayload(
             JSON.stringify({
               reply: "The 11th Army is already committed.",
+              suggestions: [{ type: "move", unitId: "g-kra-11", to: "katowice" }],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "And the 11th Army?" }],
+      queuedOrders: [{ type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] }],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    const card = payload.suggestions.find((item) => item.order.type === "move")
+    expect(card?.valid).toBe(true)
+    expect(card?.queue).toBe("conflict")
+    expect(card?.conflict).toMatch(/Attack Kielce from Kraków/)
+    expect(card?.order).toMatchObject({ type: "move", unitId: "g-kra-11", to: "katowice" })
+    expect(payload.dropped).toBe(0)
+  })
+
+  it("flags a formation named in words that is already in the queue", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "The 11th Army is already committed.",
               suggestions: [{ type: "move", unitId: "German 11th Army", to: "Katowice" }],
             }),
           ),
@@ -492,9 +523,10 @@ describe("advisor grounding", () => {
       "The map does not show combined odds. The engine previews each column separately. I cannot promise the dice or the engine will pool these attacks. Łódź is one battle at 3.53 : 1.",
       createInitialState(),
     )
-    expect(text).toContain("Łódź is one battle")
+    expect(text).not.toContain("Łódź is one battle")
     expect(text).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
     expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
+    expect(text).toBe("")
   })
 
   it("shows an exact queued order and disables accept", async () => {
@@ -633,8 +665,248 @@ describe("advisor queue override", () => {
       "accept",
     )
     expect(filed.accepted).toBe(false)
+    expect(filed.reason).toMatch(/Already queued/)
     expect(filed.queue).toHaveLength(1)
     expect(filed.queue[0]?.id).toBe("a")
+  })
+
+  it("refuses a stale multi-prong accept that would drop a column", () => {
+    const state = createInitialState()
+    const queue = [{ id: "a", kind: "attack" as const, from: "krakow", to: "lwow", unitIds: ["g-kra-11"] }]
+    const filed = applyAdvisorToQueue(
+      state,
+      queue,
+      [
+        { type: "attack", from: "krakow", target: "lwow", unitIds: ["g-kra-11"] },
+        { type: "attack", from: "stanislawow", target: "lwow", unitIds: ["g-sta-cav"] },
+        { type: "attack", from: "bucovina", target: "lwow", unitIds: ["g-buc-inf"] },
+      ],
+      "accept",
+    )
+    expect(filed.accepted).toBe(false)
+    expect(filed.reason).toMatch(/Nothing was filed/)
+    expect(filed.reason).toMatch(/Override/)
+    expect(filed.queue).toHaveLength(1)
+    expect(filed.queue[0]?.unitIds).toEqual(["g-kra-11"])
+    expect(filed.queue.some((order) => order.from === "stanislawow" || order.from === "bucovina")).toBe(false)
+  })
+
+  it("shows a message when a stale single card is accepted", () => {
+    const state = createInitialState()
+    const queue = [{ id: "a", kind: "attack" as const, from: "krakow", to: "kielce", unitIds: ["g-kra-11"] }]
+    const filed = applyAdvisorToQueue(
+      state,
+      queue,
+      [{ type: "move", unitId: "g-kra-11", to: "katowice" }],
+      "accept",
+    )
+    expect(filed.accepted).toBe(false)
+    expect(filed.reason).toMatch(/Nothing was filed/)
+    expect(filed.reason).toMatch(/Override|already/i)
+    expect(filed.queue).toEqual(queue)
+  })
+
+  it("files every prong of a new concentric card", () => {
+    const state = createInitialState()
+    const filed = applyAdvisorToQueue(
+      state,
+      [],
+      [
+        { type: "attack", from: "krakow", target: "lwow", unitIds: ["g-kra-11"] },
+        { type: "attack", from: "stanislawow", target: "lwow", unitIds: ["g-sta-cav"] },
+        { type: "attack", from: "bucovina", target: "lwow", unitIds: ["g-buc-inf"] },
+      ],
+      "accept",
+    )
+    expect(filed.accepted).toBe(true)
+    expect(filed.queue.map((order) => order.from).sort()).toEqual(["bucovina", "krakow", "stanislawow"])
+  })
+
+  it("refuses an order the engine can no longer apply", () => {
+    const state = createInitialState()
+    const queue = [{ id: "a", kind: "move" as const, from: "poznan", to: "lodz", unitIds: ["g-pos-inf"] }]
+    const filed = applyAdvisorToQueue(
+      state,
+      queue,
+      [{ type: "move", unitId: "g-buc-inf", to: "kielce" }],
+      "accept",
+    )
+    expect(filed.accepted).toBe(false)
+    expect(filed.reason).toMatch(/Nothing was filed/)
+    expect(filed.queue).toEqual(queue)
+  })
+})
+
+describe("advisor card refresh and ranking", () => {
+  beforeEach(() => {
+    resetTurnGuardStateForTests()
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    delete process.env.LLM_API_KEY
+    delete process.env.TURN_API_TOKEN
+    delete process.env.TURN_ALLOWED_ORIGINS
+    delete process.env.TURN_MAX_BODY_BYTES
+    delete process.env.TURN_RATE_LIMIT_MAX
+    delete process.env.TURN_RATE_LIMIT_WINDOW_MS
+    process.env.LLM_MODEL = "z-ai/glm-5.3"
+    process.env.LLM_BASE_URL = "https://llm.example/v1"
+  })
+
+  it("marks a new card as a conflict after the queue claims its formation", () => {
+    const state = createInitialState()
+    const card: AdvisorCard = {
+      id: "card",
+      order: { type: "move", unitId: "g-kra-11", to: "katowice" },
+      companions: [],
+      label: "Move the 11th Army to Katowice",
+      valid: true,
+      note: null,
+      odds: null,
+      detail: null,
+      queue: "new",
+      conflict: null,
+    }
+    const refreshed = refreshAdvisorCards(state, [card], [
+      { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] },
+    ])
+    expect(refreshed[0]?.queue).toBe("conflict")
+    expect(refreshed[0]?.conflict).toMatch(/Attack Kielce from Kraków/)
+    expect(advisorCardAction(refreshed[0]!)).toBe("override")
+  })
+
+  it("ranks a new card and a conflict ahead of duplicates that do not use the cap", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "Hold the line.",
+              suggestions: [
+                { type: "attack", from: "poznan", target: "lodz", unitIds: ["g-pos-inf"] },
+                { type: "attack", from: "katowice", target: "kielce", unitIds: ["g-kat-inf"] },
+                { type: "attack", from: "gdynia", target: "plock", unitIds: ["g-gdy-inf"] },
+                { type: "move", unitId: "g-kra-11", to: "katowice" },
+                { type: "attack", from: "bucovina", target: "lwow", unitIds: ["g-buc-inf"] },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [
+        { type: "attack", from: "poznan", target: "lodz", unitIds: ["g-pos-inf"] },
+        { type: "attack", from: "katowice", target: "kielce", unitIds: ["g-kat-inf"] },
+        { type: "attack", from: "gdynia", target: "plock", unitIds: ["g-gdy-inf"] },
+        { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] },
+      ],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.suggestions).toHaveLength(5)
+    const states = payload.suggestions.map((card) => card.queue)
+    expect(states.filter((item) => item === "duplicate")).toHaveLength(3)
+    expect(states.filter((item) => item === "conflict")).toHaveLength(1)
+    expect(states.filter((item) => item === "new")).toHaveLength(1)
+    expect(states.indexOf("new")).toBeLessThan(states.indexOf("conflict"))
+    expect(states.indexOf("conflict")).toBeLessThan(states.indexOf("duplicate"))
+  })
+
+  it("does not count a duplicate card's own formations twice", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "That attack is already on the slate.",
+              suggestions: [{ type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] }],
+            }),
+          ),
+        ),
+      ),
+    )
+    const state = createInitialState()
+    const response = await postAdvisor({
+      state,
+      messages: [{ role: "user", content: "Repeat the Kielce attack." }],
+      queuedOrders: [{ type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] }],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    const card = payload.suggestions.find(
+      (item) => item.order.type === "attack" && item.order.unitIds.includes("g-kra-11"),
+    )
+    const preview = engagementOdds(staffMap(state), "krakow", "kielce", ["g-kra-11"])
+    expect(card?.queue).toBe("duplicate")
+    expect(preview).not.toBeNull()
+    expect(card?.odds).toContain(preview!.ratio.toFixed(2))
+    expect(card?.odds).not.toContain((preview!.ratio * 2).toFixed(2))
+  })
+})
+
+describe("advisor odds sentences", () => {
+  const cases: { text: string; keep: string }[] = [
+    { text: "The shoulder is 2.55 : 1.", keep: "" },
+    { text: "The shoulder is 2.55:1.", keep: "" },
+    { text: "Kielce is 3 to 1.", keep: "" },
+    { text: "Kielce is 3-to-1.", keep: "" },
+    { text: "The fraction is 3/2.", keep: "" },
+    { text: "The fraction is 3 / 2.", keep: "" },
+    { text: "The fight is 3:2.", keep: "" },
+    { text: "The fight is 3∶2.", keep: "" },
+    { text: "The fight is 3꞉2.", keep: "" },
+    { text: "The fight is 3：2.", keep: "" },
+    { text: "Sixty is written 60%.", keep: "" },
+    { text: "Forty is written 40 percent.", keep: "" },
+    { text: "It is three to one.", keep: "" },
+    { text: "It is three-to-one.", keep: "" },
+    { text: "It is five to two.", keep: "" },
+    { text: "It is twelve to one.", keep: "" },
+    { text: "It is 2 to one.", keep: "" },
+    { text: "The line is even odds.", keep: "" },
+    { text: "Mackensen is odds-on at Kielce.", keep: "" },
+    { text: "The odds on Kielce are 2 : 1.", keep: "" },
+    { text: "The odds on Kielce are.", keep: "" },
+    { text: "Kielce is about 2.55 : 1.", keep: "" },
+    { text: "The figure is about 13.01 : 1.", keep: "" },
+    { text: "Use {odds:card1} here.", keep: "" },
+    { text: "Use {placeholder} here.", keep: "" },
+    { text: "The ratio is 4.", keep: "" },
+    { text: "The ratio is three.", keep: "" },
+    { text: "A 1:1 fight is a grind.", keep: "" },
+    { text: "Quote 4 to 1 and stop.", keep: "" },
+    { text: "2 May 1915.", keep: "2 May 1915." },
+    { text: "The 11th Army is at Kraków.", keep: "The 11th Army is at Kraków." },
+    { text: "Fortnight 3 of 6.", keep: "Fortnight 3 of 6." },
+    { text: "The 11th Army has strength 64.", keep: "The 11th Army has strength 64." },
+    { text: "0 of 9 victory points are in hand.", keep: "0 of 9 victory points are in hand." },
+    { text: "Supply at Kraków is 80.", keep: "Supply at Kraków is 80." },
+    { text: "The fort at Kraków is level 2.", keep: "The fort at Kraków is level 2." },
+    { text: "Three corps hold the line.", keep: "Three corps hold the line." },
+    { text: "Turn 4 opens on the Vistula.", keep: "Turn 4 opens on the Vistula." },
+    { text: "11 July 1915.", keep: "11 July 1915." },
+    { text: "Manpower is 120 and industry is 40.", keep: "Manpower is 120 and industry is 40." },
+    { text: "Nine provinces are quiet.", keep: "Nine provinces are quiet." },
+    { text: "The ratio of the staff work is patience.", keep: "The ratio of the staff work is patience." },
+    { text: "March from Kraków to Kielce.", keep: "March from Kraków to Kielce." },
+    { text: "Leave one garrison on the depot.", keep: "Leave one garrison on the depot." },
+    { text: "The 4th Army stays in Kraków.", keep: "The 4th Army stays in Kraków." },
+  ]
+
+  it("drops whole sentences that mention odds and keeps ordinary numbers", () => {
+    expect(cases.length).toBeGreaterThanOrEqual(40)
+    for (const item of cases) {
+      expect(dropOddsSentences(item.text), item.text).toBe(item.keep)
+    }
+    const mixed = dropOddsSentences("Hold Kraków. The odds are 2 : 1. March the 11th Army on 2 May.")
+    expect(mixed).toBe("Hold Kraków. March the 11th Army on 2 May.")
+    expect(mixed).not.toMatch(/about 2-/)
+    expect(dropOddsSentences("Kielce is about 2.55 : 1. Hold the shoulder.")).toBe("Hold the shoulder.")
+    expect(dropOddsSentences("The odds on Kielce are. Hold the shoulder.")).toBe("Hold the shoulder.")
   })
 })
 
@@ -646,7 +918,9 @@ describe("advisor card markup", () => {
     expect(panel).toContain("Already queued")
     expect(panel).toContain("Conflicts with:")
     expect(panel).toContain('data-testid="advisor-override"')
+    expect(panel).toContain('data-testid="advisor-notice"')
     expect(panel).toContain("advisorCardAction")
+    expect(panel).toContain("refreshAdvisorCards")
   })
 })
 

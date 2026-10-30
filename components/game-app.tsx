@@ -280,10 +280,19 @@ export function GameApp() {
     setChatEpoch((value) => value + 1)
   }
 
-  function acceptAdvisorOrders(orders: AdvisorOrder[], mode: "accept" | "override"): boolean {
-    if (ordersLocked(Boolean(game.state.result))) return false
+  function acceptAdvisorOrders(
+    orders: AdvisorOrder[],
+    mode: "accept" | "override",
+  ): { ok: boolean; reason?: string } {
+    if (ordersLocked(Boolean(game.state.result))) {
+      return { ok: false, reason: "Orders are closed. Nothing was filed." }
+    }
     const filed = applyAdvisorToQueue(game.state, queue, orders, mode)
-    if (!filed.accepted) return false
+    if (!filed.accepted) {
+      const reason = filed.reason ?? "Nothing was filed."
+      setHint(reason)
+      return { ok: false, reason }
+    }
     setQueue(filed.queue)
     setHint(
       mode === "override"
@@ -291,7 +300,7 @@ export function GameApp() {
         : "Filed in the queue. The engine resolves it when the fortnight closes.",
     )
     setSideTab("orders")
-    return true
+    return { ok: true }
   }
 
   const latest = game.log.at(-1)

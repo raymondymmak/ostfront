@@ -2,7 +2,7 @@ import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { applySupply, rebindState } from "@/lib/data/scenario"
 import { scenarioSpec } from "@/lib/data/objectives"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
-import { independentFormations, partyOf } from "@/lib/engine/echelon"
+import { independentFormations } from "@/lib/engine/echelon"
 import { projectIncome, RECRUIT, recruitmentYard, spendable } from "@/lib/engine/economy"
 import { decaySupplyModifier } from "@/lib/engine/supply"
 import {
@@ -18,7 +18,8 @@ import {
   type EngagementPreview,
 } from "@/lib/engine/turn"
 import { easternObjectives, standing } from "@/lib/engine/victory"
-import { KIND_LABEL, normalizeName } from "@/lib/format"
+import { normalizeName } from "@/lib/format"
+import { labelFor, nameOf, queueMark, rankAdvisorCards, sameOrder, unitsOf } from "@/lib/gm/advisor-cards"
 import type { AdvisorCard, AdvisorChatMessage, AdvisorOrder, AdvisorResponse } from "@/lib/gm/advisor-types"
 import { leaveDepotGarrison } from "@/lib/orders"
 import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
@@ -27,7 +28,6 @@ import type { Faction, GameState, PlayerOrder, Province, Unit, UnitKind } from "
 
 const ADVISOR_TIMEOUT_MS = 20_000
 const ADVISOR_MAX_TOKENS = 4_096
-const MAX_SUGGESTIONS = 3
 
 const OFFLINE_LINE =
   "The chief of staff is unavailable offline. What follows is read from the map, not from the wire."
@@ -40,7 +40,7 @@ You know only the DISPATCH in the user message. It is the map the Central Powers
 
 Odds in the dispatch are against the garrison and the forts as they stand when the fortnight opens. A simultaneous Russian march can leave a rear guard, empty the province, or meet the columns in the open. Digging ordered this fortnight is not in the figures. Do not invent the Russian march.
 
-The dispatch prints odds so you can compare blows. Do not write odds figures in the reply. No ratios, no colon-one figures, and nothing "before the dice". The engine prints odds on the order cards, and the reply stays prose.
+Do not mention odds, ratios, chances, or percentages in the reply. Do not write a colon figure, a "to one", a fraction, or a placeholder such as {odds:...}. The dispatch may contain those figures for you. The engine prints them on the order cards. The reply is prose without them.
 
 ${combinedRuleText()} Weigh a pooled attack against a single strong blow, using the COMBINED line in the dispatch. Do not copy those figures into the reply. CONTACTS are one column. They are not the battle when COMBINED lists that province.
 
@@ -880,16 +880,12 @@ function classifySuggestions(
         drop(1, `not on our map ${rawHint(item)}`)
         continue
       }
-      if (!card.valid) {
-        drop(1, card.note ?? "illegal")
-        continue
-      }
       cards.push(card)
-      accepted.push(order)
+      if (card.valid) accepted.push(order)
     }
   }
-  const grouped = stampQueue(prepared.map, groupAttackCards(prepared.map, cards, queued), queued)
-  return { cards: grouped.slice(0, MAX_SUGGESTIONS), dropped, reasons }
+  const grouped = rankAdvisorCards(stampQueue(prepared.map, groupAttackCards(prepared.map, cards, queued), queued))
+  return { cards: grouped, dropped, reasons }
 }
 
 function ensureAcceptable(
@@ -899,12 +895,12 @@ function ensureAcceptable(
   rules: AdvisorOrder[],
 ): AdvisorCard[] {
   if (cards.some((card) => card.queue === "new" || card.queue === "conflict")) {
-    return cards.slice(0, MAX_SUGGESTIONS)
+    return rankAdvisorCards(cards)
   }
   const extra = assessOrders(prepared, rules, queued).filter(
     (card) => !cards.some((existing) => sameCard(existing, card)),
   )
-  return [...cards, ...extra].slice(0, MAX_SUGGESTIONS)
+  return rankAdvisorCards([...cards, ...extra])
 }
 
 function sameCard(a: AdvisorCard, b: AdvisorCard): boolean {
@@ -948,8 +944,11 @@ function mergeAttackCard(
     (order): order is Extract<AdvisorOrder, { type: "attack" }> => order.type === "attack",
   )
   const target = orders[0].target
-  const queuedProngs = queued.flatMap((order) =>
-    order.type === "attack" && order.target === target ? [{ fromId: order.from, unitIds: order.unitIds }] : [],
+  const queuedProngs = foreignAttackProngs(
+    queued.flatMap((order) =>
+      order.type === "attack" && order.target === target ? [{ fromId: order.from, unitIds: order.unitIds }] : [],
+    ),
+    orders,
   )
   const preview = combinedEngagementOdds(map, target, [
     ...queuedProngs,
@@ -1047,45 +1046,12 @@ function stampQueue(map: GameState, cards: AdvisorCard[], queued: PlayerOrder[])
   })
 }
 
-function queueMark(
-  map: GameState,
-  orders: AdvisorOrder[],
-  queued: PlayerOrder[],
-): { state: "new" | "duplicate" | "conflict"; conflict: string | null } {
-  const concrete = queued.filter(isAdvisorOrder)
-  if (!orders.length) return { state: "new", conflict: null }
-  const overlaps: AdvisorOrder[] = []
-  let inexact = false
-  let exactOrders = 0
-  for (const order of orders) {
-    if (concrete.some((item) => sameOrder(order, item))) {
-      exactOrders += 1
-      continue
-    }
-    for (const item of concrete) {
-      if (!sharesCommitment(map, order, item)) continue
-      inexact = true
-      if (!overlaps.some((prior) => sameOrder(prior, item))) overlaps.push(item)
-    }
-  }
-  if (!inexact && exactOrders === orders.length) return { state: "duplicate", conflict: null }
-  if (inexact) {
-    return { state: "conflict", conflict: overlaps.map((item) => labelFor(map, item)).join("; ") }
-  }
-  return { state: "new", conflict: null }
-}
-
-function sharesCommitment(map: GameState, order: AdvisorOrder, queued: AdvisorOrder): boolean {
-  const left = new Set(unitsOf(map, order))
-  for (const id of unitsOf(map, queued)) {
-    if (left.has(id)) return true
-  }
-  if (order.type === "fortify" && queued.type === "fortify") return order.provinceId === queued.provinceId
-  if (order.type === "recruit" && queued.type === "recruit") {
-    return order.provinceId === queued.provinceId && order.unitKind === queued.unitKind
-  }
-  if (order.type === "cancelRecruit" && queued.type === "cancelRecruit") return order.buildId === queued.buildId
-  return false
+function foreignAttackProngs(
+  prongs: { fromId: string; unitIds: string[] }[],
+  orders: { unitIds: string[] }[],
+): { fromId: string; unitIds: string[] }[] {
+  const claimed = new Set(orders.flatMap((order) => order.unitIds))
+  return prongs.filter((prong) => !prong.unitIds.some((id) => claimed.has(id)))
 }
 
 function oddsFor(
@@ -1094,14 +1060,21 @@ function oddsFor(
   queued: PlayerOrder[],
   accepted: AdvisorOrder[],
 ): string | null {
+  const own = [{ fromId: order.from, unitIds: order.unitIds }]
   const prongs = [
-    ...queued.flatMap((item) =>
-      item.type === "attack" && item.target === order.target ? [{ fromId: item.from, unitIds: item.unitIds }] : [],
+    ...foreignAttackProngs(
+      queued.flatMap((item) =>
+        item.type === "attack" && item.target === order.target ? [{ fromId: item.from, unitIds: item.unitIds }] : [],
+      ),
+      own,
     ),
-    ...accepted.flatMap((item) =>
-      item.type === "attack" && item.target === order.target ? [{ fromId: item.from, unitIds: item.unitIds }] : [],
+    ...foreignAttackProngs(
+      accepted.flatMap((item) =>
+        item.type === "attack" && item.target === order.target ? [{ fromId: item.from, unitIds: item.unitIds }] : [],
+      ),
+      own,
     ),
-    { fromId: order.from, unitIds: order.unitIds },
+    own[0],
   ]
   const preview =
     prongs.length > 1
@@ -1121,21 +1094,6 @@ export function formatOdds(preview: EngagementPreview | null): string | null {
     return `${shape}, about ${ratio} before the dice${ring}.`
   }
   return `About ${ratio} before the dice.`
-}
-
-function labelFor(map: GameState, order: AdvisorOrder): string {
-  if (order.type === "attack") {
-    return `Attack ${nameOf(map, order.target)} from ${nameOf(map, order.from)}`
-  }
-  if (order.type === "move") {
-    const located = findUnit(map, order.unitId)
-    return `Move ${located?.unit.name ?? order.unitId} to ${nameOf(map, order.to)}`
-  }
-  if (order.type === "fortify") return `Fortify ${nameOf(map, order.provinceId)}`
-  if (order.type === "recruit") {
-    return `Raise ${KIND_LABEL[order.unitKind].toLowerCase()} at ${nameOf(map, order.provinceId)}`
-  }
-  return "Cancel a formation in the yards"
 }
 
 function detailForAttacks(
@@ -1199,10 +1157,6 @@ function detailFor(map: GameState, order: AdvisorOrder, odds: string | null): st
   return "The manpower and industry would be returned."
 }
 
-function nameOf(map: GameState, id: string): string {
-  return findProvince(map, id)?.name ?? id
-}
-
 function prepareStaff(state: GameState, queued: PlayerOrder[]): Prepared {
   const map = staffMap(state)
   const used = new Set<string>()
@@ -1238,21 +1192,6 @@ function commit(prepared: Prepared, order: AdvisorOrder, clone: GameState): void
     prepared.purse.treasury.central = { ...clone.treasury.central }
     prepared.purse.queue = clone.queue.map((job) => ({ ...job }))
   }
-}
-
-function unitsOf(map: GameState, order: AdvisorOrder | PlayerOrder): string[] {
-  if (order.type === "move") {
-    const unitId = "unitId" in order ? order.unitId : ""
-    const located = findUnit(map, unitId)
-    if (!located) return unitId ? [unitId] : []
-    return partyOf(located.province.units, [unitId]).map((unit) => unit.id)
-  }
-  if (order.type === "attack") {
-    const from = findProvince(map, order.from)
-    if (!from) return order.unitIds
-    return partyOf(from.units, order.unitIds).map((unit) => unit.id)
-  }
-  return []
 }
 
 function applyConcrete(
@@ -1546,37 +1485,46 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
   return order.type !== "text"
 }
 
-function sameOrder(a: AdvisorOrder, b: AdvisorOrder): boolean {
-  if (a.type !== b.type) return false
-  if (a.type === "attack" && b.type === "attack") {
-    return a.from === b.from && a.target === b.target && sameIds(a.unitIds, b.unitIds)
-  }
-  if (a.type === "move" && b.type === "move") return a.unitId === b.unitId && a.to === b.to
-  if (a.type === "fortify" && b.type === "fortify") return a.provinceId === b.provinceId
-  if (a.type === "recruit" && b.type === "recruit") {
-    return a.provinceId === b.provinceId && a.unitKind === b.unitKind
-  }
-  if (a.type === "cancelRecruit" && b.type === "cancelRecruit") return a.buildId === b.buildId
+const SPELLED_NUMBER = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+const NUMBER_WORD = `(?:\\d+(?:\\.\\d+)?|${SPELLED_NUMBER})`
+const TO_RATIO = new RegExp(
+  `\\b${NUMBER_WORD}(?:\\s*[-–]\\s*|\\s+)to(?:\\s*[-–]\\s*|\\s+)${NUMBER_WORD}\\b`,
+  "i",
+)
+const NUMERIC_RATIO = /\d+(?:\.\d+)?\s*[:∶꞉：]\s*\d+/
+const SLASH_RATIO = /\d+\s*\/\s*\d+/
+const PERCENT_RATIO = /\d+(?:\.\d+)?\s*(?:%|percent\b)/i
+const PLACEHOLDER = /\{[^{}]+\}/
+const SPELLED_NUMBER_PATTERN = new RegExp(`\\b(?:${SPELLED_NUMBER})\\b`, "i")
+
+export function sentenceMentionsOdds(sentence: string): boolean {
+  if (PLACEHOLDER.test(sentence)) return true
+  if (/\bodds\b/i.test(sentence)) return true
+  if (NUMERIC_RATIO.test(sentence) || TO_RATIO.test(sentence) || SLASH_RATIO.test(sentence)) return true
+  if (PERCENT_RATIO.test(sentence)) return true
+  if (/\bratio\b/i.test(sentence) && (/\d/.test(sentence) || SPELLED_NUMBER_PATTERN.test(sentence))) return true
   return false
 }
 
-function sameIds(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false
-  const right = new Set(b)
-  return a.every((id) => right.has(id))
-}
-
-function presentReply(reply: string): string {
-  return stripOddsFigures(reply)
+export function dropOddsSentences(text: string): string {
+  const chunks = text.split(/(\n+)/)
+  return chunks
+    .map((chunk) => {
+      if (/^\n+$/.test(chunk)) return chunk
+      return chunk
+        .split(/(?<=[.!?])\s+/)
+        .map((sentence) => sentence.trim())
+        .filter((sentence) => sentence && !sentenceMentionsOdds(sentence))
+        .join(" ")
+    })
+    .join("")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ +([,.;])/g, "$1")
     .trim()
 }
 
-function stripOddsFigures(text: string): string {
-  return text
-    .replace(/\s+(?:at|about|of)\s+\d+(?:\.\d+)?\s*:\s*1\b/gi, "")
-    .replace(/\b\d+(?:\.\d+)?\s*:\s*1\b/g, "")
+function presentReply(reply: string): string {
+  return dropOddsSentences(reply)
 }
 
 function snap(unit: Unit): UnitSnap {

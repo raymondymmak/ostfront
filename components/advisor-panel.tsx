@@ -9,6 +9,7 @@ import {
   type AdvisorOrder,
   type AdvisorResponse,
 } from "@/lib/gm/advisor-types"
+import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
 import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
 
@@ -48,7 +49,7 @@ type AdvisorPanelProps = {
   closed: boolean
   epoch: number
   onClose: () => void
-  onAccept: (orders: AdvisorOrder[], mode: "accept" | "override") => boolean
+  onAccept: (orders: AdvisorOrder[], mode: "accept" | "override") => { ok: boolean; reason?: string }
 }
 
 export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAccept }: AdvisorPanelProps) {
@@ -56,6 +57,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [offline, setOffline] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
   const thread = useRef<HTMLDivElement>(null)
   const seenEpoch = useRef<number | null>(null)
   const seenTurn = useRef(state.turn)
@@ -72,6 +74,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
     setMessages([])
     setDraft("")
     setOffline(false)
+    setNotice(null)
     try {
       window.sessionStorage.removeItem(STORAGE_KEY)
     } catch {
@@ -87,6 +90,8 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
       current.map((message) => (message.suggestions ? { ...message, suggestions: undefined } : message)),
     )
   }, [state.turn, over])
+
+  const queuedOrders = queuedToPlayerOrders(queue)
 
   useEffect(() => {
     try {
@@ -119,6 +124,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
     const history = [...prior, userTurn].slice(-HISTORY_SEND)
     setMessages((current) => [...current, userTurn].slice(-HISTORY_KEEP))
     setDraft("")
+    setNotice(null)
     setBusy(true)
     try {
       const response = await fetch("/api/advisor", {
@@ -167,6 +173,24 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
     }
   }
 
+  function fileCard(messageIndex: number, card: AdvisorCard, mode: "accept" | "override") {
+    const orders = [card.order, ...(card.companions ?? [])]
+    const result = onAccept(orders, mode)
+    if (result.ok) {
+      setNotice(null)
+      dismiss(messageIndex, card.id)
+      return
+    }
+    setNotice(result.reason ?? "Nothing was filed.")
+    setMessages((current) =>
+      current.map((message, index) =>
+        index === messageIndex && message.suggestions
+          ? { ...message, suggestions: refreshAdvisorCards(state, message.suggestions, queuedOrders) }
+          : message,
+      ),
+    )
+  }
+
   function dismiss(messageIndex: number, cardId: string) {
     setMessages((current) =>
       current.map((message, index) =>
@@ -196,6 +220,11 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
           Hide
         </Button>
       </header>
+      {notice && (
+        <p className="border-b border-[#c6a15a]/30 px-3 py-2 text-xs text-[#f3e2a8]" role="status" data-testid="advisor-notice">
+          {notice}
+        </p>
+      )}
       <div ref={thread} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3" aria-live="polite">
         {messages.length === 0 && (
           <p className="text-sm text-[#f3e2a8]/80">
@@ -214,9 +243,8 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
             >
               {message.role === "user" ? `You. ${message.content}` : message.content}
             </p>
-            {message.suggestions?.map((card) => {
+            {refreshAdvisorCards(state, message.suggestions ?? [], queuedOrders).map((card) => {
               const action = advisorCardAction(card)
-              const orders = [card.order, ...(card.companions ?? [])]
               return (
               <article
                 key={card.id}
@@ -249,9 +277,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                       type="button"
                       size="xs"
                       data-testid="advisor-accept"
-                      onClick={() => {
-                        if (onAccept(orders, "accept")) dismiss(index, card.id)
-                      }}
+                      onClick={() => fileCard(index, card, "accept")}
                     >
                       {card.companions?.length ? "Accept all" : "Accept"}
                     </Button>
@@ -261,9 +287,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                       type="button"
                       size="xs"
                       data-testid="advisor-override"
-                      onClick={() => {
-                        if (onAccept(orders, "override")) dismiss(index, card.id)
-                      }}
+                      onClick={() => fileCard(index, card, "override")}
                     >
                       Override
                     </Button>
