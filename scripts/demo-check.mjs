@@ -316,7 +316,16 @@ function buildSteps(cli, targets) {
       name: "Queue fortify province action",
       async run({ page }) {
         await selectKrakowOnMap(page)
-        await page.locator("[data-testid=fortify]").click()
+        const fortify = page.locator("[data-testid=fortify]")
+        await fortify.waitFor({ state: "visible", timeout: 10_000 })
+        if (await fortify.isDisabled()) {
+          const reason =
+            (await page.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
+            "Fortify button disabled on Kraków province panel."
+          throw new Error(reason)
+        }
+        await fortify.scrollIntoViewIfNeeded()
+        await fortify.click()
         await page.locator("[data-testid=tab-orders]").click()
         await expectText(page.locator("aside"), "Fortify Kraków")
       },

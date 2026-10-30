@@ -16,7 +16,7 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 | **Neighbor Attack** | **Province** tab: neighbor row with **Attack** (enemy). | Queue shows attack line; optional `[data-testid=attack-odds]`. |
 | **Draw arrows on map** | **Orders** tab: **Draw arrows** `[data-testid=draw-arrows]`; drag between provinces when mode is on (optional in demo-check). | `aria-pressed="true"`; queue entry appears. |
 | **Typed directive** | **Orders** tab: textarea `[data-testid=directive]`. | Parsed **Will …** lines under the field. |
-| **Fortify** | **Province** tab: **Fortify …** `[data-testid=fortify]` (added in PR #33). | **Orders** queue shows **Fortify** line (`[data-testid=queued-orders]`). |
+| **Fortify** | **Province** tab: **Fortify …** `[data-testid=fortify]` (disabled state shows `[data-testid=fortify-reason]`). | **Orders** queue shows **Fortify** line (`[data-testid=queued-orders]`). |
 | **Recruit** | **Province** tab at a yard: `[data-testid=recruit-panel]`; `[data-testid=recruit-infantry]` etc. | Queue shows **Raise … at** |
 | **Map mode Control / Supply / Unrest** | `[data-testid=map-mode-none]`, `map-mode-supply`, `map-mode-unrest`. | `[data-testid=overlay-scale]` visible for Supply/Unrest only. |
 | **Toggle rails** | Map legend → `[data-testid=rail-toggle]`. | Label **On** ↔ **Off**. |
