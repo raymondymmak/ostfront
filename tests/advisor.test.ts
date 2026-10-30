@@ -523,10 +523,10 @@ describe("advisor grounding", () => {
       "The map does not show combined odds. The engine previews each column separately. I cannot promise the dice or the engine will pool these attacks. Łódź is one battle at 3.53 : 1.",
       createInitialState(),
     )
-    expect(text).not.toContain("Łódź is one battle")
+    expect(text).toContain("Łódź is one battle")
     expect(text).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
     expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
-    expect(text).toBe("")
+    expect(text).not.toBe("")
   })
 
   it("shows an exact queued order and disables accept", async () => {
@@ -846,27 +846,165 @@ describe("advisor card refresh and ranking", () => {
     expect(card?.odds).toContain(preview!.ratio.toFixed(2))
     expect(card?.odds).not.toContain((preview!.ratio * 2).toFixed(2))
   })
+
+  it("drops rule-breaking orders and still returns a card the player can accept", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "Hold.",
+              suggestions: [
+                { type: "move", unitId: "g-buc-inf", to: "kielce" },
+                { type: "recruit", provinceId: "stanislawow", unitKind: "infantry" },
+                { type: "move", unitId: "g-kra-11", to: "kielce" },
+                { type: "attack", from: "krakow", target: "katowice", unitIds: ["g-kra-11"] },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.dropped).toBeGreaterThanOrEqual(4)
+    expect(payload.suggestions.some((card) => card.order.type === "move")).toBe(false)
+    expect(payload.suggestions.some((card) => card.order.type === "recruit")).toBe(false)
+    expect(
+      payload.suggestions.some((card) => card.order.type === "attack" && card.order.target === "katowice"),
+    ).toBe(false)
+    expect(payload.suggestions.some((card) => card.valid && (card.queue === "new" || card.queue === "conflict"))).toBe(
+      true,
+    )
+    expect(payload.suggestions.every((card) => card.valid)).toBe(true)
+  })
+
+  it("fills an actionable card when the reply is duplicates plus one illegal order", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "Hold the line.",
+              suggestions: [
+                { type: "attack", from: "poznan", target: "lodz", unitIds: ["g-pos-inf"] },
+                { type: "attack", from: "katowice", target: "kielce", unitIds: ["g-kat-inf"] },
+                { type: "attack", from: "gdynia", target: "plock", unitIds: ["g-gdy-inf"] },
+                { type: "move", unitId: "g-buc-inf", to: "kielce" },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [
+        { type: "attack", from: "poznan", target: "lodz", unitIds: ["g-pos-inf"] },
+        { type: "attack", from: "katowice", target: "kielce", unitIds: ["g-kat-inf"] },
+        { type: "attack", from: "gdynia", target: "plock", unitIds: ["g-gdy-inf"] },
+      ],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.suggestions.filter((card) => card.queue === "duplicate")).toHaveLength(3)
+    expect(JSON.stringify(payload.suggestions)).not.toContain("g-buc-inf")
+    expect(payload.suggestions.some((card) => card.valid && card.queue === "new")).toBe(true)
+  })
+
+  it("warns when the card would send the depot's last formation", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "The guns can march.",
+              suggestions: [{ type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-art"] }],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "And the artillery?" }],
+      queuedOrders: [
+        { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11", "g-kra-x", "g-kra-grd"] },
+      ],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    const card = payload.suggestions.find(
+      (item) => item.order.type === "attack" && item.order.unitIds.includes("g-kra-art"),
+    )
+    expect(card?.depotWarning).toMatch(/empties the Kraków depot/)
+  })
+
+  it("does not use a depot-emptying march as the fallback card", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "Hold.",
+              suggestions: [{ type: "move", unitId: "g-buc-inf", to: "kielce" }],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [
+        { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11", "g-kra-x", "g-kra-grd"] },
+      ],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.suggestions.some((card) => card.valid && card.queue === "new")).toBe(true)
+    expect(
+      payload.suggestions.some(
+        (card) => card.order.type === "attack" && card.order.unitIds.length === 1 && card.order.unitIds[0] === "g-kra-art",
+      ),
+    ).toBe(false)
+  })
 })
 
 describe("advisor odds sentences", () => {
   const cases: { text: string; keep: string }[] = [
     { text: "The shoulder is 2.55 : 1.", keep: "" },
     { text: "The shoulder is 2.55:1.", keep: "" },
+    { text: "The shoulder is 2.55∶1.", keep: "" },
+    { text: "The shoulder is 2.55꞉1.", keep: "" },
+    { text: "The shoulder is 2.55：1.", keep: "" },
+    { text: "The shoulder is 8.34 :: 1.", keep: "" },
     { text: "Kielce is 3 to 1.", keep: "" },
     { text: "Kielce is 3-to-1.", keep: "" },
-    { text: "The fraction is 3/2.", keep: "" },
-    { text: "The fraction is 3 / 2.", keep: "" },
-    { text: "The fight is 3:2.", keep: "" },
-    { text: "The fight is 3∶2.", keep: "" },
-    { text: "The fight is 3꞉2.", keep: "" },
-    { text: "The fight is 3：2.", keep: "" },
-    { text: "Sixty is written 60%.", keep: "" },
-    { text: "Forty is written 40 percent.", keep: "" },
+    { text: "The figure is 8.34-1.", keep: "" },
     { text: "It is three to one.", keep: "" },
     { text: "It is three-to-one.", keep: "" },
-    { text: "It is five to two.", keep: "" },
     { text: "It is twelve to one.", keep: "" },
+    { text: "It is twenty to one.", keep: "" },
     { text: "It is 2 to one.", keep: "" },
+    { text: "The column is 8.34 versus 1.", keep: "" },
+    { text: "The column is 8.34 vs 1.", keep: "" },
+    { text: "The column is 8.34 against 1.", keep: "" },
+    { text: "8.34 against Lublin's 3.06.", keep: "" },
+    { text: "Sixty is written 60%.", keep: "" },
+    { text: "Forty is written 40 percent.", keep: "" },
+    { text: "That is 40 per cent of the corps.", keep: "" },
+    { text: "That happens sixty percent of the time.", keep: "" },
     { text: "The line is even odds.", keep: "" },
     { text: "Mackensen is odds-on at Kielce.", keep: "" },
     { text: "The odds on Kielce are 2 : 1.", keep: "" },
@@ -877,8 +1015,30 @@ describe("advisor odds sentences", () => {
     { text: "Use {placeholder} here.", keep: "" },
     { text: "The ratio is 4.", keep: "" },
     { text: "The ratio is three.", keep: "" },
+    { text: "The ratio of the staff work is patience.", keep: "" },
     { text: "A 1:1 fight is a grind.", keep: "" },
     { text: "Quote 4 to 1 and stop.", keep: "" },
+    { text: "The probability is 0.89.", keep: "" },
+    { text: "The likelihood of success is 0.89.", keep: "" },
+    { text: "There are nine chances in ten.", keep: "" },
+    { text: "Mackensen has a 3x edge.", keep: "" },
+    { text: "The blow is three times stronger.", keep: "" },
+    { text: "Kielce, approx. 2.55 : 1.", keep: "" },
+    { text: "Łódź is one battle at 3.53 : 1.", keep: "Łódź is one battle." },
+    { text: "Send 2 to 3 corps to Kielce.", keep: "Send 2 to 3 corps to Kielce." },
+    { text: "We hold 6/9 victory points.", keep: "We hold 6/9 victory points." },
+    { text: "Fortnight 2/6 closes on 16 May 1915.", keep: "Fortnight 2/6 closes on 16 May 1915." },
+    { text: "On 15/16 May the columns step off.", keep: "On 15/16 May the columns step off." },
+    { text: "The column steps off at 05:00.", keep: "The column steps off at 05:00." },
+    { text: "Province count is 18 to 21 along the front.", keep: "Province count is 18 to 21 along the front." },
+    { text: "Łódź is one battle.", keep: "Łódź is one battle." },
+    { text: "It is five to two.", keep: "It is five to two." },
+    { text: "The fraction is 3/2.", keep: "The fraction is 3/2." },
+    { text: "The fraction is 3 / 2.", keep: "The fraction is 3 / 2." },
+    { text: "The fight is 3:2.", keep: "The fight is 3:2." },
+    { text: "The fight is 3∶2.", keep: "The fight is 3∶2." },
+    { text: "The fight is 3꞉2.", keep: "The fight is 3꞉2." },
+    { text: "The fight is 3：2.", keep: "The fight is 3：2." },
     { text: "2 May 1915.", keep: "2 May 1915." },
     { text: "The 11th Army is at Kraków.", keep: "The 11th Army is at Kraków." },
     { text: "Fortnight 3 of 6.", keep: "Fortnight 3 of 6." },
@@ -891,14 +1051,16 @@ describe("advisor odds sentences", () => {
     { text: "11 July 1915.", keep: "11 July 1915." },
     { text: "Manpower is 120 and industry is 40.", keep: "Manpower is 120 and industry is 40." },
     { text: "Nine provinces are quiet.", keep: "Nine provinces are quiet." },
-    { text: "The ratio of the staff work is patience.", keep: "The ratio of the staff work is patience." },
     { text: "March from Kraków to Kielce.", keep: "March from Kraków to Kielce." },
     { text: "Leave one garrison on the depot.", keep: "Leave one garrison on the depot." },
     { text: "The 4th Army stays in Kraków.", keep: "The 4th Army stays in Kraków." },
+    { text: "Gen. Mackensen holds Kraków.", keep: "Gen. Mackensen holds Kraków." },
+    { text: "St. Petersburg is not on this map.", keep: "St. Petersburg is not on this map." },
+    { text: "Kielce, approx. the shoulder is thin.", keep: "Kielce, approx. the shoulder is thin." },
   ]
 
   it("drops whole sentences that mention odds and keeps ordinary numbers", () => {
-    expect(cases.length).toBeGreaterThanOrEqual(40)
+    expect(cases.length).toBeGreaterThanOrEqual(57)
     for (const item of cases) {
       expect(dropOddsSentences(item.text), item.text).toBe(item.keep)
     }
@@ -907,6 +1069,10 @@ describe("advisor odds sentences", () => {
     expect(mixed).not.toMatch(/about 2-/)
     expect(dropOddsSentences("Kielce is about 2.55 : 1. Hold the shoulder.")).toBe("Hold the shoulder.")
     expect(dropOddsSentences("The odds on Kielce are. Hold the shoulder.")).toBe("Hold the shoulder.")
+    expect(dropOddsSentences("Gen. Mackensen holds Kraków. Kielce, approx. 2.55 : 1.")).toBe(
+      "Gen. Mackensen holds Kraków.",
+    )
+    expect(dropOddsSentences("Kielce, approx. 2.55 : 1.")).toBe("")
   })
 })
 
@@ -919,6 +1085,7 @@ describe("advisor card markup", () => {
     expect(panel).toContain("Conflicts with:")
     expect(panel).toContain('data-testid="advisor-override"')
     expect(panel).toContain('data-testid="advisor-notice"')
+    expect(panel).toContain('data-testid="advisor-depot-warning"')
     expect(panel).toContain("advisorCardAction")
     expect(panel).toContain("refreshAdvisorCards")
   })

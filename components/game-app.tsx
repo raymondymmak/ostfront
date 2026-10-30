@@ -285,7 +285,9 @@ export function GameApp() {
     mode: "accept" | "override",
   ): { ok: boolean; reason?: string } {
     if (ordersLocked(Boolean(game.state.result))) {
-      return { ok: false, reason: "Orders are closed. Nothing was filed." }
+      const reason = "Orders are closed. Nothing was filed."
+      setHint(reason)
+      return { ok: false, reason }
     }
     const filed = applyAdvisorToQueue(game.state, queue, orders, mode)
     if (!filed.accepted) {

@@ -32,6 +32,8 @@ export type AdvisorCard = {
   queue: AdvisorQueueState
   /** Queued order text when `queue` is `conflict`. */
   conflict: string | null
+  /** Set when the order would leave a Central Powers depot with no garrison. */
+  depotWarning?: string | null
 }
 
 export type AdvisorQueueState = "new" | "duplicate" | "conflict"

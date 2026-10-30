@@ -75,7 +75,11 @@ export function OrderPanel({
             : "Drag between provinces, click a neighbor, or write an order. Ctrl+Enter closes the fortnight."}
         </p>
         {hint && (
-          <p className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-2 text-sm" role="status">
+          <p
+            className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-2 text-sm"
+            role="status"
+            data-testid="order-hint"
+          >
             {hint}
           </p>
         )}

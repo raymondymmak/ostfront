@@ -40,7 +40,7 @@ You know only the DISPATCH in the user message. It is the map the Central Powers
 
 Odds in the dispatch are against the garrison and the forts as they stand when the fortnight opens. A simultaneous Russian march can leave a rear guard, empty the province, or meet the columns in the open. Digging ordered this fortnight is not in the figures. Do not invent the Russian march.
 
-Do not mention odds, ratios, chances, or percentages in the reply. Do not write a colon figure, a "to one", a fraction, or a placeholder such as {odds:...}. The dispatch may contain those figures for you. The engine prints them on the order cards. The reply is prose without them.
+Do not mention odds, ratios, chances, probability, likelihood, or percentages in the reply. Do not write a colon figure, a "to one", a fraction, or a placeholder such as {odds:...}. The dispatch may contain those figures for you. The engine prints them on the order cards. The reply is prose without them.
 
 ${combinedRuleText()} Weigh a pooled attack against a single strong blow, using the COMBINED line in the dispatch. Do not copy those figures into the reply. CONTACTS are one column. They are not the battle when COMBINED lists that province.
 
@@ -88,6 +88,8 @@ export type FrontContact = {
   garrisonName: string | null
   objective: boolean
   odds: string
+  /** The march would leave a Central Powers depot with no garrison. */
+  emptiesDepot: boolean
 }
 
 export type CombinedProng = {
@@ -211,8 +213,7 @@ export function renderSituation(situation: Situation): string {
 
 export function scrubAdvisorReply(reply: string, state: GameState): string {
   const knownUnits = new Set(state.provinces.flatMap((province) => province.units.map((unit) => unit.id)))
-  const sentences = reply
-    .split(/(?<=[.!?])\s+/)
+  const sentences = splitStaffSentences(reply)
     .map((sentence) => sentence.trim())
     .filter(Boolean)
     .filter((sentence) => !leaksRussianPlan(sentence))
@@ -428,6 +429,7 @@ function frontContacts(prepared: Prepared, objectives: Set<string>): FrontContac
         garrisonName: left[0]?.name ?? null,
         objective: objectives.has(target.id),
         odds: formatOdds(preview) ?? "odds unknown",
+        emptiesDepot: province.depot === "central" && left.length === 0,
       })
     }
   }
@@ -613,9 +615,10 @@ function axisContacts(contacts: FrontContact[]): FrontContact[] {
 }
 
 function chooseContact(contacts: FrontContact[]): FrontContact | null {
-  const best = contacts[0]
+  const safe = contacts.filter((contact) => !contact.emptiesDepot)
+  const best = safe[0]
   if (!best) return null
-  const objective = contacts.find(
+  const objective = safe.find(
     (contact) =>
       contact.objective &&
       (contact.empty || contact.ratio >= 1) &&
@@ -880,6 +883,10 @@ function classifySuggestions(
         drop(1, `not on our map ${rawHint(item)}`)
         continue
       }
+      if (!card.valid && !flaggedFortify(card)) {
+        drop(1, `illegal ${card.note ?? rawHint(item)}`)
+        continue
+      }
       cards.push(card)
       if (card.valid) accepted.push(order)
     }
@@ -894,11 +901,11 @@ function ensureAcceptable(
   queued: PlayerOrder[],
   rules: AdvisorOrder[],
 ): AdvisorCard[] {
-  if (cards.some((card) => card.queue === "new" || card.queue === "conflict")) {
+  if (cards.some((card) => card.valid && (card.queue === "new" || card.queue === "conflict"))) {
     return rankAdvisorCards(cards)
   }
   const extra = assessOrders(prepared, rules, queued).filter(
-    (card) => !cards.some((existing) => sameCard(existing, card)),
+    (card) => card.valid && !card.depotWarning && !cards.some((existing) => sameCard(existing, card)),
   )
   return rankAdvisorCards([...cards, ...extra])
 }
@@ -968,6 +975,7 @@ function mergeAttackCard(
     detail: detailForAttacks(map, orders, queuedNames, odds),
     queue: "new",
     conflict: null,
+    depotWarning: depotWarningFor(map, orders, queued),
   }
 }
 
@@ -980,6 +988,7 @@ function assessOne(
   const gate = centralGate(prepared.map, order)
   if (gate === "drop") return null
   const odds = order.type === "attack" ? oddsFor(prepared.map, order, queued, accepted) : null
+  const warning = depotWarningFor(prepared.map, [order], queued)
   if (queueMark(prepared.map, [order], queued).state === "duplicate") {
     return {
       id: crypto.randomUUID(),
@@ -992,6 +1001,7 @@ function assessOne(
       detail: detailFor(prepared.map, order, odds),
       queue: "duplicate",
       conflict: null,
+      depotWarning: warning,
     }
   }
   const clone = structuredClone(prepared.map)
@@ -1016,7 +1026,34 @@ function assessOne(
     detail: valid ? detailFor(prepared.map, order, odds) : null,
     queue: "new",
     conflict: null,
+    depotWarning: valid ? warning : null,
   }
+}
+
+/** A level-3 fortify is shown, with the engine's reason. Every other illegal order is dropped. */
+function flaggedFortify(card: AdvisorCard): boolean {
+  return card.order.type === "fortify" && /level 3/i.test(card.note ?? "")
+}
+
+function depotWarningFor(map: GameState, orders: AdvisorOrder[], queued: PlayerOrder[]): string | null {
+  const departing = new Set(orders.flatMap((order) => unitsOf(map, order)))
+  const already = new Set(queued.flatMap((order) => unitsOf(map, order)))
+  const seen = new Set<string>()
+  for (const order of orders) {
+    if (order.type !== "move" && order.type !== "attack") continue
+    const fromId = order.type === "attack" ? order.from : findUnit(map, order.unitId)?.province.id
+    if (!fromId || seen.has(fromId)) continue
+    seen.add(fromId)
+    const from = findProvince(map, fromId)
+    if (!from || from.depot !== "central") continue
+    const held = independentFormations(from.units.filter((unit) => unit.faction === "central"))
+    const sending = held.filter((unit) => departing.has(unit.id))
+    const staying = held.filter((unit) => !departing.has(unit.id) && !already.has(unit.id))
+    if (sending.length > 0 && staying.length === 0) {
+      return `This empties the ${from.name} depot. Leave a garrison unless you mean to abandon it.`
+    }
+  }
+  return null
 }
 
 function legalityUsed(prepared: Prepared, order: AdvisorOrder): Set<string> {
@@ -1485,25 +1522,94 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
   return order.type !== "text"
 }
 
-const SPELLED_NUMBER = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
-const NUMBER_WORD = `(?:\\d+(?:\\.\\d+)?|${SPELLED_NUMBER})`
-const TO_RATIO = new RegExp(
-  `\\b${NUMBER_WORD}(?:\\s*[-–]\\s*|\\s+)to(?:\\s*[-–]\\s*|\\s+)${NUMBER_WORD}\\b`,
+const SPELLED_NUMBER =
+  "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred"
+const NUMBER_TOKEN = `(?:\\d+(?:\\.\\d+)?|${SPELLED_NUMBER})`
+const PLACEHOLDER = /\{[^{}]+\}/
+const ODDS_WORD =
+  /\b(?:odds|ratio|probability|likelihood|chances?|percent|per\s+cent)\b|%|\btimes stronger\b|\bx\s+edge\b/i
+const COLON_TO_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s*(?::+|∶|꞉|：)\\s*(?:1\\b|one\\b)`, "i")
+const TO_ONE = new RegExp(
+  `\\b${NUMBER_TOKEN}(?:\\s*[-–]\\s*|\\s+)to(?:\\s*[-–]\\s*|\\s+)(?:1\\b|one\\b)`,
   "i",
 )
-const NUMERIC_RATIO = /\d+(?:\.\d+)?\s*[:∶꞉：]\s*\d+/
-const SLASH_RATIO = /\d+\s*\/\s*\d+/
-const PERCENT_RATIO = /\d+(?:\.\d+)?\s*(?:%|percent\b)/i
-const PLACEHOLDER = /\{[^{}]+\}/
-const SPELLED_NUMBER_PATTERN = new RegExp(`\\b(?:${SPELLED_NUMBER})\\b`, "i")
+const HYPHEN_TO_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s*-\\s*(?:1\\b|one\\b)`, "i")
+const VERSUS_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s+(?:versus|vs\\.?)\\s+(?:1\\b|one\\b)`, "i")
+const AGAINST_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s+against\\s+(?:1\\b|one\\b)`, "i")
+const IN_ONE = new RegExp(`\\b${NUMBER_TOKEN}\\s+in\\s+(?:1\\b|one\\b)`, "i")
+const DECIMAL_PAIR = /\d+\.\d+\s+(?:against|versus|vs\.?|to)\s+(?:\S+\s+){0,6}?\d+\.\d+/i
+const X_EDGE = /\b\d+(?:\.\d+)?\s*x\s+edge\b/i
+const RATIO_SIGNALS = [COLON_TO_ONE, TO_ONE, HYPHEN_TO_ONE, VERSUS_ONE, AGAINST_ONE, IN_ONE, DECIMAL_PAIR, X_EDGE]
+const ABBREVIATIONS = new Set([
+  "gen",
+  "approx",
+  "st",
+  "col",
+  "lt",
+  "capt",
+  "maj",
+  "dr",
+  "mr",
+  "mrs",
+  "ms",
+  "no",
+  "fig",
+  "sgt",
+  "cpl",
+  "pvt",
+  "jr",
+  "sr",
+  "etc",
+  "ie",
+  "eg",
+  "cf",
+  "al",
+  "vol",
+  "dept",
+  "corp",
+])
+
+/** Sentence ends on . ! ? , but not on decimals or staff abbreviations such as Gen. and approx. */
+export function splitStaffSentences(text: string): string[] {
+  const sentences: string[] = []
+  let start = 0
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch !== "." && ch !== "!" && ch !== "?") continue
+    if (ch === "." && isDecimalPoint(text, i)) continue
+    if (ch === "." && isAbbreviation(text, i)) continue
+    const next = text[i + 1]
+    if (next && !/\s/.test(next)) continue
+    const sentence = text.slice(start, i + 1).trim()
+    if (sentence) sentences.push(sentence)
+    let j = i + 1
+    while (j < text.length && /\s/.test(text[j])) j++
+    start = j
+    i = j - 1
+  }
+  const tail = text.slice(start).trim()
+  if (tail) sentences.push(tail)
+  return sentences
+}
+
+function isDecimalPoint(text: string, index: number): boolean {
+  const prev = text[index - 1]
+  const next = text[index + 1]
+  return !!prev && !!next && /\d/.test(prev) && /\d/.test(next)
+}
+
+function isAbbreviation(text: string, index: number): boolean {
+  let start = index - 1
+  while (start >= 0 && /[A-Za-z]/.test(text[start])) start--
+  const word = text.slice(start + 1, index)
+  if (!word) return false
+  if (ABBREVIATIONS.has(word.toLowerCase())) return true
+  return word.length === 1 && /[A-Z]/.test(word)
+}
 
 export function sentenceMentionsOdds(sentence: string): boolean {
-  if (PLACEHOLDER.test(sentence)) return true
-  if (/\bodds\b/i.test(sentence)) return true
-  if (NUMERIC_RATIO.test(sentence) || TO_RATIO.test(sentence) || SLASH_RATIO.test(sentence)) return true
-  if (PERCENT_RATIO.test(sentence)) return true
-  if (/\bratio\b/i.test(sentence) && (/\d/.test(sentence) || SPELLED_NUMBER_PATTERN.test(sentence))) return true
-  return false
+  if (PLACEHOLDER.test(sentence) || ODDS_WORD.test(sentence)) return true
+  return RATIO_SIGNALS.some((pattern) => pattern.test(sentence))
 }
 
 export function dropOddsSentences(text: string): string {
@@ -1511,16 +1617,43 @@ export function dropOddsSentences(text: string): string {
   return chunks
     .map((chunk) => {
       if (/^\n+$/.test(chunk)) return chunk
-      return chunk
-        .split(/(?<=[.!?])\s+/)
-        .map((sentence) => sentence.trim())
-        .filter((sentence) => sentence && !sentenceMentionsOdds(sentence))
+      return splitStaffSentences(chunk)
+        .map((sentence) => keptSentence(sentence))
+        .filter((sentence): sentence is string => Boolean(sentence))
         .join(" ")
     })
     .join("")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ +([,.;])/g, "$1")
     .trim()
+}
+
+/**
+ * A sentence that is only a ratio is dropped. A factual clause with a trailing
+ * ratio, and no odds word, keeps the clause. A dangling fragment is dropped
+ * with the ratio.
+ */
+function keptSentence(sentence: string): string | null {
+  const trimmed = sentence.trim()
+  if (!trimmed || !sentenceMentionsOdds(trimmed)) return trimmed || null
+  if (PLACEHOLDER.test(trimmed) || ODDS_WORD.test(trimmed)) return null
+  return salvageFact(trimmed)
+}
+
+function salvageFact(sentence: string): string | null {
+  let cut = sentence.length
+  for (const pattern of RATIO_SIGNALS) {
+    const match = pattern.exec(sentence)
+    if (match && match.index < cut) cut = match.index
+  }
+  if (cut === sentence.length) return null
+  let head = sentence.slice(0, cut).trim()
+  head = head.replace(/[\s,]+(?:at|about|approximately|approx\.?|roughly|nearly|almost|of|some)$/i, "").trim()
+  head = head.replace(/[.:;,]+$/, "").trim()
+  const words = head.split(/\s+/).filter(Boolean)
+  if (words.length < 3) return null
+  if (/^(?:is|are|was|were|at|about|of|a|an|the)$/i.test(words[words.length - 1] ?? "")) return null
+  return `${head}.`
 }
 
 function presentReply(reply: string): string {

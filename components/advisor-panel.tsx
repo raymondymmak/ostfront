@@ -268,6 +268,11 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                     {card.detail}
                   </p>
                 )}
+                {card.depotWarning && (
+                  <p className="mt-1 text-xs text-[#e0a15a]" data-testid="advisor-depot-warning">
+                    {card.depotWarning}
+                  </p>
+                )}
                 {!card.valid && card.note && (
                   <p className="mt-1 text-xs text-[#e07a6a]">The engine rejects this. {card.note}</p>
                 )}
