@@ -51,25 +51,18 @@ describe("demo-check redaction", () => {
     expectNoTokenLeak(redacted, token)
   })
 
-  it("redacts standard base64 form of configured secrets (raw token absent)", () => {
-    const token = "base64Only9"
-    configureRedaction({ bypassSecret: token })
-    const b64 = Buffer.from(token, "utf8").toString("base64")
-    expect(b64).not.toContain(token)
-    const redacted = redactSensitiveText(`payload=${b64}`)
-    expect(redacted).toBe("payload=REDACTED")
-    expectNoTokenLeak(redacted, token)
-  })
-
-  it("redacts base64url form of configured share tokens", () => {
-    const token = "url/tok+9"
+  it("redacts standard base64 and distinct base64url forms of configured secrets", () => {
+    const token = "subjects?"
     configureRedaction({ shareToken: token })
     const b64 = Buffer.from(token, "utf8").toString("base64")
     const b64url = b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+    expect(b64).toMatch(/[+/=]/)
+    expect(b64url).not.toBe(b64)
+    expect(b64).not.toContain(token)
     expect(b64url).not.toContain(token)
-    const redacted = redactSensitiveText(`share=${b64url}`)
-    expect(redacted).toBe("share=REDACTED")
-    expectNoTokenLeak(redacted, token)
+    expect(redactSensitiveText(`std=${b64}`)).toBe("std=REDACTED")
+    expect(redactSensitiveText(`url=${b64url}`)).toBe("url=REDACTED")
+    expectNoTokenLeak(redactSensitiveText(`std=${b64} url=${b64url}`), token)
   })
 
   it("redacts upper-case and mixed-case percent-encoded literals", () => {
@@ -97,6 +90,22 @@ describe("demo-check redaction", () => {
     expect(redactSensitiveText(bypass)).toBe("REDACTED")
     expectNoTokenLeak(redactSensitiveText(`token ${share} end`), share)
     expectNoTokenLeak(redactSensitiveText(encodeURIComponent(encodeURIComponent(bypass))), bypass)
+  })
+
+  it("redacts Authorization Basic credentials in log lines", () => {
+    configureRedaction({})
+    const cred = Buffer.from("agent:super-secret-pass", "utf8").toString("base64")
+    const line = `requestfailed: GET https://example.com/ — Authorization: Basic ${cred}`
+    const redacted = redactSensitiveText(line)
+    expect(redacted).toContain("Authorization: Basic REDACTED")
+    expect(redacted).not.toContain(cred)
+    expect(redacted).not.toContain("super-secret-pass")
+  })
+
+  it("redacts userinfo in http URLs", () => {
+    configureRedaction({})
+    const redacted = redactSensitiveText("fetch https://user:pass@preview.vercel.app/path")
+    expect(redacted).toBe("fetch https://REDACTED@preview.vercel.app/path")
   })
 
   it("redacts bypass secret env echoes", () => {

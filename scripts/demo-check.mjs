@@ -5,7 +5,7 @@
  * Optional flags: --continue --allow-fallback --force-fail
  * Avoid `--url` with share tokens (npm logs the command line); use DEMO_URL instead.
  * Exit 0 when all executed steps pass; skipped steps exit 0 only with --allow-fallback.
- * Login / protection / deployment-not-found errors abort immediately (even with --continue).
+ * Login / protection / deployment-not-found / DNS errors abort immediately (even with --continue).
  */
 import { chromium } from "playwright"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
@@ -122,7 +122,10 @@ function isFatalStepError(err) {
   return (
     message.includes("Preview is protected") ||
     message.includes("Deployment not found") ||
-    /HTTP [45]\d{2} loading/i.test(message)
+    /HTTP [45]\d{2} loading/i.test(message) ||
+    /ERR_NAME_NOT_RESOLVED/i.test(message) ||
+    /getaddrinfo\s+ENOTFOUND/i.test(message) ||
+    /ENOTFOUND/i.test(message)
   )
 }
 
@@ -574,6 +577,8 @@ let failed = 0
 let passed = 0
 let skipped = 0
 let stop = false
+/** @type {string | null} */
+let abortReason = null
 
 for (const step of steps) {
   if (stop) break
@@ -601,12 +606,19 @@ for (const step of steps) {
     const message = redactSensitiveText(err instanceof Error ? err.message : String(err))
     results.push({ id: step.id, name: step.name, ok: false, error: message })
     log(`FAIL  ${step.id}  ${step.name} — ${message}`)
-    if (!cli.continueOnFail || isFatalStepError(err)) stop = true
+    if (!cli.continueOnFail || isFatalStepError(err)) {
+      stop = true
+      if (isFatalStepError(err)) abortReason = message
+    }
   }
 }
 
 await context.close()
 await browser.close()
+
+if (abortReason) {
+  log(`aborted: ${abortReason}`)
+}
 
 if (issues.length) {
   log("\n--- console / network issues ---")

@@ -101,6 +101,8 @@ export function redactSensitiveText(text) {
   out = out.replace(/(x-vercel-protection-bypass\s*[:=]\s*)[^\s"',]+/gi, "$1REDACTED")
   out = out.replace(/("x-vercel-protection-bypass"\s*:\s*")[^"]+(")/gi, '$1REDACTED$2')
   out = out.replace(/(VERCEL_AUTOMATION_BYPASS_SECRET\s*[:=]\s*)[^\s"',]+/gi, "$1REDACTED")
+  out = out.replace(/(Authorization\s*:\s*Basic\s+)[A-Za-z0-9+/=_-]+/gi, "$1REDACTED")
+  out = out.replace(/(https?:\/\/)[^/\s"'#@]+@/gi, "$1REDACTED@")
   out = redactKnownLiterals(out)
   return out
 }
