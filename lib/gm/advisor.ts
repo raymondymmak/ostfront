@@ -771,13 +771,18 @@ function renderBattle(battle: CombinedBattle): string {
   return `${battle.targetId} ${battle.targetName} | ${battle.origins} directions | flank ×${battle.multiplier} | ${battle.odds}${ring}${adding} | columns ${columns}`
 }
 
+function soften(odds: string): string {
+  if (!odds) return odds
+  return odds.charAt(0).toLowerCase() + odds.slice(1)
+}
+
 function poolSentence(battle: CombinedBattle): string {
   const names = joinAnd(battle.prongs.map((prong) => prong.fromName))
-  const lead = `${names} into ${battle.targetName} are one battle. The flank multiplier is ${battle.multiplier}.`
+  const lead = `${names} into ${battle.targetName} are one battle, ${soften(battle.odds)} The flank multiplier is ${battle.multiplier}.`
   const queued = battle.prongs.filter((prong) => prong.queued)
   const free = battle.prongs.filter((prong) => !prong.queued)
-  if (queued.length && free.length) {
-    return `${lead} With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} is that same battle.`
+  if (queued.length && free.length && battle.queuedRatio !== null) {
+    return `${lead} With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes it ${printRatio(battle.ratio)}.`
   }
   return lead
 }
@@ -788,27 +793,28 @@ function focusedReply(
 ): { reply: string; orders: AdvisorOrder[] } {
   const names = joinAnd(focus.prongs.map((prong) => prong.fromName))
   const sentences = [
-    `${situation.date}. Doing it together is one battle. The engine pools the columns.`,
-    `${names} into ${focus.targetName} are one battle. The flank multiplier on ${focus.origins} directions is ${focus.multiplier}.`,
+    `${situation.date}. Doing it together is one battle. The engine pools the columns before the dice.`,
+    `${names} into ${focus.targetName} are one battle, ${soften(focus.odds)} The flank multiplier on ${focus.origins} directions is ${focus.multiplier}.`,
   ]
   const queued = focus.prongs.filter((prong) => prong.queued)
   const free = focus.prongs.filter((prong) => !prong.queued)
-  if (queued.length && free.length) {
+  if (queued.length && free.length && focus.queuedRatio !== null) {
     sentences.push(
-      `With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} is that same battle.`,
+      `With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes it ${printRatio(focus.ratio)}. The queued columns alone are ${printRatio(focus.queuedRatio)}.`,
     )
   }
   const chosen = chooseContact(axisContacts(situation.contacts))
   if (chosen && chosen.targetId !== focus.targetId && Number.isFinite(chosen.ratio) && chosen.ratio > focus.ratio) {
-      sentences.push(
-        `${chosen.fromName} into ${chosen.targetName} is still the stronger blow. I can file the ${focus.targetName} battle for you to accept.`,
-      )
+    const odds = soften(chosen.odds.endsWith(".") ? chosen.odds : `${chosen.odds}.`)
+    sentences.push(
+      `${chosen.fromName} into ${chosen.targetName} is still the stronger blow, ${odds} I can file the ${focus.targetName} battle for you to accept.`,
+    )
   } else {
     sentences.push("I would file that battle, and leave it for you to accept. I do not fight it myself.")
   }
   if (focus.encircled) sentences.push(`${focus.targetName} would be surrounded. The defender cannot retreat.`)
   sentences.push(
-    "I have not seen the Russian orders for this fortnight, and I will not guess them. This is against the garrison as it stands. A simultaneous march can change the fight.",
+    "I have not seen the Russian orders for this fortnight, and I will not guess them. These odds are against the garrison as it stands. A simultaneous march can change the fight.",
   )
   return {
     reply: sentences.join(" "),
