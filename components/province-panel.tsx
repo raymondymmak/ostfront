@@ -1,5 +1,6 @@
 "use client"
 
+import { Check } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -8,7 +9,7 @@ import { objectiveValue } from "@/lib/data/objectives"
 import { ordersLocked } from "@/lib/finale"
 import { RECRUIT, recruitmentYard } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, type EngagementPreview } from "@/lib/engine/turn"
-import type { QueuedOrder } from "@/lib/orders"
+import { provinceActionState, type QueuedOrder } from "@/lib/orders"
 import { FACTION_LABEL, KIND_LABEL, TERRAIN_LABEL } from "@/lib/format"
 import type { GameState, Province, Purse, UnitKind } from "@/lib/types"
 
@@ -46,6 +47,17 @@ export function ProvincePanel({
   const occupied = province.controller !== province.owner
   const friendly = province.controller === "central"
   const closed = ordersLocked(Boolean(state.result))
+  const action = provinceActionState(state, province.id, queue, budget)
+  const recruitReasons = [
+    ...new Set(
+      (Object.keys(RECRUIT) as UnitKind[])
+        .map((kind) => action.recruit[kind].reason)
+        .filter((reason): reason is string => !!reason),
+    ),
+  ]
+  const everyRecruitDisabled = (Object.keys(RECRUIT) as UnitKind[]).every(
+    (kind) => action.recruit[kind].disabled,
+  )
 
   return (
     <ScrollArea className="h-full">
@@ -76,13 +88,26 @@ export function ProvincePanel({
             : ""}
         </p>
         {friendly && !closed ? (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => onFortify(province.id)}
-          >
-            Fortify {province.name}
-          </Button>
+          <div className="flex flex-col gap-1">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={action.fortify.disabled}
+              aria-disabled={action.fortify.disabled}
+              data-testid="fortify"
+              onClick={() => onFortify(province.id)}
+            >
+              {action.fortify.queued ? <Check aria-hidden /> : null}
+              {action.fortify.queued ? `Fortify queued · ${province.name}` : `Fortify ${province.name}`}
+            </Button>
+            {action.fortify.queued ? (
+              <p className="text-xs text-muted-foreground">Remove it in the Orders tab.</p>
+            ) : action.fortify.reason ? (
+              <p className="text-xs text-muted-foreground" data-testid="fortify-reason">
+                {action.fortify.reason}
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {friendly && !closed && recruitmentYard(province, "central") ? (
           <div data-testid="recruit-panel" className="flex flex-col gap-2">
@@ -92,20 +117,32 @@ export function ProvincePanel({
             </p>
             {(Object.keys(RECRUIT) as UnitKind[]).map((kind) => {
               const cost = RECRUIT[kind]
-              const affordable = budget.mp >= cost.mp && budget.ip >= cost.ip
+              const item = action.recruit[kind]
               return (
-                <Button
-                  key={kind}
-                  type="button"
-                  variant="outline"
-                  disabled={!affordable}
-                  data-testid={`recruit-${kind}`}
-                  onClick={() => onRecruit(province.id, kind)}
-                >
-                  {cost.label} · {cost.mp} MP {cost.ip} IP · {cost.turns === 1 ? "1 fortnight" : "2 fortnights"}
-                </Button>
+                <div key={kind} className="flex flex-col gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={item.disabled}
+                    aria-disabled={item.disabled}
+                    title={item.reason ?? undefined}
+                    data-testid={`recruit-${kind}`}
+                    onClick={() => onRecruit(province.id, kind)}
+                  >
+                    {cost.label} · {cost.mp} MP {cost.ip} IP · {cost.turns === 1 ? "1 fortnight" : "2 fortnights"}
+                    {item.queued ? " · queued" : ""}
+                  </Button>
+                  {item.queued ? (
+                    <p className="text-xs text-muted-foreground">Remove it in the Orders tab.</p>
+                  ) : null}
+                </div>
               )
             })}
+            {everyRecruitDisabled ? (
+              <p className="text-xs text-muted-foreground" data-testid="recruit-reason">
+                {recruitReasons.join(" · ")}
+              </p>
+            ) : null}
             {state.queue
               .filter((job) => job.provinceId === province.id && job.faction === "central")
               .map((job) => (
