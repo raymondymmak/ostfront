@@ -18,7 +18,7 @@ General Erich von Falkenhayn, chief of the German General Staff, can be asked fo
 
 Both sides lock their orders from the same start-of-turn map. The order of the proposal list does not matter, and neither does which side wrote the order. The same state, orders, and seed always produce the same result. Dice are drawn in battle-key order.
 
-1. **Digging, shocks, and the yards.** Fortify orders and supply or unrest shocks are applied first, so a fort dug this fortnight stands for this fortnight's battles. Both sides may dig. Recruiting is decided now but paid later, from the purse collected at the close, and the new formation still arrives when the fortnight closes.
+1. **Digging, shocks, events, and the yards.** Fortify orders and supply or unrest shocks are applied first, so a fort dug this fortnight stands for this fortnight's battles. Game-master events share that ±20 unrest and supply budget and land before the battles. They never target Central Powers home soil. Both sides may dig. Recruiting is decided now but paid later, from the purse collected at the close, and the new formation still arrives when the fortnight closes.
 2. **Marches and attacks, together.** Every move and attack is checked against the map from step 1. A formation has one order. Then the battles are fought.
 3. **Supply, refit, victory.** Supply is traced again from the map after the marches. Income, refit, recruiting, and the grade of the fortnight come last. A depot or rail taken this fortnight does not feed or starve a battle that was already locked. It can drop a province under supply 30 for the next march. The chronicle says when a province was cut off this fortnight.
 
@@ -115,8 +115,11 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 - `npm test` — Vitest for the rules, Stavka, victory, and the turn API.
+- `npm run typecheck` — generate Next types, then `tsc --noEmit`.
 - `npm run lint` — ESLint.
 - `npm run build` — production build.
+
+CI runs typecheck, lint (0 warnings), test and build on every PR.
 - `npm run llm-logs` — list stored LLM responses (`BLOB_READ_WRITE_TOKEN`). `vercel blob ls llm-log/` does the same.
 - `npm run map` — neighbor graph, and rail pairs that do not share a border.
 - `npx tsx scripts/balance-sim.ts` — scripted Central Powers opponents (greedy, frontier, sensible) through six seeds on Easy, Normal, and Hard. It clears any model key and plays against Stavka.

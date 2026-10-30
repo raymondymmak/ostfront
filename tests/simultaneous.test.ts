@@ -495,6 +495,41 @@ describe("simultaneous orders", () => {
     )
   })
 
+  it("resolves events after modify and before maneuvers", () => {
+    const board = () =>
+      game([
+        province({
+          id: "home",
+          name: "Home",
+          neighbors: ["held"],
+          depot: "central",
+          units: [unit("relief", "central", 90)],
+        }),
+        province({
+          id: "held",
+          name: "Held",
+          owner: "russia",
+          controller: "central",
+          neighbors: ["home"],
+          unrest: 60,
+          units: [unit("garrison", "central", 30)],
+        }),
+      ])
+    const played = resolveTurn(board(), {
+      narration: "",
+      proposals: [{ type: "move", unit: "relief", to: "held" }],
+      events: [{ type: "partisans", province: "held" }],
+      diplomacy: [],
+    })
+    const held = played.state.provinces.find((item) => item.id === "held")!
+    const garrison = held.units.find((item) => item.id === "garrison")!
+    const relief = held.units.find((item) => item.id === "relief")!
+    expect(played.record.events[0].status).toBe("applied")
+    expect(played.record.events[0].summary).toMatch(/garrison loses 8 strength/)
+    expect(garrison.strength).toBe(22)
+    expect(relief.strength).toBe(90)
+  })
+
   it("keeps a pooled attack consistent with the odds preview", () => {
     const board = game([
       province({

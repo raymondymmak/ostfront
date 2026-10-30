@@ -330,7 +330,7 @@ describe("concentric attacks", () => {
     const normal = stavkaTurn(state(provinces, "normal"), [])
     const attacks = normal.proposals.filter((item) => item.type === "attack")
     expect(attacks.map((item) => (item.type === "attack" ? item.from : ""))).toEqual(["north", "south"])
-    expect(normal.narration).toMatch(/two-pronged attack at Salient/)
+    expect(normal.narration).toMatch(/attacks Salient from two sides/)
     const easy = stavkaTurn(state(provinces, "easy"), [])
     expect(easy.proposals.filter((item) => item.type === "attack")).toHaveLength(0)
   })

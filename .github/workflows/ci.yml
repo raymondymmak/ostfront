@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint -- --max-warnings=0
+      - run: npm test
+      # Turbopack fails on GitHub-hosted runners when Google Fonts returns
+      # extensionless /l/font URLs (vercel/next.js#99114). Webpack does not.
+      # Vercel keeps `npm run build` (Turbopack); that preview already succeeds.
+      - run: npm run build -- --webpack
