@@ -220,7 +220,7 @@ export function scrubAdvisorReply(reply: string, state: GameState): string {
     .filter((sentence) => !leaksRussianPlan(sentence))
     .filter((sentence) => !deniesCombined(sentence))
     .filter((sentence) => !inventsUnit(sentence, knownUnits))
-  return stripPlaceholderTokens(sentences.join(" "))
+  return sentences.join(" ").trim()
 }
 
 export async function advise(input: {
@@ -235,12 +235,12 @@ export async function advise(input: {
   const ordersClosed = situation.over
 
   if (!llmConfigured() && !fixtureEnabled()) {
-    const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued)
+    const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued).filter((card) => card.valid)
     return {
-      reply: stripPlaceholderTokens(`${OFFLINE_LINE}\n\n${brief.reply}`),
+      reply: finishAdvisorReply(`${OFFLINE_LINE}\n\n${brief.reply}`, suggestions),
       source: "rules",
       unavailable: true,
-      suggestions: suggestions.filter((card) => card.valid),
+      suggestions,
       dropped: 0,
       ordersClosed,
     }
@@ -303,16 +303,16 @@ export async function advise(input: {
 
   const parsed = judged?.parsed ?? null
   if (!parsed) {
-    const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued)
+    const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued).filter((card) => card.valid)
     const wire =
       failure === "empty"
         ? "The wire returned nothing I can file. Reasoning spent the dispatch before a reply was written."
         : "The wire returned nothing I can file."
     return {
-      reply: stripPlaceholderTokens(`${wire}\n\n${brief.reply}`),
+      reply: finishAdvisorReply(`${wire}\n\n${brief.reply}`, suggestions),
       source: "rules",
       unavailable: false,
-      suggestions: suggestions.filter((card) => card.valid),
+      suggestions,
       dropped: 0,
       ordersClosed,
     }
@@ -322,7 +322,7 @@ export async function advise(input: {
   const raw = parsed.suggestions.slice(0, 12)
   if (ordersClosed) {
     return {
-      reply: reply || stripPlaceholderTokens(brief.reply),
+      reply: finishAdvisorReply(reply || brief.reply, []),
       source: "llm",
       unavailable: false,
       suggestions: [],
@@ -344,7 +344,7 @@ export async function advise(input: {
     )
   }
   return {
-    reply: reply || stripPlaceholderTokens(brief.reply),
+    reply: finishAdvisorReply(reply || brief.reply, cards),
     source: "llm",
     unavailable: false,
     suggestions: cards,
@@ -1518,14 +1518,117 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
   return order.type !== "text"
 }
 
-/** Remove literal {odds:...} and {placeholder} tokens. The rest of the reply stays. */
-function stripPlaceholderTokens(reply: string): string {
-  return reply
-    .replace(/\{\s*odds\s*:[^{}]*\}/gi, "")
-    .replace(/\{\s*placeholder\s*\}/gi, "")
+const BRACE_OPEN = /[{\uFF5B]/
+const BRACE_CLOSE = /[}\uFF5D]/
+
+/** Ratio text the order card shows, such as `6.51 : 1`. */
+export function cardOddsFigure(odds: string | null | undefined): string | null {
+  if (!odds) return null
+  const match = odds.match(/\d+\.\d+\s*:\s*1/)
+  if (!match) return null
+  return match[0].replace(/\s*:\s*/, " : ")
+}
+
+function oddsFigures(cards: Pick<AdvisorCard, "odds" | "order">[]): Map<string, string> {
+  const figures = new Map<string, string>()
+  const put = (key: string, figure: string) => {
+    const normalized = key.toLowerCase()
+    if (!figures.has(normalized)) figures.set(normalized, figure)
+  }
+  cards.forEach((card, index) => {
+    const figure = cardOddsFigure(card.odds)
+    if (!figure) return
+    const number = String(index + 1)
+    put(`card${number}`, figure)
+    put(`odds:card${number}`, figure)
+    if (card.order.type === "attack") {
+      put(`${card.order.target}_odds`, figure)
+      put(`odds:${card.order.target}`, figure)
+    }
+  })
+  return figures
+}
+
+function expandOddsToken(text: string, keyStart: number, keyEnd: number, min: number): [number, number] {
+  let start = keyStart
+  let end = keyEnd
+  for (let guard = 0; guard < text.length + 2; guard++) {
+    let left = start
+    while (left > min && /\s/.test(text[left - 1])) left--
+    let right = end
+    while (right < text.length && /\s/.test(text[right])) right++
+    const prev = left > min ? text[left - 1] : ""
+    const next = text[right] ?? ""
+    if (BRACE_OPEN.test(prev) && BRACE_CLOSE.test(next)) {
+      start = left - 1
+      end = right + 1
+      continue
+    }
+    if (BRACE_OPEN.test(prev)) {
+      start = left - 1
+      continue
+    }
+    if (BRACE_CLOSE.test(next)) {
+      end = right + 1
+      continue
+    }
+    const oddsPrefix = text.slice(min, start).match(/odds:$/i)
+    if (oddsPrefix) {
+      const at = start - oddsPrefix[0].length
+      const before = at > min ? text[at - 1] : ""
+      if (before === "" || BRACE_OPEN.test(before) || /\s/.test(before)) {
+        start = at
+        continue
+      }
+    }
+    break
+  }
+  return [start, end]
+}
+
+function resolveOddsTokens(text: string, figures: Map<string, string>): string {
+  const keys = [...figures.keys()].sort((a, b) => b.length - a.length)
+  if (!keys.length) return text
+  const pattern = new RegExp(keys.map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi")
+  let result = ""
+  let cursor = 0
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index < cursor) continue
+    const figure = figures.get(match[0].toLowerCase())
+    if (!figure) continue
+    const [start, end] = expandOddsToken(text, index, index + match[0].length, cursor)
+    result += text.slice(cursor, start)
+    result += figure
+    cursor = end
+  }
+  return result + text.slice(cursor)
+}
+
+function sanitizeTokenText(text: string): string {
+  let current = text
+  const balanced = /[{\uFF5B][^{}\uFF5B\uFF5D]*[}\uFF5D]/g
+  let previous = ""
+  while (current !== previous) {
+    previous = current
+    current = current.replace(balanced, "")
+  }
+  return current
+    .replace(/[{\uFF5B][^}\uFF5D]*/g, "")
+    .replace(/[}\uFF5D]+/g, "")
+    .replace(/odds:[A-Za-z0-9_]*/gi, "")
+    .replace(/odds:/gi, "")
     .replace(/[ \t]{2,}/g, " ")
-    .replace(/ +([,.;])/g, "$1")
+    .replace(/ +([,.;!?])/g, "$1")
     .trim()
+}
+
+/**
+ * Replace a token that names a real card or target with that card's odds,
+ * then remove leftover brace tokens and `odds:` fragments.
+ */
+export function finishAdvisorReply(reply: string, cards: Pick<AdvisorCard, "odds" | "order">[]): string {
+  return sanitizeTokenText(resolveOddsTokens(reply, oddsFigures(cards)))
 }
 
 function snap(unit: Unit): UnitSnap {

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
 import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engine/turn"
-import { advise, buildSituation, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
+import { advise, buildSituation, finishAdvisorReply, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
 import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
 import { readMessageContent } from "@/lib/gm/llm"
 import { resetTurnGuardStateForTests } from "@/lib/api/turn-guard"
@@ -184,7 +184,6 @@ describe("advisor grounding", () => {
       { fromId: "gdynia", unitIds: ["g-gdy-inf"] },
       { fromId: "katowice", unitIds: ["g-kat-inf"] },
     ])
-    expect(payload.reply).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
     expect(payload.reply).toMatch(/one battle/i)
     expect(payload.reply).toContain(String(flankMultiplier(4)))
     expect(payload.reply).not.toMatch(/does not show combined|each column separately|cannot promise|dispersion/i)
@@ -540,16 +539,33 @@ describe("advisor grounding", () => {
     expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
   })
 
-  it("strips placeholder tokens and leaves the model's odds prose", () => {
-    const text = scrubAdvisorReply(
-      "Kielce is 8.34 : 1. Use {odds:card1} on the card. See {placeholder}.",
-      createInitialState(),
+  it("resolves a card token to the engine odds", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "Kielce stands at {odds:card1}.",
+              suggestions: [{ type: "attack", from: "Kraków", target: "Kielce", unitIds: ["g-kra-11"] }],
+            }),
+          ),
+        ),
+      ),
     )
-    expect(text).toContain("Kielce is 8.34 : 1.")
-    expect(text).toContain("Use")
-    expect(text).toContain("on the card.")
-    expect(text).toContain("See")
-    expect(text).not.toMatch(/\{odds:[^{}]*\}|\{placeholder\}/i)
+    const state = createInitialState()
+    const response = await postAdvisor({
+      state,
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    const card = payload.suggestions.find((item) => item.order.type === "attack" && item.order.target === "kielce")
+    const figure = card?.odds?.match(/\d+\.\d+\s*:\s*1/)?.[0].replace(/\s*:\s*/, " : ")
+    expect(figure).toBeTruthy()
+    expect(payload.reply).toBe(`Kielce stands at ${figure}.`)
+    expect(payload.reply).not.toMatch(/[{}\uFF5B\uFF5D]|odds:/)
   })
 
   it("shows an exact queued order and disables accept", async () => {
@@ -637,6 +653,60 @@ describe("advisor grounding", () => {
     expect(payload.dropped).toBeGreaterThanOrEqual(1)
     expect(payload.suggestions.some((card) => card.valid && card.queue === "new")).toBe(true)
     expect(payload.reply).not.toMatch(/\d+(?:\.\d+)?\s*:\s*1/)
+  })
+})
+
+describe("advisor placeholder tokens", () => {
+  const figure = "6.51 : 1"
+  const cards = [
+    {
+      odds: "About 6.51 : 1 before the dice.",
+      order: { type: "attack" as const, from: "krakow", target: "kielce", unitIds: ["g-kra-11"] },
+    },
+  ]
+  const forms: { text: string; keep: string }[] = [
+    { text: "Kielce stands at {odds:card1}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {card1}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {kielce_odds}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {odds:kielce}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {{odds:card1}}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {odds:{odds:card1}}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at ｛odds:card1｝.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at ｛｛odds:card1｝｝.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {odds:card1.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at odds:card1}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at { odds:card1 }.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {ODDS:card1}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Kielce stands at {odds:CARD1}.", keep: `Kielce stands at ${figure}.` },
+    { text: "Use {card1} and {kielce_odds}.", keep: `Use ${figure} and ${figure}.` },
+    { text: "{{odds:x}}", keep: "" },
+    { text: "{odds}", keep: "" },
+    { text: "{", keep: "" },
+    { text: "}", keep: "" },
+    { text: "｛", keep: "" },
+    { text: "｝", keep: "" },
+    { text: "{placeholder}", keep: "" },
+    { text: "｛placeholder｝", keep: "" },
+    { text: "{card99}", keep: "" },
+    { text: "{not_a_place_odds}", keep: "" },
+    { text: "odds:card99}", keep: "" },
+    { text: "{odds:card1}} extra", keep: `${figure} extra` },
+    { text: "Hold { the shoulder", keep: "Hold" },
+    { text: "See {odds:card1} now.", keep: `See ${figure} now.` },
+    { text: "Mix ｛odds:x｝ and } stray {", keep: "Mix and stray" },
+  ]
+
+  it("resolves real card tokens and removes every malformed form", () => {
+    expect(forms).toHaveLength(29)
+    for (const item of forms) {
+      expect(finishAdvisorReply(item.text, cards), item.text).toBe(item.keep)
+    }
+  })
+
+  it("never leaves a brace or an odds: fragment", () => {
+    for (const item of forms) {
+      expect(finishAdvisorReply(item.text, cards), item.text).not.toMatch(/[{}\uFF5B\uFF5D]|odds:/)
+    }
   })
 })
 
