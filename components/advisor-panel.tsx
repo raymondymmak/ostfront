@@ -304,7 +304,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
           }}
           className="w-full resize-none rounded-md border border-[#c6a15a]/35 bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-[#f3e2a8]/40 focus-visible:border-[#c6a15a]"
         />
-        <Button type="submit" size="sm" disabled={busy || !draft.trim()}>
+        <Button type="submit" size="sm" disabled={busy || !draft.trim()} data-testid="advisor-send">
           Send
         </Button>
       </form>

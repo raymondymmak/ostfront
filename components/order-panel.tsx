@@ -60,6 +60,7 @@ export function OrderPanel({
             size="sm"
             variant={orderMode ? "default" : "outline"}
             aria-pressed={orderMode}
+            data-testid="draw-arrows"
             disabled={closed}
             onClick={() => {
               if (closed) return

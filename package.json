@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
+    "demo-check": "node scripts/demo-check.mjs",
     "test": "vitest run",
     "llm-logs": "tsx scripts/list-llm-logs.ts",
     "map": "tsx scripts/map-graph.ts",

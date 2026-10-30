@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import { Fraunces, Source_Sans_3 } from "next/font/google"
 import "./globals.css"
 
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
     "Gorlice–Tarnów, 2 May 1915. A map-first World War I operational game. The map is the rules; the staff only narrates.",
 }
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"

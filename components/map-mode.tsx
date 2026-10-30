@@ -28,6 +28,7 @@ export function MapMode({
         <button
           key={id}
           type="button"
+          data-testid={`map-mode-${id}`}
           title={hint}
           aria-pressed={overlay === id}
           onClick={() => onOverlay(id)}
