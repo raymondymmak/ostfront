@@ -66,12 +66,12 @@ const PLACEMENTS: Placement[] = [
   { id: "g-pro-inf", name: "8th Army (Brusilov)", faction: "russia", kind: "infantry", strength: 56, morale: 70, province: "proskuriv" },
 ]
 
-export const BRIEFING = [
-  "2 May 1915. Generaloberst August von Mackensen's German 11th Army and Archduke Joseph Ferdinand's Austro-Hungarian 4th Army are concentrated in the Kraków province, on the Dunajec. Gorlice and Tarnów are in that state. Przemyśl is too: the fortress was Russian from 22 March until 3 June, but the map cannot split it from Kraków, so the province stays your base. The Guard Corps is in the line, and the heavy artillery Falkenhayn assembled for the blow is with them. The 11th Army counter also stands for X Corps, XLI Reserve Corps, the Combined Corps and Arz's VI Corps.",
-  "Radko Dimitriev's Russian 3rd Army holds Lemberg, Russian since 3 September 1914. XXI Corps and the army's guns are in the city with him. X Corps holds Kielce. XXIV Corps stands at Lublin, and the III Caucasian Corps is in reserve at Rovno. Ivanov has refused a withdrawal to the San. The yards are short of shells. Brusilov's 8th Army is on Podolia.",
-  "Lemberg is Austrian soil. Its depot does not feed the Russians, and it is yours again when the city falls. Katowice is German. Bukovina is Austro-Hungarian, under Pflanzer-Baltin, as it had been since 17 February. Stanislav is left Austro-Hungarian on this map as well; historically the Russians still held it, until 8 June. Borojević's 3rd Army is in Carpathian Ruthenia, off the Dunajec. The 8th and 9th Armies with Woyrsch hold East Prussia and the Polish salient. They are not the offensive.",
-  "You have six fortnights, through 11 July. Take Lemberg by the fortnight of 13 June. The pursuit is Lublin, and Rovno by the fortnight of 27 June if the breakthrough stays on time. Rovno did not fall in 1915. Do not lose Kraków. Depots and cities raise troops; they arrive when the fortnight closes.",
-].join(" ")
+export const BRIEFING: string[] = [
+  "Break the Russian line in Galicia. You have six fortnights, from 2 May to 11 July 1915. Take Lemberg (4 VP) by the fortnight of 13 June. Then pursue: Rovno (3 VP) by 27 June and Lublin (2 VP) by 11 July. All three on time, and held, is a Brilliant victory. Never lose Kraków. Draw arrows on the map to move and attack, then end the fortnight.",
+  "Radko Dimitriev's 3rd Army holds Lemberg with XXI Corps and the army's guns. X Corps holds Kielce, XXIV Corps Lublin, and the III Caucasian Corps waits in reserve at Rovno. Brusilov's 8th Army is in Podolia. Ivanov has refused to fall back to the San, and his yards are short of shells.",
+  "Mackensen's German 11th Army, with the Guard Corps and Falkenhayn's heavy artillery, and Archduke Joseph Ferdinand's Austro-Hungarian 4th Army are massed in the Kraków province on the Dunajec. Depots and cities raise troops; they arrive when the fortnight closes.",
+  "Przemyśl lies inside the Kraków province; the map can't split it, so it stays your base. Lemberg is Austrian soil, held by Russia since 3 September 1914; its depot does not feed the Russians. Katowice is German. Stanislav and Bukovina are Austro-Hungarian. The armies in East Prussia, the Polish salient and the Carpathians hold the line and are not part of the offensive.",
+]
 
 /**
  * Normal uses the placements as written. Easy trims Russian corps; Hard fills them out.
