@@ -9,7 +9,7 @@ import { objectiveValue } from "@/lib/data/objectives"
 import { ordersLocked } from "@/lib/finale"
 import { RECRUIT, recruitmentYard } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, type EngagementPreview } from "@/lib/engine/turn"
-import { provinceActionState, type QueuedOrder } from "@/lib/orders"
+import { provinceActionState, provinceOddsNote, type QueuedOrder } from "@/lib/orders"
 import { FACTION_LABEL, KIND_LABEL, TERRAIN_LABEL } from "@/lib/format"
 import type { GameState, Province, Purse, UnitKind } from "@/lib/types"
 
@@ -191,6 +191,12 @@ export function ProvincePanel({
                 !closed && friendly && neighbor.controller !== "central"
                   ? previewNeighbor(state, province, neighbor.id, queue)
                   : null
+              const oddsNote = attack
+                ? provinceOddsNote(
+                    province.units.filter((unit) => unit.faction === "central"),
+                    province.depot === "central",
+                  )
+                : null
               return (
                 <li key={id}>
                   <button
@@ -208,7 +214,7 @@ export function ProvincePanel({
                         {neighbor.rail.includes(province.id) || province.rail.includes(neighbor.id)
                           ? " · rail"
                           : ""}
-                        {attack ? ` · ${neighborOddsLabel(attack)}` : ""}
+                        {attack ? ` · ${neighborOddsLabel(attack)}${oddsNote ? `, ${oddsNote}` : ""}` : ""}
                       </span>
                     </span>
                     <span className="text-xs text-primary">

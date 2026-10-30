@@ -4,8 +4,8 @@
  * The route itself returns 401 only when TURN_API_TOKEN is set and the
  * browser did not send it (`{ error: "Turn API access token is required." }`).
  * There is no turn-state signature. Vercel Authentication can also answer 401
- * before the route runs; that body is often `{ error: { message } }` or HTML,
- * which used to render as "[object Object]".
+ * before the route runs; that body is often `{ error: { message } }` or HTML.
+ * A non-JSON body is not scraped for a title. It gets a short generic line.
  */
 export function formatTurnFailure(status: number, body: string): string {
   const detail = turnFailureDetail(body)
@@ -15,20 +15,16 @@ export function formatTurnFailure(status: number, body: string): string {
 function turnFailureDetail(body: string): string {
   const trimmed = body.trim()
   if (!trimmed) return ""
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return "The server could not complete the turn."
+  }
   try {
     const text = errorText(JSON.parse(trimmed) as unknown)
     if (text) return clip(text)
   } catch {
-    // HTML or plain text from a host in front of the route.
+    return "The server could not complete the turn."
   }
-  const plain = trimmed
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-  if (!plain || plain === "[object Object]") return ""
-  return clip(plain)
+  return "The server could not complete the turn."
 }
 
 function errorText(value: unknown): string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
-import { provinceActionState, type QueuedOrder } from "@/lib/orders"
+import { provinceActionState, provinceOddsNote, type QueuedOrder } from "@/lib/orders"
 import type { Purse } from "@/lib/types"
 
 const rich: Purse = { mp: 30, ip: 30 }
@@ -8,6 +8,18 @@ const rich: Purse = { mp: 30, ip: 30 }
 function order(partial: Partial<QueuedOrder> & Pick<QueuedOrder, "kind">): QueuedOrder {
   return { id: partial.id ?? partial.kind, from: "krakow", unitIds: [], ...partial }
 }
+
+describe("provinceOddsNote", () => {
+  it("marks Kraków neighbor odds that still count the depot gun", () => {
+    const state = createInitialState("normal")
+    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    const central = krakow.units.filter((unit) => unit.faction === "central")
+    expect(central.some((unit) => unit.kind === "artillery")).toBe(true)
+    expect(provinceOddsNote(central, krakow.depot === "central")).toBe("incl. depot artillery")
+    expect(provinceOddsNote(central, false)).toBeNull()
+    expect(provinceOddsNote(central.filter((unit) => unit.kind !== "artillery"), true)).toBeNull()
+  })
+})
 
 describe("provinceActionState", () => {
   it("enables fortify on Kraków with an empty queue", () => {

@@ -17,11 +17,15 @@ describe("formatTurnFailure", () => {
     expect(message).not.toContain("[object Object]")
   })
 
-  it("uses the status when the body is an HTML login page", () => {
-    const message = formatTurnFailure(401, "<html><body><h1>Authentication Required</h1></body></html>")
-    expect(message).toBe("Turn failed (401): Authentication Required")
+  it("uses a generic message when the body is not JSON", () => {
+    const html = "<html><head><title>x</title></head><body><h1>Authentication Required</h1></body></html>"
+    const message = formatTurnFailure(500, html)
+    expect(message).toBe("Turn failed (500): The server could not complete the turn.")
+    expect(message).not.toContain("x")
+    expect(message).not.toContain("Authentication Required")
     expect(message).not.toContain("[object Object]")
     expect(message).not.toContain("<")
+    expect(formatTurnFailure(401, "not json")).toBe("Turn failed (401): The server could not complete the turn.")
   })
 
   it("still names the status when the body is empty", () => {

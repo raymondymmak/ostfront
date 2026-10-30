@@ -15,6 +15,22 @@ export function leaveDepotGarrison<T extends { id: string; strength: number }>(
   return available
 }
 
+/**
+ * Province-panel odds count every formation on the tile, including a depot's
+ * heavy artillery. The order that actually marches leaves that gun behind.
+ * The note marks the gap; it does not change either figure.
+ */
+export function provinceOddsNote(
+  units: readonly { id: string; strength: number; kind: string }[],
+  depot: boolean,
+): string | null {
+  if (!depot) return null
+  const artillery = units.filter((unit) => unit.kind === "artillery")
+  if (!artillery.length) return null
+  const marching = new Set(leaveDepotGarrison([...units], true, false).map((unit) => unit.id))
+  return artillery.some((unit) => !marching.has(unit.id)) ? "incl. depot artillery" : null
+}
+
 /** The same shape the turn route receives. Text directives are not queued arrows. */
 export function queuedToPlayerOrders(queue: QueuedOrder[]): PlayerOrder[] {
   const orders: PlayerOrder[] = []
