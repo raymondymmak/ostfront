@@ -386,24 +386,21 @@ function reconcileSentence(sentence: string, cards: AdvisorCard[], map: GameStat
   }
   if (byTarget.size > 0 && [...byTarget.values()].every((group) => group.every((card) => !card.valid))) return null
 
-  const figures = [...sentence.matchAll(/(\d+(?:\.\d+)?)\s*:\s*1\b/g)]
+  const figures = oddsFigures(sentence)
   const edits: { start: number; end: number; text: string }[] = []
   for (const figure of figures) {
-    const raw = figure[1]
-    const start = figure.index ?? 0
-    const end = start + figure[0].length
-    const targetId = nearestPrecedingTarget(sentence, mentions, start, map, byTarget)
-    if (!targetId) continue
-    const replacement = oddsReplacement(sentence, start, raw, targetId, byTarget.get(targetId), map)
+    const targetId = nearestClauseTarget(sentence, mentions, figure)
+    const replacement = oddsReplacement(sentence, figure, targetId, targetId ? byTarget.get(targetId) : undefined, map)
     if (!replacement) continue
-    edits.push({ start: replacement.start, end, text: replacement.text })
+    edits.push({ start: replacement.start, end: figure.end, text: replacement.text })
   }
 
   let next = sentence
   if (edits.length) {
     let cursor = 0
     let built = ""
-    for (const edit of edits.sort((a, b) => a.start - b.start)) {
+    for (const edit of edits.sort((a, b) => a.start - b.start || a.end - b.end)) {
+      if (edit.start < cursor) continue
       built += sentence.slice(cursor, edit.start)
       built += edit.text
       cursor = edit.end
@@ -417,43 +414,95 @@ function reconcileSentence(sentence: string, cards: AdvisorCard[], map: GameStat
     for (const id of clauseNames) {
       const valid = byTarget.get(id)?.find((card) => card.valid && card.order.type === "attack")
       if (!valid) continue
-      text = reshapeProngs(text, 1 + valid.companions.filter((order) => order.type === "attack").length)
+      text = reshapeProngs(text, prongCount(valid))
     }
     return text
   })
-  return next.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.;!?])/g, "$1").trim()
+  next = next
+    .replace(/\blooks\s+like\s+undefended\b/gi, "is undefended")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.;!?])/g, "$1")
+    .trim()
+  if (!next || /^[.,;!?]+$/.test(next)) return null
+  return next
+}
+
+type OddsFigure = { start: number; end: number; value: number }
+
+/** N:1, N : 1, N to 1, N to M, N-to-1, and "odds of N". */
+function oddsFigures(sentence: string): OddsFigure[] {
+  const found: OddsFigure[] = []
+  const ratio = /(\d+(?:\.\d+)?)\s*(?::\s*|[-–]?\s*to\s*[-–]?\s*)(\d+(?:\.\d+)?)\b/gi
+  for (const match of sentence.matchAll(ratio)) {
+    const numerator = Number(match[1])
+    const denominator = Number(match[2])
+    if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) continue
+    const start = match.index ?? 0
+    found.push({ start, end: start + match[0].length, value: numerator / denominator })
+  }
+  const oddsOf = /\bodds\s+of\s+(\d+(?:\.\d+)?)\b/gi
+  for (const match of sentence.matchAll(oddsOf)) {
+    const end = (match.index ?? 0) + match[0].length
+    const start = end - match[1].length
+    if (found.some((figure) => start < figure.end && end > figure.start)) continue
+    const value = Number(match[1])
+    if (!Number.isFinite(value)) continue
+    found.push({ start, end, value })
+  }
+  found.sort((a, b) => a.start - b.start)
+  return found
 }
 
 /**
- * An odds figure belongs to the nearest province named before it.
- * The same clause wins over an earlier clause. A Central Powers province
- * is an origin ("from Kraków"), so it does not take the figure unless a
- * card actually attacks that province.
+ * Nearest province in the same comma-clause, in either direction, preferring
+ * the one before the figure when the distances tie. A figure sitting in a
+ * clause with no name ("at 2.5 : 1, Kielce") uses the nearest name in the
+ * sentence, still preferring the one that precedes it.
  */
-function nearestPrecedingTarget(
-  sentence: string,
-  mentions: ProvinceSpan[],
-  figureStart: number,
-  map: GameState,
-  byTarget: Map<string, AdvisorCard[]>,
-): string | null {
-  const inSentence = mentions.filter((span) => span.end <= figureStart)
-  const clauseAt = clauseStart(sentence, figureStart)
-  const inClause = inSentence.filter((span) => span.start >= clauseAt)
-  return pickTarget(inClause, map, byTarget) ?? pickTarget(inSentence, map, byTarget)
+function nearestClauseTarget(sentence: string, mentions: ProvinceSpan[], figure: OddsFigure): string | null {
+  const start = clauseStart(sentence, figure.start)
+  const end = clauseEnd(sentence, figure.end)
+  const inClause = mentions.filter((span) => span.start >= start && span.end <= end)
+  const pool = inClause.length ? inClause : mentions
+  return nearestSpan(pool, figure)?.id ?? null
 }
 
-function pickTarget(
-  spans: ProvinceSpan[],
-  map: GameState,
-  byTarget: Map<string, AdvisorCard[]>,
-): string | null {
-  const ordered = [...spans].sort((a, b) => b.end - a.end || b.start - a.start)
-  for (const span of ordered) {
-    if (byTarget.has(span.id)) return span.id
-    if (findProvince(map, span.id)?.controller !== "central") return span.id
+function nearestSpan(spans: ProvinceSpan[], figure: OddsFigure): ProvinceSpan | null {
+  let best: ProvinceSpan | null = null
+  let bestDist = Infinity
+  let bestPrecedes = false
+  for (const span of spans) {
+    let dist = 0
+    let precedes = false
+    if (span.end <= figure.start) {
+      dist = figure.start - span.end
+      precedes = true
+    } else if (span.start >= figure.end) {
+      dist = span.start - figure.end
+    } else {
+      precedes = true
+    }
+    if (dist < bestDist || (dist === bestDist && precedes && !bestPrecedes)) {
+      best = span
+      bestDist = dist
+      bestPrecedes = precedes
+    }
   }
-  return null
+  return best
+}
+
+function clauseEnd(sentence: string, index: number): number {
+  const rest = sentence.slice(index)
+  const mark = rest.search(/[,;]/)
+  return mark === -1 ? sentence.length : index + mark
+}
+
+/** Companions plus a queued second column, which the card's odds already name. */
+function prongCount(card: AdvisorCard): number {
+  const fromCompanions = 1 + card.companions.filter((order) => order.type === "attack").length
+  if (/concentric/i.test(card.odds ?? "")) return Math.max(3, fromCompanions)
+  if (/two-pronged/i.test(card.odds ?? "")) return Math.max(2, fromCompanions)
+  return fromCompanions
 }
 
 function clauseStart(sentence: string, index: number): number {
@@ -478,41 +527,46 @@ type OddsEdit = { start: number; text: string }
 
 function oddsReplacement(
   sentence: string,
-  figureStart: number,
-  raw: string,
-  targetId: string,
+  figure: OddsFigure,
+  targetId: string | null,
   group: AdvisorCard[] | undefined,
   map: GameState,
 ): OddsEdit | null {
+  if (!targetId) return stripOdds(sentence, figure.start)
+  const province = findProvince(map, targetId)
   const valid = group?.find((card) => card.valid && card.order.type === "attack")
+  const attackTarget = Boolean(group?.length)
+  if (!valid && province?.controller === "central" && !attackTarget) return stripOdds(sentence, figure.start)
   if (valid) {
-    if (valid.ratio == null) return stripOdds(sentence, figureStart)
-    if (!Number.isFinite(valid.ratio)) return wordOdds(sentence, figureStart, "undefended")
+    if (valid.ratio == null) return stripOdds(sentence, figure.start)
+    if (!Number.isFinite(valid.ratio)) return undefendedOdds(sentence, figure.start)
     const printed = valid.ratio.toFixed(2)
-    if (Math.abs(Number(raw) - Number(printed)) > 0.05) return { start: figureStart, text: `${printed} : 1` }
+    if (Math.abs(figure.value - Number(printed)) > 0.05) return { start: figure.start, text: `${printed} : 1` }
     return null
   }
-  if (group?.length) return stripOdds(sentence, figureStart)
+  if (group?.length) return stripOdds(sentence, figure.start)
 
   const engine = engineFigures(map, targetId)
-  if (figureMatches(raw, engine.ratios)) return null
-  if (engine.empty) return wordOdds(sentence, figureStart, "undefended")
+  if (figureMatches(figure.value, engine.ratios)) return null
+  if (engine.empty) return undefendedOdds(sentence, figure.start)
   if (engine.best != null) {
     const printed = engine.best.toFixed(2)
-    if (Math.abs(Number(raw) - Number(printed)) > 0.05) return { start: figureStart, text: `${printed} : 1` }
+    if (Math.abs(figure.value - Number(printed)) > 0.05) return { start: figure.start, text: `${printed} : 1` }
     return null
   }
-  return stripOdds(sentence, figureStart)
+  return stripOdds(sentence, figure.start)
 }
 
-function figureMatches(raw: string, ratios: number[]): boolean {
-  return ratios.some((ratio) => Math.abs(Number(raw) - Number(ratio.toFixed(2))) <= 0.05)
+function figureMatches(value: number, ratios: number[]): boolean {
+  return ratios.some((ratio) => Math.abs(value - Number(ratio.toFixed(2))) <= 0.05)
 }
 
-/** Where the leading "about" / "only" starts, so a stripped figure does not leave it behind. */
+const ODDS_HEDGE = /(?:looks\s+like|odds\s+of|about|only|around|nearly|roughly|under|at)\s+$/i
+
+/** Where the leading "about" / "looks like" starts, so a stripped figure does not leave it behind. */
 function hedgeStart(sentence: string, figureStart: number): number {
   const prefix = sentence.slice(0, figureStart)
-  const hedge = prefix.match(/(?:about|only|around|nearly|roughly|at)\s+$/i)
+  const hedge = prefix.match(ODDS_HEDGE)
   return hedge ? figureStart - hedge[0].length : figureStart
 }
 
@@ -520,8 +574,11 @@ function stripOdds(sentence: string, figureStart: number): OddsEdit {
   return { start: hedgeStart(sentence, figureStart), text: "" }
 }
 
-function wordOdds(sentence: string, figureStart: number, word: string): OddsEdit {
-  return { start: hedgeStart(sentence, figureStart), text: word }
+function undefendedOdds(sentence: string, figureStart: number): OddsEdit {
+  const prefix = sentence.slice(0, figureStart)
+  const looks = prefix.match(/looks\s+like\s+$/i)
+  if (looks) return { start: figureStart - looks[0].length, text: "is undefended" }
+  return { start: hedgeStart(sentence, figureStart), text: "undefended" }
 }
 
 /**
@@ -801,7 +858,7 @@ function rulesDispatch(
       sentences.push("I would file that attack, and leave it for you to accept. I do not fight it myself.")
     } else if (!weakest.empty && Number.isFinite(weakest.ratio) && weakest.ratio < 1) {
       sentences.push(
-        `I would not spend the fortnight on ${weakest.targetName}. The engine's odds are under 1 : 1 before the dice.`,
+        `I would not spend the fortnight on ${weakest.targetName}. The engine rates that fight short of an even match before the dice.`,
       )
     } else {
       sentences.push("I would not pull the armies off the Gorlice front for a softer contact elsewhere.")
@@ -842,7 +899,7 @@ function describeContact(contact: FrontContact): string {
     ? ` ${contact.garrisonName} stays on the ${contact.fromName} depot.`
     : ""
   const odds = contact.odds.endsWith(".") ? contact.odds : `${contact.odds}.`
-  return `${contact.targetName} is ${contact.terrain}, fort ${contact.fort}, supply ${contact.targetSupply}, held by ${defenders}. From ${contact.fromName} (supply ${contact.fromSupply}) the engine rates ${attackers} at ${odds}${garrison}`
+  return `${contact.targetName} is ${contact.terrain}, fort ${contact.fort}, supply ${contact.targetSupply}, held by ${defenders}. From ${contact.fromName} (supply ${contact.fromSupply}) the engine rates ${attackers} against ${contact.targetName} at ${odds}${garrison}`
 }
 
 /** The Gorlice–Tarnów blow, not the holding front in East Prussia and Courland. */
@@ -1028,7 +1085,7 @@ function poolSentence(battle: CombinedBattle): string {
   const queued = battle.prongs.filter((prong) => prong.queued)
   const free = battle.prongs.filter((prong) => !prong.queued)
   if (queued.length && free.length && battle.queuedRatio !== null) {
-    return `${lead} With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes it ${printRatio(battle.ratio)}.`
+    return `${lead} With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes the ${battle.targetName} battle ${printRatio(battle.ratio)}.`
   }
   return lead
 }
@@ -1046,7 +1103,7 @@ function focusedReply(
   const free = focus.prongs.filter((prong) => !prong.queued)
   if (queued.length && free.length && focus.queuedRatio !== null) {
     sentences.push(
-      `With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes it ${printRatio(focus.ratio)}. The queued columns alone are ${printRatio(focus.queuedRatio)}.`,
+      `With your queued attack from ${joinAnd(queued.map((prong) => prong.fromName))}, adding ${joinAnd(free.map((prong) => prong.fromName))} makes the ${focus.targetName} battle ${printRatio(focus.ratio)}. The queued columns alone against ${focus.targetName} are ${printRatio(focus.queuedRatio)}.`,
     )
   }
   const chosen = chooseContact(axisContacts(situation.contacts))

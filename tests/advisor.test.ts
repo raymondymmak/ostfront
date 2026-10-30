@@ -598,6 +598,82 @@ describe("advisor grounding", () => {
     expect(quotedOdds(warsaw, marchRatios(map, "warszawa"))).toBe(true)
   })
 
+  it("keeps each Polish name on its own figure, even when the numbers were already right", () => {
+    const map = createInitialState()
+    const reply = "Kielce is about 2.09 : 1, Płock is about 3.00 : 1, and Białystok is about 6.51 : 1."
+    const out = reconcileReplyWithCards(
+      reply,
+      [
+        attackCard("kielce", "kielce", 2.09),
+        attackCard("plock", "plock", 3),
+        attackCard("bialystok", "bialystok", 6.51),
+      ],
+      map,
+    )
+    expect(out).toBe(reply)
+    const wrong = reconcileReplyWithCards(
+      "Kielce is about 6.51 : 1, Płock is about 6.51 : 1, and Białystok is about 6.51 : 1.",
+      [
+        attackCard("kielce", "kielce", 2.09),
+        attackCard("plock", "plock", 3),
+        attackCard("bialystok", "bialystok", 6.51),
+      ],
+      map,
+    )
+    expect(wrong).toBe("Kielce is about 2.09 : 1, Płock is about 3.00 : 1, and Białystok is about 6.51 : 1.")
+    const suwalki = reconcileReplyWithCards(
+      "Suwałki is about 9.00 : 1, and Mława is about 6.51 : 1.",
+      [attackCard("suduva", "suduva", 1.25), attackCard("plock", "plock", 3)],
+      map,
+    )
+    expect(suwalki).toBe("Suwałki is about 1.25 : 1, and Mława is about 3.00 : 1.")
+  })
+
+  it("reads every odds spelling and a figure that comes before the name", () => {
+    const map = createInitialState()
+    const cards = [attackCard("kielce", "kielce", 2.09), attackCard("lublin", "lublin", 0.55)]
+    expect(reconcileReplyWithCards("Kielce is 3:1.", cards, map)).toBe("Kielce is 2.09 : 1.")
+    expect(reconcileReplyWithCards("Kielce is 3-to-1.", cards, map)).toBe("Kielce is 2.09 : 1.")
+    expect(reconcileReplyWithCards("Lublin is 5 to 2.", cards, map)).toBe("Lublin is 0.55 : 1.")
+    expect(reconcileReplyWithCards("Lublin is 5 to 2.", [attackCard("lublin", "lublin", 2.5)], map)).toBe(
+      "Lublin is 5 to 2.",
+    )
+    expect(reconcileReplyWithCards("The odds of 8 at Kielce.", cards, map)).toBe("The odds of 2.09 : 1 at Kielce.")
+    expect(reconcileReplyWithCards("At 8 : 1, Kielce is the shoulder.", cards, map)).toBe(
+      "At 2.09 : 1, Kielce is the shoulder.",
+    )
+    expect(reconcileReplyWithCards("Lviv is about 9.99 : 1.", [attackCard("lwow", "lwow", 1.75)], map)).toBe(
+      "Lviv is about 1.75 : 1.",
+    )
+  })
+
+  it("drops a figure with no province, or one tied to ground we already hold", () => {
+    const map = createInitialState()
+    const nowhere = reconcileReplyWithCards("The odds are 9.99 : 1 tonight.", [], map)
+    expect(nowhere).not.toContain("9.99")
+    expect(nowhere).not.toMatch(/\d/)
+    const krakow = reconcileReplyWithCards("Kraków is about 4.00 : 1.", [], map)
+    expect(krakow).not.toMatch(/\d/)
+    expect(krakow.toLowerCase()).not.toContain("4.00")
+  })
+
+  it("says a province is undefended instead of 'looks like undefended'", () => {
+    const map = createInitialState()
+    expect(reconcileReplyWithCards("Memel looks like 9.99 : 1.", [], map)).toBe("Memel is undefended.")
+    expect(reconcileReplyWithCards("Memel looks like 9.99 to 1.", [], map)).not.toMatch(/looks like/i)
+  })
+
+  it("keeps two-pronged when the card's odds already include a queued second column", () => {
+    const map = createInitialState()
+    const card: AdvisorCard = {
+      ...attackCard("kielce", "kielce", 1.5),
+      companions: [],
+      odds: "Two-pronged, about 1.50 : 1 before the dice.",
+    }
+    const out = reconcileReplyWithCards("Kielce two-pronged about 8.00 : 1.", [card], map)
+    expect(out).toBe("Kielce two-pronged about 1.50 : 1.")
+  })
+
   it("replaces an invented figure with the column the engine can march", () => {
     const map = createInitialState()
     const ratios = marchRatios(map, "kielce")

@@ -34,8 +34,37 @@ export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
 }
 
+/**
+ * Letters that do not decompose under NFD. Polish ł is the one that made
+ * Płock, Białystok, Suwałki and Łódź miss their own cards. ą ć ę ń ó ś ź ż
+ * already split into a base letter plus a mark; the map below is the rest
+ * of the Latin letters that show up in province names and in the Latin
+ * transliterations stored as aliases (Lwów/Lviv, Chełm, Mława, Königsberg).
+ */
+const LETTER_FOLDS: Record<string, string> = {
+  ł: "l",
+  Ł: "l",
+  ø: "o",
+  Ø: "o",
+  đ: "d",
+  Đ: "d",
+  ð: "d",
+  Ð: "d",
+  þ: "th",
+  Þ: "th",
+  æ: "ae",
+  Æ: "ae",
+  œ: "oe",
+  Œ: "oe",
+  ß: "ss",
+  ı: "i",
+  ŋ: "n",
+  Ŋ: "n",
+}
+
 export function normalizeName(value: string): string {
-  return value
+  const folded = value.replace(/[łŁøØđĐðÐþÞæÆœŒßıŋŊ]/g, (letter) => LETTER_FOLDS[letter] ?? letter)
+  return folded
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
