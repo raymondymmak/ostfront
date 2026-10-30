@@ -24,6 +24,7 @@ import {
 } from "@/lib/finale"
 import type { AdvisorOrder } from "@/lib/gm/advisor-types"
 import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
+import { formatTurnFailure } from "@/lib/turn-failure"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
@@ -217,13 +218,20 @@ export function GameApp() {
         body: JSON.stringify({ state: game.state, orders }),
         signal: AbortSignal.timeout(CLIENT_TURN_TIMEOUT_MS),
       })
-      const payload = (await response.json()) as {
-        state?: GameState
-        record?: TurnRecord
-        error?: string
+      const raw = await response.text()
+      let payload: { state?: GameState; record?: TurnRecord } = {}
+      if (raw) {
+        try {
+          payload = JSON.parse(raw) as { state?: GameState; record?: TurnRecord }
+        } catch {
+          payload = {}
+        }
       }
+      // A non-2xx leaves the map and the queue untouched so the player can retry.
       if (!response.ok || !payload.state || !payload.record) {
-        throw new Error(payload.error || "The staff could not close the fortnight.")
+        throw new Error(
+          response.ok ? "The staff could not close the fortnight." : formatTurnFailure(response.status, raw),
+        )
       }
       const record = payload.record
       setGame((current) => ({
@@ -411,7 +419,11 @@ export function GameApp() {
         </p>
       )}
       {error && (
-        <p className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive" role="alert">
+        <p
+          className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+          role="alert"
+          data-testid="turn-error"
+        >
           {error}
         </p>
       )}
