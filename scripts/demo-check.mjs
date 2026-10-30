@@ -204,26 +204,35 @@ async function readQueuedOrderTexts(page) {
   return texts
 }
 
+/** @param {import('playwright').Page} page */
+async function ensureAdvisorPanelOpen(page) {
+  const panel = page.locator("[data-testid=advisor-panel]")
+  if (await panel.isVisible().catch(() => false)) return
+  await page.locator("[data-testid=advisor-toggle]").click()
+  await panel.waitFor({ state: "visible", timeout: 10_000 })
+}
+
+/** @param {string} text */
+function orderSignature(text) {
+  const t = text.replace(/\s+/g, " ").trim().toLowerCase()
+  let m = t.match(/^fortify (.+)$/)
+  if (m) return `fortify:${m[1]}`
+  m = t.match(/^raise ([a-z]+) at (.+)$/)
+  if (m) return `recruit:${m[2]}:${m[1]}`
+  m = t.match(/^attack (.+) from (.+)$/)
+  if (m) return `attack:${m[1]}:${m[2]}`
+  m = t.match(/^move to (.+) from (.+)$/)
+  if (m) return `move:${m[1]}:${m[2]}`
+  return null
+}
+
 /** @param {string} label @param {string[]} queuedTexts */
 function cardLabelDuplicatesQueue(label, queuedTexts) {
-  const l = label.toLowerCase()
+  const cardSig = orderSignature(label)
+  if (!cardSig) return false
   for (const row of queuedTexts) {
-    const q = row.toLowerCase()
-    if (!q) continue
-    if (/fortify/i.test(l) && /fortify/i.test(q) && /kraków|krakow/.test(l) && /kraków|krakow/.test(q)) {
-      return true
-    }
-    if (/raise/i.test(l) && /recruit|infantry|cavalry|artillery/i.test(q) && /kraków|krakow/.test(l) && /kraków|krakow/.test(q)) {
-      return true
-    }
-    if (/move/i.test(l) && /move/i.test(q)) {
-      const moveTarget = l.match(/to\s+([^.,]+)/i)?.[1]?.trim().toLowerCase()
-      if (moveTarget && q.includes(moveTarget)) return true
-    }
-    if (/attack/i.test(l) && /attack/i.test(q)) {
-      const target = l.match(/attack\s+([^ ]+)/i)?.[1]?.trim().toLowerCase()
-      if (target && q.includes(target)) return true
-    }
+    const rowSig = orderSignature(row)
+    if (rowSig === cardSig) return true
   }
   return false
 }
@@ -565,8 +574,7 @@ function buildSteps(cli, targets) {
         let lastReport
         for (let attempt = 0; attempt < prompts.length; attempt++) {
           const queuedTexts = await readQueuedOrderTexts(page)
-          await page.locator("[data-testid=advisor-toggle]").click()
-          await page.locator("[data-testid=advisor-panel]").waitFor({ state: "visible" })
+          await ensureAdvisorPanelOpen(page)
           const exchange = await sendAdvisorQuestion(page, prompts[attempt])
           const outcome = await acceptFirstValidAdvisorCard(page, exchange, queuedTexts)
           lastReport = outcome.report
