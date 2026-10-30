@@ -109,6 +109,9 @@ async function assertReachable(page) {
   if (body.includes("DEPLOYMENT_NOT_FOUND") || body.includes("The deployment could not be found")) {
     throw new Error("Deployment not found at this URL.")
   }
+  if (/deployment has failed/i.test(body) || /deployment has failed/i.test(title)) {
+    throw new Error("Vercel deployment failed at this URL (fix the build and redeploy).")
+  }
   if (body.includes("Protected by Vercel Authentication")) {
     throw new Error(
       "Preview is protected; set VERCEL_AUTOMATION_BYPASS_SECRET or a share URL in DEMO_URL.",
@@ -122,6 +125,7 @@ function isFatalStepError(err) {
   return (
     message.includes("Preview is protected") ||
     message.includes("Deployment not found") ||
+    message.includes("Vercel deployment failed") ||
     /HTTP [45]\d{2} loading/i.test(message) ||
     /ERR_NAME_NOT_RESOLVED/i.test(message) ||
     /getaddrinfo\s+ENOTFOUND/i.test(message) ||
@@ -319,6 +323,12 @@ function buildSteps(cli, targets) {
         const fortify = page.locator("[data-testid=fortify]")
         await fortify.waitFor({ state: "visible", timeout: 10_000 })
         if (await fortify.isDisabled()) {
+          const label = ((await fortify.textContent()) ?? "").trim()
+          if (/Fortify queued/i.test(label)) {
+            await page.locator("[data-testid=tab-orders]").click()
+            await expectText(page.locator("aside"), "Fortify Kraków")
+            return
+          }
           const reason =
             (await page.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
             "Fortify button disabled on Kraków province panel."
