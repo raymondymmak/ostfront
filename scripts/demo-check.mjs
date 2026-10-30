@@ -18,6 +18,7 @@ const MAP_SETTLE_MS = 3200
 const TURN_TIMEOUT_MS = 140_000
 const ADVISOR_TIMEOUT_MS = 45_000
 const KATOWICE_LON_LAT = [-0.375, -0.48]
+const KRAKOW_LON_LAT = [-0.022, -0.632]
 
 function parseCli(argv) {
   const flags = {
@@ -35,11 +36,12 @@ function parseCli(argv) {
     else if (arg === "--url" && argv[i + 1]) {
       flags.url = argv[++i]
       flags.explicitTarget = true
-      if (flags.url.includes("_vercel_share=")) {
+      if (
+        flags.url.includes("_vercel_share=") ||
+        /x-vercel-protection-bypass=/i.test(flags.url)
+      ) {
         console.warn(
-          redactSensitiveText(
-            "WARNING: --url can expose share tokens in npm logs. Prefer DEMO_URL=… npm run demo-check instead.",
-          ),
+          "WARNING: --url can expose share or bypass tokens in npm logs. Prefer DEMO_URL=… npm run demo-check instead.",
         )
       }
     }
@@ -150,6 +152,20 @@ async function projectOnMap(page, lon, lat) {
     },
     [lon, lat],
   )
+}
+
+/** @param {import('playwright').Page} page */
+async function selectKrakowOnMap(page) {
+  const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
+  if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
+  await page.mouse.click(point.x, point.y)
+  await page.waitForTimeout(400)
+  await page.locator("[data-testid=tab-province]").click()
+  await page
+    .locator("aside h2")
+    .filter({ hasText: "Kraków" })
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 })
 }
 
 async function expectText(locator, snippet) {
@@ -277,14 +293,14 @@ function buildSteps(cli, targets) {
       id: "08-province-tab",
       name: "Open Province tab and inspect Kraków",
       async run({ page }) {
-        await page.locator("[data-testid=tab-province]").click()
-        await expectText(page.locator("aside"), "Kraków")
+        await selectKrakowOnMap(page)
       },
     },
     {
       id: "09-fortify",
       name: "Queue fortify province action",
       async run({ page }) {
+        await selectKrakowOnMap(page)
         await page.locator("[data-testid=fortify]").click()
         await page.locator("[data-testid=tab-orders]").click()
         await expectText(page.locator("aside"), "Fortify Kraków")
@@ -294,7 +310,7 @@ function buildSteps(cli, targets) {
       id: "10-neighbor-move",
       name: "Queue move via neighbor button",
       async run({ page }) {
-        await page.locator("[data-testid=tab-province]").click()
+        await selectKrakowOnMap(page)
         const move = page.locator("aside button").filter({ hasText: "Katowice" }).filter({ hasText: "Move" })
         await move.first().waitFor({ state: "visible", timeout: 10_000 })
         await move.first().click()
@@ -306,7 +322,7 @@ function buildSteps(cli, targets) {
       id: "11-recruit",
       name: "Queue recruit at depot yard",
       async run({ page }) {
-        await page.locator("[data-testid=tab-province]").click()
+        await selectKrakowOnMap(page)
         const recruit = page.locator("[data-testid=recruit-infantry]")
         await recruit.waitFor({ state: "visible", timeout: 10_000 })
         if (await recruit.isDisabled()) {
@@ -321,7 +337,7 @@ function buildSteps(cli, targets) {
       id: "12-attack",
       name: "Queue attack via neighbor button",
       async run({ page }) {
-        await page.locator("[data-testid=tab-province]").click()
+        await selectKrakowOnMap(page)
         const attack = page.locator("aside button").filter({ hasText: "Lemberg" }).filter({ hasText: "Attack" })
         await attack.first().waitFor({ state: "visible", timeout: 10_000 })
         await attack.first().click()
@@ -370,23 +386,28 @@ function buildSteps(cli, targets) {
     {
       id: "16-advisor-send-accept",
       name: "Typed advisor question, Send, Accept suggestion",
-      async run({ page, log: stepLog }) {
+      async run({ page }) {
+        const repliesBefore = await page.locator("[data-testid=advisor-reply]").count()
         await page.locator("[data-testid=advisor-input]").fill("What should I do this fortnight?")
         await page.locator("[data-testid=advisor-send]").click()
-        await page.locator("[data-testid=advisor-reply]").last().waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
-        const card = page.locator("[data-testid=advisor-suggestion]").first()
+        await page.waitForFunction(
+          (before) => document.querySelectorAll("[data-testid=advisor-reply]").length > before,
+          repliesBefore,
+          { timeout: ADVISOR_TIMEOUT_MS },
+        )
+        const newReply = page.locator("[data-testid=advisor-reply]").nth(repliesBefore)
+        await newReply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
+        const exchange = page.locator("[data-testid=advisor-exchange]").filter({ has: newReply })
+        const card = exchange.locator("[data-testid=advisor-suggestion]").first()
         try {
           await card.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
         } catch {
-          if (cli.allowFallback) {
-            stepLog("WARN  16-advisor-send-accept  advisor returned no cards (--allow-fallback)")
-            return
-          }
+          if (cli.allowFallback) return "skipped: advisor returned no cards"
           throw new Error("advisor returned no cards")
         }
         await page.locator("[data-testid=tab-orders]").click()
         const before = await page.locator("[data-testid=queued-orders] > li").count()
-        await page.locator("[data-testid=advisor-accept]").first().click()
+        await exchange.locator("[data-testid=advisor-accept]").first().click()
         await page.locator("[data-testid=tab-orders]").click()
         const after = await page.locator("[data-testid=queued-orders] > li").count()
         if (after <= before) {
@@ -535,16 +556,26 @@ page.on("requestfailed", (req) => {
 
 const results = []
 let failed = 0
+let passed = 0
+let skipped = 0
 let stop = false
 
 for (const step of steps) {
   if (stop) break
   const shot = join(OUT_DIR, `${step.id}.png`)
   try {
-    await step.run({ page, log })
+    const outcome = await step.run({ page, log })
     await page.screenshot({ path: shot, fullPage: false })
-    results.push({ id: step.id, name: step.name, ok: true })
-    log(`PASS  ${step.id}  ${step.name}`)
+    if (typeof outcome === "string" && outcome.startsWith("skipped:")) {
+      const note = outcome.slice("skipped:".length).trim()
+      results.push({ id: step.id, name: step.name, ok: true, skipped: true, note })
+      skipped += 1
+      log(`SKIP  ${step.id}  ${step.name} — ${note}`)
+    } else {
+      results.push({ id: step.id, name: step.name, ok: true })
+      passed += 1
+      log(`PASS  ${step.id}  ${step.name}`)
+    }
   } catch (err) {
     failed += 1
     try {
@@ -576,6 +607,9 @@ writeFileSync(
       appUrl: redactedAppUrl,
       protectionBypassConfigured: Boolean(bypassHeaders),
       allowFallback: cli.allowFallback,
+      passed,
+      skipped,
+      failed,
       results,
       issueCount: issues.length,
     },
@@ -586,11 +620,13 @@ writeFileSync(
 
 log("\n=== Summary ===")
 for (const row of results) {
-  log(`${row.ok ? "PASS" : "FAIL"}  ${row.id}  ${row.name}${row.error ? ` — ${row.error}` : ""}`)
+  const tag = row.skipped ? "SKIP" : row.ok ? "PASS" : "FAIL"
+  const detail = row.skipped ? row.note : row.error
+  log(`${tag}  ${row.id}  ${row.name}${detail ? ` — ${detail}` : ""}`)
 }
 if (stop && failed > 0 && !cli.continueOnFail) {
   log(`\nStopped after first failure (${failed} failed, ${results.length} executed). Pass --continue to run all steps.`)
 }
-log(`\n${results.length - failed}/${results.length} steps passed. Output: ${OUT_DIR}/`)
+log(`\n${passed} passed, ${skipped} skipped, ${failed} failed (${results.length} executed). Output: ${OUT_DIR}/`)
 
 process.exit(failed > 0 ? 1 : 0)

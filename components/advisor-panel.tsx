@@ -197,7 +197,11 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
           </p>
         )}
         {messages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className="flex flex-col gap-2">
+          <div
+            key={`${message.role}-${index}`}
+            className="flex flex-col gap-2"
+            data-testid="advisor-exchange"
+          >
             <p
               className={
                 message.role === "user"

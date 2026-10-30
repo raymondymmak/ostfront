@@ -20,6 +20,6 @@ If `DEMO_URL` is unset, the script warns and uses production `https://raymondymm
 
 **Protected previews:** Set `VERCEL_AUTOMATION_BYPASS_SECRET` (never commit). Or put a share link in **`DEMO_URL`** only (`_vercel_share=…`). Avoid `npm run demo-check -- --url '…?_vercel_share=…'` because npm may log the token before the script runs.
 
-**Redaction:** `demo-check` redacts known share/bypass values (including URL-encoded forms and common query/header patterns) in script output and log files when `configureRedaction` knows those values. It does not scrub npm’s own command-line echo or arbitrary secrets you print elsewhere.
+**Redaction:** Script output and `demo-check-output/*` run `redactSensitiveText()` on known bypass/share values (raw, URL-encoded, double-encoded, base64, and case variants registered via `configureRedaction`) plus common `_vercel_share` / bypass query patterns. Covered by `tests/demo-check-redact.test.ts` (no substring ≥6 chars of configured tokens may remain). Does **not** scrub npm’s command-line echo or secrets you print outside the script.
 
-**Flags:** `--continue` runs remaining steps after a failure; `--allow-fallback` allows Staff simulation instead of Game master in chronicle checks and skips advisor Accept when no cards return; `--force-fail` verifies non-zero exit.
+**Flags:** `--continue` runs remaining steps after a failure; `--allow-fallback` allows Staff simulation in chronicle checks and records **SKIP** (not PASS) when step 16 gets no advisor cards; `--force-fail` verifies non-zero exit.
