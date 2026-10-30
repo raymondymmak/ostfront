@@ -4,6 +4,8 @@
  * DEMO_URL=https://… npm run demo-check
  * Optional flags: --continue --allow-fallback --force-fail
  * Avoid `--url` with share tokens (npm logs the command line); use DEMO_URL instead.
+ * Exit 0 when all executed steps pass; skipped steps exit 0 only with --allow-fallback.
+ * Login / protection / deployment-not-found errors abort immediately (even with --continue).
  */
 import { chromium } from "playwright"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
@@ -112,6 +114,16 @@ async function assertReachable(page) {
       "Preview is protected; set VERCEL_AUTOMATION_BYPASS_SECRET or a share URL in DEMO_URL.",
     )
   }
+}
+
+/** @param {unknown} err */
+function isFatalStepError(err) {
+  const message = err instanceof Error ? err.message : String(err)
+  return (
+    message.includes("Preview is protected") ||
+    message.includes("Deployment not found") ||
+    /HTTP [45]\d{2} loading/i.test(message)
+  )
 }
 
 /** @param {import('playwright').Page} page @param {string} url */
@@ -397,7 +409,10 @@ function buildSteps(cli, targets) {
         )
         const newReply = page.locator("[data-testid=advisor-reply]").nth(repliesBefore)
         await newReply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
-        const exchange = page.locator("[data-testid=advisor-exchange]").filter({ has: newReply })
+        const exchange = page
+          .locator("[data-testid=advisor-exchange]")
+          .filter({ has: page.locator("[data-testid=advisor-reply]") })
+          .nth(repliesBefore)
         const card = exchange.locator("[data-testid=advisor-suggestion]").first()
         try {
           await card.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
@@ -568,7 +583,7 @@ for (const step of steps) {
     await page.screenshot({ path: shot, fullPage: false })
     if (typeof outcome === "string" && outcome.startsWith("skipped:")) {
       const note = outcome.slice("skipped:".length).trim()
-      results.push({ id: step.id, name: step.name, ok: true, skipped: true, note })
+      results.push({ id: step.id, name: step.name, ok: false, status: "skipped", note })
       skipped += 1
       log(`SKIP  ${step.id}  ${step.name} — ${note}`)
     } else {
@@ -586,7 +601,7 @@ for (const step of steps) {
     const message = redactSensitiveText(err instanceof Error ? err.message : String(err))
     results.push({ id: step.id, name: step.name, ok: false, error: message })
     log(`FAIL  ${step.id}  ${step.name} — ${message}`)
-    if (!cli.continueOnFail) stop = true
+    if (!cli.continueOnFail || isFatalStepError(err)) stop = true
   }
 }
 
@@ -620,8 +635,8 @@ writeFileSync(
 
 log("\n=== Summary ===")
 for (const row of results) {
-  const tag = row.skipped ? "SKIP" : row.ok ? "PASS" : "FAIL"
-  const detail = row.skipped ? row.note : row.error
+  const tag = row.status === "skipped" ? "SKIP" : row.ok ? "PASS" : "FAIL"
+  const detail = row.status === "skipped" ? row.note : row.error
   log(`${tag}  ${row.id}  ${row.name}${detail ? ` — ${detail}` : ""}`)
 }
 if (stop && failed > 0 && !cli.continueOnFail) {
@@ -629,4 +644,5 @@ if (stop && failed > 0 && !cli.continueOnFail) {
 }
 log(`\n${passed} passed, ${skipped} skipped, ${failed} failed (${results.length} executed). Output: ${OUT_DIR}/`)
 
-process.exit(failed > 0 ? 1 : 0)
+const exitOk = failed === 0 && (skipped === 0 || cli.allowFallback)
+process.exit(exitOk ? 0 : 1)

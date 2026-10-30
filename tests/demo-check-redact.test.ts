@@ -51,21 +51,52 @@ describe("demo-check redaction", () => {
     expectNoTokenLeak(redacted, token)
   })
 
-  it("redacts bare bypass secret and share token literals in all encoded forms", () => {
+  it("redacts standard base64 form of configured secrets (raw token absent)", () => {
+    const token = "base64Only9"
+    configureRedaction({ bypassSecret: token })
+    const b64 = Buffer.from(token, "utf8").toString("base64")
+    expect(b64).not.toContain(token)
+    const redacted = redactSensitiveText(`payload=${b64}`)
+    expect(redacted).toBe("payload=REDACTED")
+    expectNoTokenLeak(redacted, token)
+  })
+
+  it("redacts base64url form of configured share tokens", () => {
+    const token = "url/tok+9"
+    configureRedaction({ shareToken: token })
+    const b64 = Buffer.from(token, "utf8").toString("base64")
+    const b64url = b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+    expect(b64url).not.toContain(token)
+    const redacted = redactSensitiveText(`share=${b64url}`)
+    expect(redacted).toBe("share=REDACTED")
+    expectNoTokenLeak(redacted, token)
+  })
+
+  it("redacts upper-case and mixed-case percent-encoded literals", () => {
+    const token = "Mixed+Case9"
+    configureRedaction({ bypassSecret: token })
+    const enc = encodeURIComponent(token)
+    const upper = enc.toUpperCase()
+    expect(upper).not.toContain(token)
+    expect(redactSensitiveText(upper)).toBe("REDACTED")
+    const mixed = enc.replace(/%([0-9a-f]{2})/gi, (_, hex) => {
+      const a = hex[0] ?? ""
+      const b = hex[1] ?? ""
+      return `%${a.toUpperCase()}${b.toLowerCase()}`
+    })
+    expect(mixed).not.toContain(token)
+    const redactedMixed = redactSensitiveText(`q=${mixed}&tail=1`)
+    expect(redactedMixed).toBe("q=REDACTED&tail=1")
+    expectNoTokenLeak(redactedMixed, token)
+  })
+
+  it("redacts bare bypass secret and share token literals", () => {
     const bypass = "bare/bypass+value"
     const share = "bare-share-value"
     configureRedaction({ bypassSecret: bypass, shareToken: share })
-    for (const sample of [
-      share,
-      bypass,
-      encodeURIComponent(bypass),
-      encodeURIComponent(encodeURIComponent(bypass)),
-      Buffer.from(bypass, "utf8").toString("base64"),
-    ]) {
-      expectNoTokenLeak(redactSensitiveText(sample), bypass.length >= 6 ? bypass : share)
-    }
-    expectNoTokenLeak(redactSensitiveText(`token ${share} end`), share)
     expect(redactSensitiveText(bypass)).toBe("REDACTED")
+    expectNoTokenLeak(redactSensitiveText(`token ${share} end`), share)
+    expectNoTokenLeak(redactSensitiveText(encodeURIComponent(encodeURIComponent(bypass))), bypass)
   })
 
   it("redacts bypass secret env echoes", () => {

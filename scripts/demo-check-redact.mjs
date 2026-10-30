@@ -16,11 +16,19 @@ function formsForLiteral(value) {
     forms.add(enc.toUpperCase())
     forms.add(enc.toLowerCase())
     forms.add(encodeURIComponent(enc))
+    const mixedCase = enc.replace(/%([0-9a-f]{2})/gi, (_, hex) => {
+      const a = hex[0] ?? ""
+      const b = hex[1] ?? ""
+      return `%${a.toUpperCase()}${b.toLowerCase()}`
+    })
+    forms.add(mixedCase)
   } catch {
     /* ignore */
   }
   try {
-    forms.add(Buffer.from(trimmed, "utf8").toString("base64"))
+    const b64 = Buffer.from(trimmed, "utf8").toString("base64")
+    forms.add(b64)
+    forms.add(b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""))
   } catch {
     /* ignore */
   }
