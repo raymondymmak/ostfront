@@ -22,6 +22,11 @@ export type AdvisorCard = {
   note: string | null
   /** Combat preview from the engine, before the dice. */
   odds: string | null
+  /**
+   * Pre-dice ratio from the same preview as `odds`. `Infinity` when the
+   * province is undefended. Null on cards that are not attacks.
+   */
+  ratio: number | null
   /** Strengths, supply, and rails copied from the engine. */
   detail: string | null
 }

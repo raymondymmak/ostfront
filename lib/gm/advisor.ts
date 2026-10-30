@@ -233,10 +233,10 @@ export async function advise(input: {
   if (!llmConfigured() && !fixtureEnabled()) {
     const suggestions = ordersClosed ? [] : assessOrders(prepared, brief.orders, queued)
     return {
-      reply: `${OFFLINE_LINE}\n\n${brief.reply}`,
+      reply: reconcileReplyWithCards(`${OFFLINE_LINE}\n\n${brief.reply}`, suggestions, prepared.map),
       source: "rules",
       unavailable: true,
-      suggestions: suggestions.filter((card) => card.valid),
+      suggestions: wireCards(suggestions.filter((card) => card.valid)),
       dropped: 0,
       ordersClosed,
     }
@@ -305,10 +305,10 @@ export async function advise(input: {
         ? "The wire returned nothing I can file. Reasoning spent the dispatch before a reply was written."
         : "The wire returned nothing I can file."
     return {
-      reply: `${wire}\n\n${brief.reply}`,
+      reply: reconcileReplyWithCards(`${wire}\n\n${brief.reply}`, suggestions, prepared.map),
       source: "rules",
       unavailable: false,
-      suggestions: suggestions.filter((card) => card.valid),
+      suggestions: wireCards(suggestions.filter((card) => card.valid)),
       dropped: 0,
       ordersClosed,
     }
@@ -328,14 +328,104 @@ export async function advise(input: {
   }
 
   const { cards, dropped } = classifySuggestions(prepared, raw, queued)
+  const reconciled = reconcileReplyWithCards(reply, cards, prepared.map)
   return {
-    reply: reply || brief.reply,
+    reply: reconciled || brief.reply,
     source: "llm",
     unavailable: false,
-    suggestions: cards,
+    suggestions: wireCards(cards),
     dropped,
     ordersClosed: false,
   }
+}
+
+function wireCards(cards: StaffCard[]): AdvisorCard[] {
+  return cards.map((card) => ({
+    id: card.id,
+    order: card.order,
+    companions: card.companions,
+    label: card.label,
+    valid: card.valid,
+    note: card.note,
+    odds: card.odds,
+    ratio: card.ratio,
+    detail: card.detail,
+  }))
+}
+
+export function reconcileReplyWithCards(reply: string, cards: AdvisorCard[], map: GameState): string {
+  const sentences = reply
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+  const kept = sentences.flatMap((sentence) => {
+    const next = reconcileSentence(sentence, cards, map)
+    return next ? [next] : []
+  })
+  let text = kept.join(" ").trim()
+  const conflicts = cards
+    .filter((card): card is StaffCard => Boolean((card as StaffCard).conflict))
+    .slice(0, 2)
+  for (const card of conflicts) {
+    const conflict = card.conflict!
+    const line = `${conflict.unitName} is already committed to ${conflict.withLabel}, so ${card.label} cannot go with it.`
+    text = text ? `${text} ${line}` : line
+  }
+  return text.trim()
+}
+
+function reconcileSentence(sentence: string, cards: AdvisorCard[], map: GameState): string | null {
+  const named = provincesInSentence(sentence, map)
+  const relevant = cards.filter((card) => {
+    const target = card.order.type === "attack" ? card.order.target : null
+    return target !== null && named.has(target)
+  })
+  if (!relevant.length) return sentence
+  const byTarget = new Map<string, AdvisorCard[]>()
+  for (const card of relevant) {
+    if (card.order.type !== "attack") continue
+    const group = byTarget.get(card.order.target) ?? []
+    group.push(card)
+    byTarget.set(card.order.target, group)
+  }
+  if ([...byTarget.values()].every((group) => group.every((card) => !card.valid))) return null
+  let next = sentence
+  for (const group of byTarget.values()) {
+    const valid = group.find((card) => card.valid && card.order.type === "attack")
+    if (!valid || valid.ratio == null || !Number.isFinite(valid.ratio)) continue
+    const printed = valid.ratio.toFixed(2)
+    next = next.replace(/(\d+(?:\.\d+)?)\s*:\s*1\b/g, (match, raw: string) => {
+      if (Math.abs(Number(raw) - Number(printed)) > 0.05) return `${printed} : 1`
+      return match
+    })
+    next = reshapeProngs(next, 1 + valid.companions.filter((order) => order.type === "attack").length)
+  }
+  return next.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.;!?])/g, "$1").trim()
+}
+
+function reshapeProngs(sentence: string, prongs: number): string {
+  if (prongs <= 1) return sentence.replace(/\b(?:two-pronged|concentric)\b/gi, "")
+  const word = prongs === 2 ? "two-pronged" : "concentric"
+  if (!/\b(?:two-pronged|concentric)\b/i.test(sentence)) return sentence
+  return sentence.replace(/\b(?:two-pronged|concentric)\b/gi, word)
+}
+
+function provincesInSentence(sentence: string, map: GameState): Set<string> {
+  const hay = ` ${normalizeName(sentence)} `
+  const ids = new Set<string>()
+  for (const province of map.provinces) {
+    const catalog = CATALOG_BY_ID[province.id]
+    const labels = [province.name, ...(catalog?.aliases ?? [])]
+    if (
+      labels.some((label) => {
+        const needle = normalizeName(label)
+        return needle.length > 0 && hay.includes(` ${needle} `)
+      })
+    ) {
+      ids.add(province.id)
+    }
+  }
+  return ids
 }
 
 function fixtureEnabled(): boolean {
@@ -841,14 +931,19 @@ function joinAnd(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 }
 
+type CardConflict = { unitName: string; withLabel: string }
+
+type StaffCard = AdvisorCard & { conflict?: CardConflict }
+
 function classifySuggestions(
   prepared: Prepared,
   raw: unknown[],
   queued: PlayerOrder[],
-): { cards: AdvisorCard[]; dropped: number } {
+): { cards: StaffCard[]; dropped: number } {
   let dropped = 0
-  const cards: AdvisorCard[] = []
+  const cards: StaffCard[] = []
   const accepted: AdvisorOrder[] = []
+  const claimedBy = new Map<string, string>()
   for (const item of raw) {
     const parsed = normalizeOrders(prepared.map, item)
     if (!parsed.orders.length) {
@@ -869,19 +964,43 @@ function classifySuggestions(
         dropped += 1
         continue
       }
+      if (card.valid) {
+        for (const id of unitsOf(prepared.map, order)) claimedBy.set(id, card.label)
+        accepted.push(order)
+      } else if (card.note && /already has orders/.test(card.note)) {
+        const hit = unitsOf(prepared.map, order).find((id) => claimedBy.has(id))
+        if (hit) {
+          card.conflict = {
+            unitName: findUnit(prepared.map, hit)?.unit.name ?? hit,
+            withLabel: claimedBy.get(hit)!,
+          }
+        }
+      }
       cards.push(card)
-      if (card.valid) accepted.push(order)
     }
   }
-  return { cards: groupAttackCards(prepared.map, cards, queued).slice(0, MAX_SUGGESTIONS), dropped }
+  const grouped = groupAttackCards(prepared.map, cards, queued).slice(0, MAX_SUGGESTIONS)
+  const finalClaim = new Map<string, string>()
+  for (const card of grouped) {
+    if (!card.valid) continue
+    for (const order of [card.order, ...card.companions]) {
+      for (const id of unitsOf(prepared.map, order)) finalClaim.set(id, card.label)
+    }
+  }
+  for (const card of grouped) {
+    if (!card.conflict) continue
+    const hit = unitsOf(prepared.map, card.order).find((id) => finalClaim.has(id))
+    if (hit) card.conflict.withLabel = finalClaim.get(hit)!
+  }
+  return { cards: grouped, dropped }
 }
 
-function assessOrders(prepared: Prepared, orders: AdvisorOrder[], queued: PlayerOrder[]): AdvisorCard[] {
+function assessOrders(prepared: Prepared, orders: AdvisorOrder[], queued: PlayerOrder[]): StaffCard[] {
   const { cards } = classifySuggestions(prepared, orders, queued)
   return cards.filter((card) => card.valid)
 }
 
-function groupAttackCards(map: GameState, cards: AdvisorCard[], queued: PlayerOrder[]): AdvisorCard[] {
+function groupAttackCards(map: GameState, cards: StaffCard[], queued: PlayerOrder[]): StaffCard[] {
   const result: AdvisorCard[] = []
   const indexByTarget = new Map<string, number>()
   for (const card of cards) {
@@ -902,10 +1021,10 @@ function groupAttackCards(map: GameState, cards: AdvisorCard[], queued: PlayerOr
 
 function mergeAttackCard(
   map: GameState,
-  into: AdvisorCard,
-  extra: AdvisorCard,
+  into: StaffCard,
+  extra: StaffCard,
   queued: PlayerOrder[],
-): AdvisorCard {
+): StaffCard {
   const orders = [into.order, ...into.companions, extra.order, ...extra.companions].filter(
     (order): order is Extract<AdvisorOrder, { type: "attack" }> => order.type === "attack",
   )
@@ -928,6 +1047,7 @@ function mergeAttackCard(
     valid: true,
     note: null,
     odds,
+    ratio: previewRatio(preview),
     detail: detailForAttacks(map, orders, queuedNames, odds),
   }
 }
@@ -937,7 +1057,7 @@ function assessOne(
   order: AdvisorOrder,
   queued: PlayerOrder[],
   accepted: AdvisorOrder[],
-): AdvisorCard | null {
+): StaffCard | null {
   const gate = centralGate(prepared.map, order)
   if (gate === "drop") return null
   const clone = structuredClone(prepared.map)
@@ -951,7 +1071,7 @@ function assessOne(
   const resolution = applyConcrete(clone, order, new Set(prepared.used), new Set(prepared.fortified))
   const valid = !gate && resolution.status === "applied"
   if (valid) commit(prepared, order, clone)
-  const odds = order.type === "attack" ? oddsFor(prepared.map, order, queued, accepted) : null
+  const priced = order.type === "attack" ? oddsFor(prepared.map, order, queued, accepted) : null
   return {
     id: crypto.randomUUID(),
     order,
@@ -959,9 +1079,16 @@ function assessOne(
     label: labelFor(prepared.map, order),
     valid,
     note: valid ? null : gate || resolution.summary,
-    odds,
-    detail: valid ? detailFor(prepared.map, order, odds) : null,
+    odds: priced?.text ?? null,
+    ratio: order.type === "attack" ? previewRatio(priced?.preview ?? null) : null,
+    detail: valid ? detailFor(prepared.map, order, priced?.text ?? null) : null,
   }
+}
+
+function previewRatio(preview: EngagementPreview | null): number | null {
+  if (!preview) return null
+  if (preview.empty || !Number.isFinite(preview.ratio)) return Number.POSITIVE_INFINITY
+  return preview.ratio
 }
 
 function oddsFor(
@@ -969,7 +1096,7 @@ function oddsFor(
   order: Extract<AdvisorOrder, { type: "attack" }>,
   queued: PlayerOrder[],
   accepted: AdvisorOrder[],
-): string | null {
+): { text: string | null; preview: EngagementPreview | null } {
   const prongs = [
     ...queued.flatMap((item) =>
       item.type === "attack" && item.target === order.target ? [{ fromId: item.from, unitIds: item.unitIds }] : [],
@@ -983,7 +1110,7 @@ function oddsFor(
     prongs.length > 1
       ? combinedEngagementOdds(map, order.target, prongs)
       : engagementOdds(map, order.from, order.target, order.unitIds)
-  return formatOdds(preview)
+  return { text: formatOdds(preview), preview }
 }
 
 export function formatOdds(preview: EngagementPreview | null): string | null {

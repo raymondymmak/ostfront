@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { ENCIRCLEMENT_DEFENDER_LOSS, flankMultiplier } from "@/lib/engine/combat"
 import { combinedEngagementOdds, engagementOdds, resolveTurn } from "@/lib/engine/turn"
-import { advise, buildSituation, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
+import { advise, buildSituation, reconcileReplyWithCards, renderSituation, scrubAdvisorReply, staffMap } from "@/lib/gm/advisor"
 import { readMessageContent } from "@/lib/gm/llm"
 import { resetTurnGuardStateForTests } from "@/lib/api/turn-guard"
 import { combinedQueueLines } from "@/lib/orders"
@@ -491,6 +491,84 @@ describe("advisor grounding", () => {
     )
     expect(text).toContain("Łódź is one battle")
     expect(text).not.toMatch(/does not show combined|each column separately|cannot promise/)
+  })
+
+  it("reconciles quoted odds with invalid cards", async () => {
+    process.env.LLM_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          llmPayload(
+            JSON.stringify({
+              reply: "Kielce two-pronged about 8.34 : 1. Lemberg is the prize.",
+              suggestions: [
+                { type: "attack", from: "Kraków", target: "Lemberg", unitIds: ["g-kra-11"] },
+                { type: "attack", from: "Kraków", target: "Kielce", unitIds: ["g-kra-11"] },
+                { type: "attack", from: "Katowice", target: "Kielce", unitIds: ["g-kat-inf"] },
+              ],
+            }),
+          ),
+        ),
+      ),
+    )
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "Where should I attack Kielce and Lemberg together?" }],
+      queuedOrders: [],
+    })
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.reply).not.toContain("8.34")
+    expect(payload.reply).toContain("is already committed to")
+    const katowice = payload.suggestions.find(
+      (card) =>
+        card.valid &&
+        card.order.type === "attack" &&
+        card.order.target === "kielce" &&
+        card.order.from === "katowice",
+    )
+    const kielceOdds = payload.reply
+      .split(/(?<=[.!?])\s+/)
+      .filter((sentence) => /kielce/i.test(sentence) && /\d+(?:\.\d+)?\s*:\s*1/.test(sentence))
+    if (katowice?.ratio != null && Number.isFinite(katowice.ratio)) {
+      expect(
+        kielceOdds.every(
+          (sentence) => sentence.includes(katowice.ratio!.toFixed(2)) && !/two-pronged/i.test(sentence),
+        ),
+      ).toBe(true)
+    } else {
+      expect(kielceOdds).toEqual([])
+    }
+    for (const card of payload.suggestions) {
+      expect(card).not.toHaveProperty("conflict")
+      if (card.order.type !== "attack") {
+        expect(card.ratio).toBeNull()
+        continue
+      }
+      const figure = card.odds?.match(/(\d+(?:\.\d+)?)\s*:\s*1/)
+      if (figure) expect(Number(card.ratio).toFixed(2)).toBe(Number(figure[1]).toFixed(2))
+      else if (/undefended/i.test(card.odds ?? "")) expect(card.ratio).toBe(Infinity)
+    }
+  })
+
+  it("leaves odds alone when no card covers the province, or the figure already matches", () => {
+    const map = createInitialState()
+    const cards: AdvisorCard[] = [
+      {
+        id: "kielce",
+        order: { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11"] },
+        companions: [],
+        label: "Attack Kielce from Kraków",
+        valid: true,
+        note: null,
+        odds: "About 2.09 : 1 before the dice.",
+        ratio: 2.09,
+        detail: null,
+      },
+    ]
+    const reply = "Kielce is about 2.09 : 1. Warsaw is about 4.00 : 1."
+    expect(reconcileReplyWithCards(reply, cards, map)).toBe(reply)
   })
 })
 
