@@ -191,6 +191,144 @@ async function expectText(locator, snippet) {
   await locator.getByText(snippet, { exact: false }).first().waitFor({ state: "visible", timeout: 15_000 })
 }
 
+/** @param {import('playwright').Page} page */
+async function readQueuedOrderTexts(page) {
+  await page.locator("[data-testid=tab-orders]").click()
+  const items = page.locator("[data-testid=queued-orders] > li")
+  const count = await items.count()
+  /** @type {string[]} */
+  const texts = []
+  for (let i = 0; i < count; i++) {
+    texts.push(((await items.nth(i).textContent()) ?? "").replace(/\s+/g, " ").trim())
+  }
+  return texts
+}
+
+/** @param {string} label @param {string[]} queuedTexts */
+function cardLabelDuplicatesQueue(label, queuedTexts) {
+  const l = label.toLowerCase()
+  for (const row of queuedTexts) {
+    const q = row.toLowerCase()
+    if (!q) continue
+    if (/fortify/i.test(l) && /fortify/i.test(q) && /kraków|krakow/.test(l) && /kraków|krakow/.test(q)) {
+      return true
+    }
+    if (/raise/i.test(l) && /recruit|infantry|cavalry|artillery/i.test(q) && /kraków|krakow/.test(l) && /kraków|krakow/.test(q)) {
+      return true
+    }
+    if (/move/i.test(l) && /move/i.test(q)) {
+      const moveTarget = l.match(/to\s+([^.,]+)/i)?.[1]?.trim().toLowerCase()
+      if (moveTarget && q.includes(moveTarget)) return true
+    }
+    if (/attack/i.test(l) && /attack/i.test(q)) {
+      const target = l.match(/attack\s+([^ ]+)/i)?.[1]?.trim().toLowerCase()
+      if (target && q.includes(target)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * @param {import('playwright').Locator} exchange
+ * @param {string[]} queuedTexts
+ */
+async function analyzeAdvisorCards(exchange, queuedTexts) {
+  const cards = exchange.locator("[data-testid=advisor-suggestion]")
+  const count = await cards.count()
+  /** @type {{ index: number, label: string, skip: string | null }[]} */
+  const rows = []
+  for (let i = 0; i < count; i++) {
+    const card = cards.nth(i)
+    const label = ((await card.locator("p").first().textContent()) ?? "").replace(/\s+/g, " ").trim()
+    const rejectVisible = await card.getByText("The engine rejects this").isVisible().catch(() => false)
+    const accept = card.locator("[data-testid=advisor-accept]")
+    const hasAccept = (await accept.count()) > 0
+    let skip = null
+    if (count === 0) skip = "no cards"
+    else if (rejectVisible) {
+      const body = ((await card.textContent()) ?? "").replace(/\s+/g, " ").trim()
+      skip = body.includes("The engine rejects this.")
+        ? body.split("The engine rejects this.")[1]?.trim() || "engine rejected"
+        : "engine rejected"
+    } else if (!hasAccept) skip = "no Accept control (invalid or orders closed)"
+    else if (cardLabelDuplicatesQueue(label, queuedTexts)) skip = "duplicates an order already in the queue"
+    rows.push({ index: i, label: label || `(card ${i + 1})`, skip })
+  }
+  return { count, rows }
+}
+
+/** @param {import('playwright').Page} page @param {number} repliesBefore */
+async function waitForAdvisorExchange(page, repliesBefore) {
+  await page.waitForFunction(
+    (before) => document.querySelectorAll("[data-testid=advisor-reply]").length > before,
+    repliesBefore,
+    { timeout: ADVISOR_TIMEOUT_MS },
+  )
+  const exchange = page
+    .locator("[data-testid=advisor-exchange]")
+    .filter({ has: page.locator("[data-testid=advisor-reply]") })
+    .nth(repliesBefore)
+  await exchange.locator("[data-testid=advisor-reply]").waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
+  return exchange
+}
+
+/** @param {import('playwright').Page} page @param {string} question */
+async function sendAdvisorQuestion(page, question) {
+  const repliesBefore = await page.locator("[data-testid=advisor-reply]").count()
+  await page.locator("[data-testid=advisor-input]").fill(question)
+  await page.locator("[data-testid=advisor-send]").click()
+  return waitForAdvisorExchange(page, repliesBefore)
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').Locator} exchange
+ * @param {string[]} queuedTexts
+ */
+async function acceptFirstValidAdvisorCard(page, exchange, queuedTexts) {
+  const { count, rows } = await analyzeAdvisorCards(exchange, queuedTexts)
+  const report = rows.map((row) =>
+    row.skip ? `card ${row.index + 1} "${row.label}": ${row.skip}` : `card ${row.index + 1} "${row.label}": acceptable`,
+  )
+  const pick = rows.find((row) => !row.skip)
+  if (!pick) {
+    return {
+      ok: false,
+      report: `${count} card(s); ${report.join("; ")}`,
+    }
+  }
+  const card = exchange.locator("[data-testid=advisor-suggestion]").nth(pick.index)
+  await page.locator("[data-testid=tab-orders]").click()
+  const before = await page.locator("[data-testid=queued-orders] > li").count()
+  await card.locator("[data-testid=advisor-accept]").click()
+  await page.locator("[data-testid=tab-orders]").click()
+  const after = await page.locator("[data-testid=queued-orders] > li").count()
+  if (after <= before) {
+    return {
+      ok: false,
+      report: `${count} card(s); accepted "${pick.label}" but queue unchanged (${before}→${after}); ${report.join("; ")}`,
+    }
+  }
+  return { ok: true, report: `${count} card(s); accepted "${pick.label}"; ${report.join("; ")}` }
+}
+
+/** @param {import('playwright').Page} page @param {string} pattern RegExp source or substring for fortify */
+async function assertQueuedFortifyKrakow(page) {
+  await page.locator("[data-testid=tab-orders]").click()
+  const queue = page.locator("[data-testid=queued-orders]")
+  const line = queue.getByText(/Fortify/i).filter({ hasText: /Kraków/i })
+  try {
+    await line.first().waitFor({ state: "visible", timeout: 5_000 })
+  } catch {
+    const snapshot = ((await queue.textContent()) ?? "").replace(/\s+/g, " ").trim()
+    throw new Error(
+      snapshot
+        ? `Fortify Kraków not in queued orders. Queue: ${snapshot.slice(0, 240)}`
+        : "Fortify Kraków not in queued orders (queue empty).",
+    )
+  }
+}
+
 async function expectAttr(locator, name, value) {
   await locator.waitFor({ state: "visible" })
   const got = await locator.getAttribute(name)
@@ -325,8 +463,7 @@ function buildSteps(cli, targets) {
         if (await fortify.isDisabled()) {
           const label = ((await fortify.textContent()) ?? "").trim()
           if (/Fortify queued/i.test(label)) {
-            await page.locator("[data-testid=tab-orders]").click()
-            await expectText(page.locator("aside"), "Fortify Kraków")
+            await assertQueuedFortifyKrakow(page)
             return
           }
           const reason =
@@ -336,8 +473,7 @@ function buildSteps(cli, targets) {
         }
         await fortify.scrollIntoViewIfNeeded()
         await fortify.click()
-        await page.locator("[data-testid=tab-orders]").click()
-        await expectText(page.locator("aside"), "Fortify Kraków")
+        await assertQueuedFortifyKrakow(page)
       },
     },
     {
@@ -420,35 +556,26 @@ function buildSteps(cli, targets) {
     {
       id: "16-advisor-send-accept",
       name: "Typed advisor question, Send, Accept suggestion",
-      async run({ page }) {
-        const repliesBefore = await page.locator("[data-testid=advisor-reply]").count()
-        await page.locator("[data-testid=advisor-input]").fill("What should I do this fortnight?")
-        await page.locator("[data-testid=advisor-send]").click()
-        await page.waitForFunction(
-          (before) => document.querySelectorAll("[data-testid=advisor-reply]").length > before,
-          repliesBefore,
-          { timeout: ADVISOR_TIMEOUT_MS },
-        )
-        const newReply = page.locator("[data-testid=advisor-reply]").nth(repliesBefore)
-        await newReply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
-        const exchange = page
-          .locator("[data-testid=advisor-exchange]")
-          .filter({ has: page.locator("[data-testid=advisor-reply]") })
-          .nth(repliesBefore)
-        const card = exchange.locator("[data-testid=advisor-suggestion]").first()
-        try {
-          await card.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
-        } catch {
-          if (cli.allowFallback) return "skipped: advisor returned no cards"
-          throw new Error("advisor returned no cards")
-        }
-        await page.locator("[data-testid=tab-orders]").click()
-        const before = await page.locator("[data-testid=queued-orders] > li").count()
-        await exchange.locator("[data-testid=advisor-accept]").first().click()
-        await page.locator("[data-testid=tab-orders]").click()
-        const after = await page.locator("[data-testid=queued-orders] > li").count()
-        if (after <= before) {
-          throw new Error("Accept did not add a queued order.")
+      async run({ page, log }) {
+        const prompts = [
+          "What should I do this fortnight?",
+          "Name one fresh order I have not already queued—do not repeat fortify, recruit, or moves now in my queue.",
+        ]
+        /** @type {string | undefined} */
+        let lastReport
+        for (let attempt = 0; attempt < prompts.length; attempt++) {
+          const queuedTexts = await readQueuedOrderTexts(page)
+          await page.locator("[data-testid=advisor-toggle]").click()
+          await page.locator("[data-testid=advisor-panel]").waitFor({ state: "visible" })
+          const exchange = await sendAdvisorQuestion(page, prompts[attempt])
+          const outcome = await acceptFirstValidAdvisorCard(page, exchange, queuedTexts)
+          lastReport = outcome.report
+          log(`step 16 attempt ${attempt + 1}: ${lastReport}`)
+          if (outcome.ok) return
+          if (attempt < prompts.length - 1) continue
+          const message = `advisor returned no valid cards (${lastReport})`
+          if (cli.allowFallback) return `skipped: ${message}`
+          throw new Error(message)
         }
       },
     },
