@@ -10,14 +10,16 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## QA before merge
 
-**You must pass your Vercel preview URL** — do not rely on the production default:
+**Pass your preview URL via the environment** (do not put share tokens on the npm command line):
 
 `DEMO_URL=https://<your-preview>.vercel.app npm run demo-check`
 
-(or `npm run demo-check -- --url …`). Attach the printed step summary and screenshots from `demo-check-output/` when marking work done. Update **`FEATURES.md`** when you change player-visible behavior. Install Chromium once: `npx playwright install chromium`.
+Optional flags: `--continue`, `--allow-fallback`, `--force-fail` / `DEMO_FORCE_FAIL=1`. Attach the step summary and `demo-check-output/` screenshots when marking work done. Update **`FEATURES.md`** when player-visible behavior changes. Install Chromium once: `npx playwright install chromium`.
 
-If neither `DEMO_URL` nor `--url` is set, the script **warns** and tests production `https://raymondymmak-ostfront.vercel.app` (for local smoke only).
+If `DEMO_URL` is unset, the script warns and uses production `https://raymondymmak-ostfront.vercel.app` (local smoke only — not for agent sign-off).
 
-**Protected previews:** Set `VERCEL_AUTOMATION_BYPASS_SECRET` in the environment (never commit it; logs redact secrets). The script sends the Vercel automation bypass headers on every request. Or use a share link in `DEMO_URL` with `_vercel_share=…`; the script visits it once, then continues on the same origin without keeping the query (avoids redirect loops). Share tokens and bypass values are **redacted** in stdout, `run.log`, `summary.json`, and `issues.log`.
+**Protected previews:** Set `VERCEL_AUTOMATION_BYPASS_SECRET` (never commit). Or put a share link in **`DEMO_URL`** only (`_vercel_share=…`). Avoid `npm run demo-check -- --url '…?_vercel_share=…'` because npm may log the token before the script runs.
 
-**Flags:** `--continue` runs all steps after a failure; `--allow-fallback` allows **Staff simulation** instead of **Game master** in chronicle checks; `--force-fail` / `DEMO_FORCE_FAIL=1` fails one step deliberately to verify non-zero exit.
+**Redaction:** `demo-check` redacts known share/bypass values (including URL-encoded forms and common query/header patterns) in script output and log files when `configureRedaction` knows those values. It does not scrub npm’s own command-line echo or arbitrary secrets you print elsewhere.
+
+**Flags:** `--continue` runs remaining steps after a failure; `--allow-fallback` allows Staff simulation instead of Game master in chronicle checks and skips advisor Accept when no cards return; `--force-fail` verifies non-zero exit.

@@ -2,12 +2,13 @@
  * Playwright smoke path for QA and coding agents.
  *
  * DEMO_URL=https://… npm run demo-check
- * npm run demo-check -- --url https://… [--continue] [--allow-fallback] [--force-fail]
+ * Optional flags: --continue --allow-fallback --force-fail
+ * Avoid `--url` with share tokens (npm logs the command line); use DEMO_URL instead.
  */
 import { chromium } from "playwright"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { join } from "node:path"
-import { redactSensitiveText, redactUrl } from "./demo-check-redact.mjs"
+import { configureRedaction, redactSensitiveText, redactUrl } from "./demo-check-redact.mjs"
 
 const PRODUCTION_URL = "https://raymondymmak-ostfront.vercel.app"
 const OUT_DIR = "demo-check-output"
@@ -16,7 +17,7 @@ const MOBILE_VIEWPORT = { width: 390, height: 844 }
 const MAP_SETTLE_MS = 3200
 const TURN_TIMEOUT_MS = 140_000
 const ADVISOR_TIMEOUT_MS = 45_000
-const KRAKOW_LON_LAT = [-0.022, -0.632]
+const KATOWICE_LON_LAT = [-0.375, -0.48]
 
 function parseCli(argv) {
   const flags = {
@@ -34,6 +35,13 @@ function parseCli(argv) {
     else if (arg === "--url" && argv[i + 1]) {
       flags.url = argv[++i]
       flags.explicitTarget = true
+      if (flags.url.includes("_vercel_share=")) {
+        console.warn(
+          redactSensitiveText(
+            "WARNING: --url can expose share tokens in npm logs. Prefer DEMO_URL=… npm run demo-check instead.",
+          ),
+        )
+      }
     }
   }
   if (process.env.DEMO_FORCE_FAIL === "1" || process.env.DEMO_FORCE_FAIL === "true") {
@@ -51,7 +59,14 @@ function parseCli(argv) {
   return { ...flags, displayUrl }
 }
 
-/** @param {string} raw */
+function shareTokenFromUrl(raw) {
+  try {
+    return new URL(raw).searchParams.get("_vercel_share")
+  } catch {
+    return null
+  }
+}
+
 function resolveTargets(raw) {
   const parsed = new URL(raw)
   const appUrl = `${parsed.origin}${parsed.pathname || "/"}`
@@ -69,13 +84,30 @@ function vercelBypassHeaders() {
 }
 
 async function assertReachable(page) {
+  const href = page.url()
+  if (href.includes("vercel.com/login")) {
+    throw new Error(
+      "Preview is protected; set VERCEL_AUTOMATION_BYPASS_SECRET or a share URL in DEMO_URL.",
+    )
+  }
+  const title = (await page.title()) ?? ""
+  if (/log in to vercel/i.test(title)) {
+    throw new Error(
+      "Preview is protected; set VERCEL_AUTOMATION_BYPASS_SECRET or a share URL in DEMO_URL.",
+    )
+  }
   const body = (await page.textContent("body")) ?? ""
+  if (/log in to vercel/i.test(body)) {
+    throw new Error(
+      "Preview is protected; set VERCEL_AUTOMATION_BYPASS_SECRET or a share URL in DEMO_URL.",
+    )
+  }
   if (body.includes("DEPLOYMENT_NOT_FOUND") || body.includes("The deployment could not be found")) {
     throw new Error("Deployment not found at this URL.")
   }
   if (body.includes("Protected by Vercel Authentication")) {
     throw new Error(
-      "Blocked by Vercel deployment protection. Set VERCEL_AUTOMATION_BYPASS_SECRET or pass DEMO_URL with _vercel_share=REDACTED in docs only.",
+      "Preview is protected; set VERCEL_AUTOMATION_BYPASS_SECRET or a share URL in DEMO_URL.",
     )
   }
 }
@@ -203,12 +235,12 @@ function buildSteps(cli, targets) {
       id: "05-map-click",
       name: "Select province via map click",
       async run({ page }) {
-        const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
+        const point = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
         if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
         await page.mouse.click(point.x, point.y)
         await page.waitForTimeout(400)
         await page.locator("[data-testid=tab-province]").click()
-        await expectText(page.locator("aside"), "Kraków")
+        await page.locator("aside h2").filter({ hasText: "Katowice" }).first().waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {
@@ -338,26 +370,43 @@ function buildSteps(cli, targets) {
     {
       id: "16-advisor-send-accept",
       name: "Typed advisor question, Send, Accept suggestion",
-      async run({ page }) {
-        await page.locator("[data-testid=advisor-input]").fill("Which neighbor is weakest?")
+      async run({ page, log: stepLog }) {
+        await page.locator("[data-testid=advisor-input]").fill("What should I do this fortnight?")
         await page.locator("[data-testid=advisor-send]").click()
         await page.locator("[data-testid=advisor-reply]").last().waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
-        const accept = page.locator("[data-testid=advisor-accept]").first()
-        await accept.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
-        await accept.click()
+        const card = page.locator("[data-testid=advisor-suggestion]").first()
+        try {
+          await card.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
+        } catch {
+          if (cli.allowFallback) {
+            stepLog("WARN  16-advisor-send-accept  advisor returned no cards (--allow-fallback)")
+            return
+          }
+          throw new Error("advisor returned no cards")
+        }
         await page.locator("[data-testid=tab-orders]").click()
+        const before = await page.locator("[data-testid=queued-orders] > li").count()
+        await page.locator("[data-testid=advisor-accept]").first().click()
+        await page.locator("[data-testid=tab-orders]").click()
+        const after = await page.locator("[data-testid=queued-orders] > li").count()
+        if (after <= before) {
+          throw new Error("Accept did not add a queued order.")
+        }
       },
     },
     {
       id: "17-mobile-chronicle",
       name: "Mobile Chronicle tab (390×844)",
       async run({ page }) {
-        await page.setViewportSize(MOBILE_VIEWPORT)
-        await page.locator("[data-testid=tab-chronicle]").click()
-        const chronicle = page.locator("[data-testid=chronicle]")
-        await chronicle.waitFor({ state: "visible", timeout: 10_000 })
-        await expectText(chronicle, "2 May 1915")
-        await page.setViewportSize(DESKTOP_VIEWPORT)
+        try {
+          await page.setViewportSize(MOBILE_VIEWPORT)
+          await page.locator("[data-testid=tab-chronicle]").click()
+          const chronicle = page.locator("[data-testid=mobile-chronicle-panel] [data-testid=chronicle]")
+          await chronicle.waitFor({ state: "visible", timeout: 10_000 })
+          await expectText(chronicle, "2 May 1915")
+        } finally {
+          await page.setViewportSize(DESKTOP_VIEWPORT)
+        }
       },
     },
     {
@@ -432,6 +481,10 @@ function buildSteps(cli, targets) {
 }
 
 const cli = parseCli(process.argv.slice(2))
+configureRedaction({
+  bypassSecret: process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+  shareToken: shareTokenFromUrl(cli.displayUrl) ?? undefined,
+})
 const targets = resolveTargets(cli.displayUrl)
 const redactedDisplayUrl = redactUrl(cli.displayUrl)
 const redactedAppUrl = redactUrl(targets.appUrl)
@@ -488,7 +541,7 @@ for (const step of steps) {
   if (stop) break
   const shot = join(OUT_DIR, `${step.id}.png`)
   try {
-    await step.run({ page })
+    await step.run({ page, log })
     await page.screenshot({ path: shot, fullPage: false })
     results.push({ id: step.id, name: step.name, ok: true })
     log(`PASS  ${step.id}  ${step.name}`)

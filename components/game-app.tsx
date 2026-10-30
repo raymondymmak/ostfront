@@ -532,7 +532,7 @@ export function GameApp() {
                 queue={queue}
               />
             </TabsContent>
-            <TabsContent value="chronicle" className="min-h-0 flex-1 lg:hidden">
+            <TabsContent value="chronicle" className="min-h-0 flex-1 lg:hidden" data-testid="mobile-chronicle-panel">
             <TimelinePanel
               log={game.log}
               active={game.log.length ? activeLog : 0}

@@ -7,16 +7,16 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 | Feature | How to reach it | Proof it worked |
 | --- | --- | --- |
 | **Start campaign / pick difficulty** | On first load (or after Restart → Confirm), modal `[data-testid=scenario-picker]`: choose `[data-testid=difficulty-easy\|normal\|hard]`, then **Begin the offensive** `[data-testid=begin-scenario]`. | Picker hides; map `[data-testid=war-map]` visible; HUD date **2 May 1915**; Chronicle shows opening copy. |
-| **Read briefing** | With an empty turn log, Chronicle `[data-testid=chronicle]` (desktop: bottom strip; mobile: **Chronicle** tab `[data-testid=tab-chronicle]`). | Text includes **2 May 1915, Gorlice–Tarnów** and the scenario briefing paragraph from `BRIEFING`. |
+| **Read briefing** | Chronicle `[data-testid=chronicle]`; on mobile (**390×844**) use **Chronicle** tab → `[data-testid=mobile-chronicle-panel]`. | Opening briefing text visible. |
 | **Top bar readout** | Always in `<header>` after campaign start. | `[data-testid=objectives]` strength bar; labels **Strength**, **Provinces**; `[data-testid=treasury]` manpower/industry; **★ VP** fraction; `[data-testid=grade]` provisional or final grade; date and fortnight counter top-right. |
-| **Select province (map)** | Click a province on `[data-testid=war-map]` (MapLibre canvas; `window.__ostfrontMap` for tests). | **Province** tab shows that province name. |
+| **Select province (map)** | Click a province on `[data-testid=war-map]` (MapLibre canvas). | **Province** tab `h2` shows that province (demo clicks **Katowice**, not default Kraków). |
 | **Select province (list)** | **Orders** → **Your formations** row, or **Province** tab after map selection. | Province panel title updates. |
 | **Province tab** | `[data-testid=tab-province]` (**Province**). | Supply/unrest meters, neighbors list, fortify/recruit when eligible. |
 | **Neighbor Move** | **Province** tab: neighbor row with **Move** (friendly target). | **Orders** queue: **Move to … from …** |
 | **Neighbor Attack** | **Province** tab: neighbor row with **Attack** (enemy). | Queue shows attack line; optional `[data-testid=attack-odds]`. |
 | **Draw arrows on map** | **Orders** tab: **Draw arrows** `[data-testid=draw-arrows]`; drag between provinces when mode is on (optional in demo-check). | `aria-pressed="true"`; queue entry appears. |
 | **Typed directive** | **Orders** tab: textarea `[data-testid=directive]`. | Parsed **Will …** lines under the field. |
-| **Fortify** | **Province** tab: **Fortify …** `[data-testid=fortify]` (from PR #33). | **Orders** queue shows **Fortify** line. |
+| **Fortify** | **Province** tab: **Fortify …** `[data-testid=fortify]` (added in PR #33). | **Orders** queue shows **Fortify** line (`[data-testid=queued-orders]`). |
 | **Recruit** | **Province** tab at a yard: `[data-testid=recruit-panel]`; `[data-testid=recruit-infantry]` etc. | Queue shows **Raise … at** |
 | **Map mode Control / Supply / Unrest** | `[data-testid=map-mode-none]`, `map-mode-supply`, `map-mode-unrest`. | `[data-testid=overlay-scale]` visible for Supply/Unrest only. |
 | **Toggle rails** | Map legend → `[data-testid=rail-toggle]`. | Label **On** ↔ **Off**. |
@@ -35,9 +35,9 @@ DEMO_URL=https://your-preview.vercel.app npm run demo-check
 # Flags: --continue --allow-fallback --force-fail
 ```
 
-Default without `DEMO_URL` / `--url`: warns and hits production **`https://raymondymmak-ostfront.vercel.app`**. **Agents must set their preview URL.**
+Default without `DEMO_URL`: warns and uses production. **Agents must set `DEMO_URL` to their preview.** Do not pass share tokens via `npm run demo-check -- --url` (npm logs the command line).
 
-Protected previews: `VERCEL_AUTOMATION_BYPASS_SECRET` or `DEMO_URL` with `_vercel_share=…` (values are redacted in logs). See `AGENTS.md`.
+Protected previews: `VERCEL_AUTOMATION_BYPASS_SECRET` or share link in **`DEMO_URL` only**. See `AGENTS.md` for redaction limits.
 
 Writes screenshots and redacted logs under `demo-check-output/` (gitignored).
 
