@@ -198,7 +198,7 @@ export function ProvincePanel({
               Two or more neighbors attacking the same province in one fortnight fight as one battle, with a flanking bonus. If no friendly exit remains, the defender is surrounded.
             </li>
             <li>A formation that attacks out leaves a rear guard at half strength. Two attacks across the same border are a meeting engagement: both columns fall back. Two sides entering the same empty province bounce.</li>
-            <li>The game master may ask for unrest or supply shifts of at most 20.</li>
+            <li>The game master may ask for unrest or supply shifts of at most 20 per province, events included. Events land before the battles and never on Central Powers home soil.</li>
             <li>Depots feed only their own side, and only while that side holds them: Königsberg, Kraków and Lemberg; Warsaw and Volhynia (Rovno).</li>
           </ul>
         </details>

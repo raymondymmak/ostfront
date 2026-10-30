@@ -112,11 +112,11 @@ export function resolveTurn(
     resolutions.push(applyModify(state, proposal, spent))
   }
 
-  resolutions.push(...resolveManeuvers(state, gm.proposals, rng, attacked))
-
   const events: EventResolution[] = gm.events.map((event) =>
-    applyEvent(state, event),
+    applyEvent(state, event, spent),
   )
+
+  resolutions.push(...resolveManeuvers(state, gm.proposals, rng, attacked))
 
   applySupply(state)
 
@@ -530,8 +530,9 @@ export function applyFortify(
 
 /**
  * Modify deltas are clamped to ±20 per province per field per turn.
- * Supply changes adjust the stockpile modifier; the rail network still
- * recomputes the base. Unrest and the resulting fields stay inside 0–100.
+ * Events share this ±20 budget. Supply changes adjust the stockpile
+ * modifier; the rail network still recomputes the base. Unrest and the
+ * resulting fields stay inside 0–100.
  */
 export function applyModify(
   state: GameState,
@@ -592,7 +593,50 @@ export function applyModify(
   }
 }
 
-function applyEvent(state: GameState, event: GameEvent): EventResolution {
+type FieldSpend = { unrest: Map<string, number>; supply: Map<string, number> }
+
+/**
+ * Who an event may target. Returns a rejection reason, or null when it may land.
+ * Central Powers home soil is off-limits to every event.
+ */
+export function eventGate(state: GameState, event: GameEvent): string | null {
+  const province = findProvince(state, event.province)
+  if (!province) return `Event names an unknown province (${event.province}).`
+  if (province.owner === "central" && province.controller === "central") {
+    return `Events cannot target Central Powers home soil (${province.name}).`
+  }
+  switch (event.type) {
+    case "partisans":
+      if (!(province.controller !== province.owner && province.unrest >= 55)) {
+        return "Partisans need an occupied province with unrest of at least 55."
+      }
+      return null
+    case "strike":
+      if (province.owner !== "russia") return "A strike only reaches Russian railways."
+      return null
+    case "epidemic":
+      if (!(province.owner === "russia" || province.controller === "russia")) {
+        return "An epidemic only spreads on Russian soil or where Russia holds the ground."
+      }
+      return null
+    case "breakthrough":
+      if (province.controller !== "russia") {
+        return "A breakthrough only lifts morale where Russia holds the ground."
+      }
+      return null
+  }
+}
+
+function takeBudget(bucket: Map<string, number>, provinceId: string, delta: number): number {
+  const already = bucket.get(provinceId) ?? 0
+  const applied = clamp(already + delta, -MODIFY_LIMIT, MODIFY_LIMIT) - already
+  if (applied !== 0) bucket.set(provinceId, already + applied)
+  return applied
+}
+
+function applyEvent(state: GameState, event: GameEvent, spent: FieldSpend): EventResolution {
+  const reason = eventGate(state, event)
+  if (reason) return { event, status: "rejected", summary: reason }
   const province = findProvince(state, event.province)
   if (!province) {
     return {
@@ -605,7 +649,9 @@ function applyEvent(state: GameState, event: GameEvent): EventResolution {
 
   switch (event.type) {
     case "partisans": {
-      province.unrest = clamp(province.unrest + 15, 0, 100)
+      const applied = takeBudget(spent.unrest, province.id, 15)
+      const limited = applied !== 15
+      if (applied !== 0) province.unrest = clamp(province.unrest + applied, 0, 100)
       const target = [...fightingUnits(province.units)].sort((a, b) => b.strength - a.strength)[0]
       if (target) {
         const loss = Math.min(8, target.strength)
@@ -613,19 +659,26 @@ function applyEvent(state: GameState, event: GameEvent): EventResolution {
         target.strength = Math.max(0, target.strength - 8)
       }
       const hurt = target ? ` ${target.name} loses 8 strength.` : ""
+      const unrestLine = limited
+        ? "Unrest is held at the fortnight's limit."
+        : `Unrest is now ${province.unrest}.`
       return {
         event,
         status: "applied",
-        summary: `Partisans in ${province.name}. Unrest is now ${province.unrest}.${hurt}${note}`,
+        summary: `Partisans in ${province.name}. ${unrestLine}${hurt}${note}`,
       }
     }
     case "strike": {
-      province.supplyModifier = clamp(province.supplyModifier - 15, -40, 40)
-      applySupply(state)
+      const applied = takeBudget(spent.supply, province.id, -15)
+      if (applied !== 0) {
+        province.supplyModifier = clamp(province.supplyModifier + applied, -40, 40)
+        applySupply(state)
+      }
+      const limit = applied !== -15 ? " Supply is held at the fortnight's limit." : ""
       return {
         event,
         status: "applied",
-        summary: `A railway strike at ${province.name}. Supply is now ${province.supply}.${note}`,
+        summary: `A railway strike at ${province.name}. Supply is now ${province.supply}.${limit}${note}`,
       }
     }
     case "epidemic": {
