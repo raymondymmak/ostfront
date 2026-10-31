@@ -678,8 +678,8 @@ describe("advisor placeholder tokens", () => {
     { text: "Kielce stands at {odds:{odds:card1}}.", keep: "Kielce stands at." },
     { text: "Kielce stands at ｛odds:card1｝.", keep: "Kielce stands at." },
     { text: "Kielce stands at ｛｛odds:card1｝｝.", keep: "Kielce stands at." },
-    { text: "Kielce stands at {odds:card1.", keep: "Kielce stands at odds:card1." },
-    { text: "Kielce stands at odds:card1}.", keep: "Kielce stands at odds:card1." },
+    { text: "Kielce stands at {odds:card1.", keep: "Kielce stands at." },
+    { text: "Kielce stands at odds:card1}.", keep: "Kielce stands at." },
     { text: "Kielce stands at { odds:card1 }.", keep: "Kielce stands at." },
     { text: "Kielce stands at {ODDS:card1}.", keep: "Kielce stands at." },
     { text: "Kielce stands at {odds:CARD1}.", keep: "Kielce stands at." },
@@ -694,7 +694,7 @@ describe("advisor placeholder tokens", () => {
     { text: "｛placeholder｝", keep: "" },
     { text: "{card99}", keep: "" },
     { text: "{not_a_place_odds}", keep: "" },
-    { text: "odds:card99}", keep: "odds:card99" },
+    { text: "odds:card99}", keep: "" },
     { text: "{odds:card1}} extra", keep: "extra" },
     { text: "Hold { the shoulder", keep: "Hold the shoulder" },
     { text: "See {odds:card1} now.", keep: "See now." },
@@ -712,7 +712,7 @@ describe("advisor placeholder tokens", () => {
     { text: "kielce_odds stays without braces.", keep: "kielce_odds stays without braces." },
     { text: "March on. {odds:card1} The depot holds.", keep: "March on. The depot holds." },
     { text: "{odds:card1} Kielce is the shoulder.", keep: "Kielce is the shoulder." },
-    { text: "Unclosed {odds:card1 and the corps stays.", keep: "Unclosed odds:card1 and the corps stays." },
+    { text: "Unclosed {odds:card1 and the corps stays.", keep: "Unclosed and the corps stays." },
     { text: "Unclosed {card1 and the corps stays.", keep: "Unclosed card1 and the corps stays." },
     { text: "Line with { only the brace.", keep: "Line with only the brace." },
     { text: "End } only.", keep: "End only." },
@@ -727,7 +727,7 @@ describe("advisor placeholder tokens", () => {
     { text: "odds:card1 without a brace goes.", keep: "odds:card1 without a brace goes." },
     { text: "The odds: kielce hold.", keep: "The odds: kielce hold." },
     { text: "First line.\nSecond {odds:card1} line stays.", keep: "First line.\nSecond line stays." },
-    { text: "Start {odds:card1\nNext line stays.", keep: "Start odds:card1\nNext line stays." },
+    { text: "Start {odds:card1\nNext line stays.", keep: "Start\nNext line stays." },
     { text: "Hold {\nThe shoulder stays.", keep: "Hold\nThe shoulder stays." },
     { text: "Mixed {odds:card1｝ stays.", keep: "Mixed stays." },
     { text: "Mixed ｛odds:card1} stays.", keep: "Mixed stays." },
@@ -759,10 +759,17 @@ describe("advisor placeholder tokens", () => {
     { text: "Odds: 8.34 : 1 (Kielce)", keep: "Odds: 8.34 : 1 (Kielce)" },
     { text: "The odds: 6.51 : 1 at Kielce.", keep: "The odds: 6.51 : 1 at Kielce." },
     { text: "Odds: good.", keep: "Odds: good." },
+    { text: "Kielce is at {odds:card1 and Lublin is weaker.", keep: "Kielce is at and Lublin is weaker." },
+    { text: "Kielce is at { odds:card1 and Lublin is weaker.", keep: "Kielce is at and Lublin is weaker." },
+    { text: "Kielce is at ｛odds:card1 and Lublin is weaker.", keep: "Kielce is at and Lublin is weaker." },
+    { text: "March ends {odds:card7", keep: "March ends" },
+    { text: "March ends ｛odds:card7", keep: "March ends" },
+    { text: "Kielce is odds:card1}.", keep: "Kielce is." },
+    { text: "Kielce is odds:card1｝.", keep: "Kielce is." },
   ]
 
   it("strips only the token and keeps the text around it", () => {
-    expect(forms).toHaveLength(89)
+    expect(forms).toHaveLength(96)
     for (const item of forms) {
       expect(finishAdvisorReply(item.text), item.text).toBe(item.keep)
     }

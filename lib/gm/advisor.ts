@@ -1533,7 +1533,7 @@ function tidyReply(text: string): string {
     .trim()
 }
 
-/** Remove brace spans and stray braces. Text outside braces, including odds, stays. */
+/** Remove brace spans and stray braces. An odds token glued to a lone brace goes with it. */
 export function finishAdvisorReply(reply: string): string {
   let current = reply.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
   const span = /\{[^{}]*\}/g
@@ -1542,7 +1542,11 @@ export function finishAdvisorReply(reply: string): string {
     previous = current
     current = current.replace(span, "")
   }
-  return tidyReply(current.replace(/[{}]/g, ""))
+  current = current
+    .replace(/\{[ \t]*odds:[A-Za-z0-9_:-]+/gi, "")
+    .replace(/odds:[A-Za-z0-9_:-]+\}/gi, "")
+    .replace(/[{}]/g, "")
+  return tidyReply(current)
 }
 
 function snap(unit: Unit): UnitSnap {
