@@ -1,4 +1,4 @@
-import { eventGate, findUnit, resolveTurn } from "@/lib/engine/turn"
+import { findUnit, resolveTurn } from "@/lib/engine/turn"
 import type { InterpretedOrders } from "@/lib/gm/interpret"
 import type { GmDebug, GmModelEnv } from "@/lib/gm/debug"
 import { llmAiTurn, resolveLlmModels, type LlmFailure, type LlmModels } from "@/lib/gm/llm"
@@ -207,17 +207,10 @@ export function buildStaffTurn(
     .filter((proposal) => !isDuplicate(proposal, interpreted.proposals))
     .slice(0, 12)
 
-  const events = ai.events.filter((event) => {
-    const reason = eventGate(state, event)
-    if (!reason) return true
-    interpreted.notes.push(`Game master event rejected: ${reason}`)
-    return false
-  })
-
   return {
     narration: ai.narration,
     proposals: [...interpreted.proposals, ...staff],
-    events: events.slice(0, 3),
+    events: ai.events.slice(0, 3),
     diplomacy: ai.diplomacy.slice(0, 3),
   }
 }
