@@ -678,7 +678,7 @@ describe("advisor placeholder tokens", () => {
     { text: "Kielce stands at {odds:{odds:card1}}.", keep: "Kielce stands at." },
     { text: "Kielce stands at ｛odds:card1｝.", keep: "Kielce stands at." },
     { text: "Kielce stands at ｛｛odds:card1｝｝.", keep: "Kielce stands at." },
-    { text: "Kielce stands at {odds:card1.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {odds:card1.", keep: "Kielce stands at odds:card1." },
     { text: "Kielce stands at odds:card1}.", keep: "Kielce stands at." },
     { text: "Kielce stands at { odds:card1 }.", keep: "Kielce stands at." },
     { text: "Kielce stands at {ODDS:card1}.", keep: "Kielce stands at." },
@@ -771,10 +771,14 @@ describe("advisor placeholder tokens", () => {
     { text: "{odds: card1", keep: "" },
     { text: "{ odds : card1", keep: "" },
     { text: "odds: card1}", keep: "" },
+    { text: "Kielce is {odds:x1.5 now.", keep: "Kielce is odds:x1.5 now." },
+    { text: "6{odds:card1}.51 : 1", keep: "6 .51 : 1" },
+    { text: "6.5{1 : 1", keep: "6.5 1 : 1" },
+    { text: "8.34{odds:card1 : 1", keep: "8.34odds:card1 : 1" },
   ]
 
   it("strips only the token and keeps the text around it", () => {
-    expect(forms).toHaveLength(101)
+    expect(forms).toHaveLength(105)
     for (const item of forms) {
       expect(finishAdvisorReply(item.text), item.text).toBe(item.keep)
     }
@@ -783,6 +787,17 @@ describe("advisor placeholder tokens", () => {
   it("never leaves a brace", () => {
     for (const item of forms) {
       expect(finishAdvisorReply(item.text), item.text).not.toMatch(/[{}\uFF5B\uFF5D]/)
+    }
+  })
+
+  it("does not invent a numeric figure", () => {
+    const figure = /\d+(?:\.\d+)?/g
+    for (const item of forms) {
+      const out = finishAdvisorReply(item.text)
+      const known = item.text.match(figure) ?? []
+      for (const found of out.match(figure) ?? []) {
+        expect(known, `${item.text} -> ${out}`).toContain(found)
+      }
     }
   })
 })

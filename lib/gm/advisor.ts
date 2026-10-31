@@ -1525,10 +1525,37 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
   return order.type !== "text"
 }
 
+const NUMBER_EDGE = /[0-9.]/
+const OPEN_LONE_TOKEN = /\{[ \t]*odds[ \t]*:[ \t]*[A-Za-z_][\w:-]*/gi
+const CLOSE_LONE_TOKEN = /odds[ \t]*:[ \t]*[A-Za-z_][\w:-]*[ \t]*\}/gi
+
+function numberGap(text: string, start: number, end: number): string {
+  const before = start > 0 ? text[start - 1] : ""
+  const after = end < text.length ? text[end] : ""
+  return NUMBER_EDGE.test(before) && NUMBER_EDGE.test(after) ? " " : ""
+}
+
+/** Maximal value stops on a digit or dot, or on `: N`, so the token stays. */
+function valueStopsBeforeNumber(text: string, valueEnd: number): boolean {
+  return /^[ \t]*(?::[ \t]*)?[.\d]/.test(text.slice(valueEnd))
+}
+
+function replaceMarked(text: string, pattern: RegExp): string {
+  return text.replace(pattern, (match: string, offset: number) => numberGap(text, offset, offset + match.length))
+}
+
+function replaceLoneTokens(text: string, pattern: RegExp, valueEndOf: (match: string) => number): string {
+  return text.replace(pattern, (match: string, offset: number) => {
+    if (valueStopsBeforeNumber(text, offset + valueEndOf(match))) return match
+    return numberGap(text, offset, offset + match.length)
+  })
+}
+
 function tidyReply(text: string): string {
   return text
     .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+([,.;!?])/g, "$1")
+    .replace(/[ \t]+([,;!?])/g, "$1")
+    .replace(/[ \t]+\./g, (spaces, offset, whole) => (/[0-9.]/.test(whole[offset - 1] ?? "") ? " ." : "."))
     .replace(/[ \t]+\n/g, "\n")
     .trim()
 }
@@ -1540,12 +1567,11 @@ export function finishAdvisorReply(reply: string): string {
   let previous = ""
   while (current !== previous) {
     previous = current
-    current = current.replace(span, "")
+    current = replaceMarked(current, span)
   }
-  current = current
-    .replace(/\{\s*odds\s*:\s*[A-Za-z_][\w:-]*/gi, "")
-    .replace(/odds\s*:\s*[A-Za-z_][\w:-]*\s*\}/gi, "")
-    .replace(/[{}]/g, "")
+  current = replaceLoneTokens(current, OPEN_LONE_TOKEN, (match) => match.length)
+  current = replaceLoneTokens(current, CLOSE_LONE_TOKEN, (match) => match.replace(/[ \t]*\}$/, "").length)
+  current = replaceMarked(current, /[{}]/g)
   return tidyReply(current)
 }
 
