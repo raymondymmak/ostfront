@@ -766,10 +766,15 @@ describe("advisor placeholder tokens", () => {
     { text: "March ends ｛odds:card7", keep: "March ends" },
     { text: "Kielce is odds:card1}.", keep: "Kielce is." },
     { text: "Kielce is odds:card1｝.", keep: "Kielce is." },
+    { text: "Kielce {odds:6.51 : 1 holds.", keep: "Kielce odds:6.51 : 1 holds." },
+    { text: "Kielce is odds:card1 } and Lublin holds.", keep: "Kielce is and Lublin holds." },
+    { text: "{odds: card1", keep: "" },
+    { text: "{ odds : card1", keep: "" },
+    { text: "odds: card1}", keep: "" },
   ]
 
   it("strips only the token and keeps the text around it", () => {
-    expect(forms).toHaveLength(96)
+    expect(forms).toHaveLength(101)
     for (const item of forms) {
       expect(finishAdvisorReply(item.text), item.text).toBe(item.keep)
     }

@@ -1543,8 +1543,8 @@ export function finishAdvisorReply(reply: string): string {
     current = current.replace(span, "")
   }
   current = current
-    .replace(/\{[ \t]*odds:[A-Za-z0-9_:-]+/gi, "")
-    .replace(/odds:[A-Za-z0-9_:-]+\}/gi, "")
+    .replace(/\{\s*odds\s*:\s*[A-Za-z_][\w:-]*/gi, "")
+    .replace(/odds\s*:\s*[A-Za-z_][\w:-]*\s*\}/gi, "")
     .replace(/[{}]/g, "")
   return tidyReply(current)
 }
