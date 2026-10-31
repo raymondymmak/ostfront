@@ -555,7 +555,7 @@ function rulesDispatch(
       sentences.push("I would file that attack, and leave it for you to accept. I do not fight it myself.")
     } else if (!weakest.empty && Number.isFinite(weakest.ratio) && weakest.ratio < 1) {
       sentences.push(
-        `I would not spend the fortnight on ${weakest.targetName}. The blow is too weak to file.`,
+        `I would not spend the fortnight on ${weakest.targetName}. The engine's odds are under 1 : 1 before the dice.`,
       )
     } else {
       sentences.push("I would not pull the armies off the Gorlice front for a softer contact elsewhere.")
@@ -580,7 +580,7 @@ function rulesDispatch(
   }
 
   sentences.push(
-    "I have not seen the Russian orders for this fortnight, and I will not guess them. This is against the garrison as it stands. A simultaneous march can change the fight.",
+    "I have not seen the Russian orders for this fortnight, and I will not guess them. These odds are against the garrison as it stands. A simultaneous march can change the fight.",
   )
   return { reply: sentences.join(" "), orders }
 }
@@ -595,7 +595,8 @@ function describeContact(contact: FrontContact): string {
   const garrison = contact.garrisonName
     ? ` ${contact.garrisonName} stays on the ${contact.fromName} depot.`
     : ""
-  return `${contact.targetName} is ${contact.terrain}, fort ${contact.fort}, supply ${contact.targetSupply}, held by ${defenders}. From ${contact.fromName} (supply ${contact.fromSupply}) I would march ${attackers}.${garrison}`
+  const odds = contact.odds.endsWith(".") ? contact.odds : `${contact.odds}.`
+  return `${contact.targetName} is ${contact.terrain}, fort ${contact.fort}, supply ${contact.targetSupply}, held by ${defenders}. From ${contact.fromName} (supply ${contact.fromSupply}) the engine rates ${attackers} at ${odds}${garrison}`
 }
 
 /** The Gorlice–Tarnów blow, not the holding front in East Prussia and Courland. */
@@ -1524,19 +1525,6 @@ function isAdvisorOrder(order: PlayerOrder): order is AdvisorOrder {
   return order.type !== "text"
 }
 
-const TOKEN_INTERIOR = /^(?:odds\s*:\s*)?[A-Za-z_][A-Za-z0-9_]*$|^odds\s*:?\s*$/i
-
-function stripBalancedTokens(text: string): string {
-  const group = /\{([^{}]*)\}/g
-  let current = text
-  let previous = ""
-  while (current !== previous) {
-    previous = current
-    current = current.replace(group, (_match, inner: string) => (TOKEN_INTERIOR.test(inner.trim()) ? "" : inner))
-  }
-  return current
-}
-
 function tidyReply(text: string): string {
   return text
     .replace(/[ \t]{2,}/g, " ")
@@ -1545,17 +1533,16 @@ function tidyReply(text: string): string {
     .trim()
 }
 
-/** Strip placeholder tokens. The rest of the reply, including bare words, stays. */
+/** Remove brace spans and stray braces. Text outside braces, including odds, stays. */
 export function finishAdvisorReply(reply: string): string {
-  const normalized = reply.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
-  const balanced = stripBalancedTokens(normalized)
-  const opened = balanced
-    .replace(/\{[ \t]*odds[ \t]*:[ \t]*[A-Za-z0-9_]*/gi, "")
-    .replace(/\{[A-Za-z_][A-Za-z0-9_]*/g, "")
-    .replace(/[{}]/g, "")
-    .replace(/odds:[ \t]*[A-Za-z0-9_]*/gi, "")
-    .replace(/odds:[ \t]*/gi, "")
-  return tidyReply(opened)
+  let current = reply.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
+  const span = /\{[^{}]*\}/g
+  let previous = ""
+  while (current !== previous) {
+    previous = current
+    current = current.replace(span, "")
+  }
+  return tidyReply(current.replace(/[{}]/g, ""))
 }
 
 function snap(unit: Unit): UnitSnap {

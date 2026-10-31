@@ -422,6 +422,46 @@ describe("advisor grounding", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("keeps main's rules-path wording on a quiet opening", async () => {
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.source).toBe("rules")
+    expect(payload.reply).toMatch(/the engine rates/)
+    expect(payload.reply).toMatch(/About \d+\.\d{2} : 1 before the dice/)
+    expect(payload.reply).toContain(
+      "These odds are against the garrison as it stands. A simultaneous march can change the fight.",
+    )
+    expect(payload.reply).not.toMatch(/I would march/)
+    expect(payload.reply).not.toContain("This is against the garrison")
+  })
+
+  it("digs at Königsberg when the Kielce march would empty the Kraków depot", async () => {
+    const response = await postAdvisor({
+      state: createInitialState(),
+      messages: [{ role: "user", content: "What should I do this fortnight?" }],
+      queuedOrders: [
+        { type: "attack", from: "krakow", target: "kielce", unitIds: ["g-kra-11", "g-kra-x", "g-kra-grd"] },
+      ],
+    })
+    const payload = (await response.json()) as AdvisorResponse
+    expect(payload.source).toBe("rules")
+    expect(payload.reply).toContain("Königsberg can still dig.")
+    expect(payload.reply).toMatch(/the engine rates/)
+    expect(payload.reply).toContain("These odds are against the garrison as it stands.")
+    expect(
+      payload.suggestions.some(
+        (card) => card.order.type === "attack" && card.order.unitIds.length === 1 && card.order.unitIds[0] === "g-kra-art",
+      ),
+    ).toBe(false)
+    expect(payload.suggestions.some((card) => card.order.type === "fortify" && card.order.provinceId === "konigsberg")).toBe(
+      true,
+    )
+  })
+
   it("does not suggest orders after the campaign, and does not leak the grade", async () => {
     process.env.LLM_API_KEY = "test-key"
     const state = createInitialState()
@@ -638,8 +678,8 @@ describe("advisor placeholder tokens", () => {
     { text: "Kielce stands at {odds:{odds:card1}}.", keep: "Kielce stands at." },
     { text: "Kielce stands at ｛odds:card1｝.", keep: "Kielce stands at." },
     { text: "Kielce stands at ｛｛odds:card1｝｝.", keep: "Kielce stands at." },
-    { text: "Kielce stands at {odds:card1.", keep: "Kielce stands at." },
-    { text: "Kielce stands at odds:card1}.", keep: "Kielce stands at." },
+    { text: "Kielce stands at {odds:card1.", keep: "Kielce stands at odds:card1." },
+    { text: "Kielce stands at odds:card1}.", keep: "Kielce stands at odds:card1." },
     { text: "Kielce stands at { odds:card1 }.", keep: "Kielce stands at." },
     { text: "Kielce stands at {ODDS:card1}.", keep: "Kielce stands at." },
     { text: "Kielce stands at {odds:CARD1}.", keep: "Kielce stands at." },
@@ -654,7 +694,7 @@ describe("advisor placeholder tokens", () => {
     { text: "｛placeholder｝", keep: "" },
     { text: "{card99}", keep: "" },
     { text: "{not_a_place_odds}", keep: "" },
-    { text: "odds:card99}", keep: "" },
+    { text: "odds:card99}", keep: "odds:card99" },
     { text: "{odds:card1}} extra", keep: "extra" },
     { text: "Hold { the shoulder", keep: "Hold the shoulder" },
     { text: "See {odds:card1} now.", keep: "See now." },
@@ -672,8 +712,8 @@ describe("advisor placeholder tokens", () => {
     { text: "kielce_odds stays without braces.", keep: "kielce_odds stays without braces." },
     { text: "March on. {odds:card1} The depot holds.", keep: "March on. The depot holds." },
     { text: "{odds:card1} Kielce is the shoulder.", keep: "Kielce is the shoulder." },
-    { text: "Unclosed {odds:card1 and the corps stays.", keep: "Unclosed and the corps stays." },
-    { text: "Unclosed {card1 and the corps stays.", keep: "Unclosed and the corps stays." },
+    { text: "Unclosed {odds:card1 and the corps stays.", keep: "Unclosed odds:card1 and the corps stays." },
+    { text: "Unclosed {card1 and the corps stays.", keep: "Unclosed card1 and the corps stays." },
     { text: "Line with { only the brace.", keep: "Line with only the brace." },
     { text: "End } only.", keep: "End only." },
     { text: "Left ｛odds: card1｝ right.", keep: "Left right." },
@@ -684,10 +724,10 @@ describe("advisor placeholder tokens", () => {
     { text: "{placeholder} and the map.", keep: "and the map." },
     { text: "See {PLACEHOLDER} here.", keep: "See here." },
     { text: "{ODDS} alone next word.", keep: "alone next word." },
-    { text: "odds:card1 without a brace goes.", keep: "without a brace goes." },
-    { text: "The odds: kielce hold.", keep: "The hold." },
+    { text: "odds:card1 without a brace goes.", keep: "odds:card1 without a brace goes." },
+    { text: "The odds: kielce hold.", keep: "The odds: kielce hold." },
     { text: "First line.\nSecond {odds:card1} line stays.", keep: "First line.\nSecond line stays." },
-    { text: "Start {odds:card1\nNext line stays.", keep: "Start\nNext line stays." },
+    { text: "Start {odds:card1\nNext line stays.", keep: "Start odds:card1\nNext line stays." },
     { text: "Hold {\nThe shoulder stays.", keep: "Hold\nThe shoulder stays." },
     { text: "Mixed {odds:card1｝ stays.", keep: "Mixed stays." },
     { text: "Mixed ｛odds:card1} stays.", keep: "Mixed stays." },
@@ -698,7 +738,7 @@ describe("advisor placeholder tokens", () => {
     { text: "{ }", keep: "" },
     { text: "{odds:}", keep: "" },
     { text: "{odds: }", keep: "" },
-    { text: "odds:", keep: "" },
+    { text: "odds:", keep: "odds:" },
     { text: "Ratio 6.51 : 1 stays.", keep: "Ratio 6.51 : 1 stays." },
     { text: "About 6.51 : 1 before the dice.", keep: "About 6.51 : 1 before the dice." },
     { text: "Gen. Mackensen holds {odds:card1} Kraków.", keep: "Gen. Mackensen holds Kraków." },
@@ -710,18 +750,27 @@ describe("advisor placeholder tokens", () => {
     { text: "Keep 2 to 3 corps {odds:card1} here.", keep: "Keep 2 to 3 corps here." },
     { text: "05:00 is a clock {odds}.", keep: "05:00 is a clock." },
     { text: "Province count is 18 to 21 {card1} along.", keep: "Province count is 18 to 21 along." },
+    { text: "{odds:combined:kielce:2}", keep: "" },
+    { text: "Before {odds:combined:kielce:2} after.", keep: "Before after." },
+    { text: "{odds:kielce:2}", keep: "" },
+    { text: "Before {odds:kielce:2} after.", keep: "Before after." },
+    { text: "{odds:card 1}", keep: "" },
+    { text: "Before {odds:card 1} after.", keep: "Before after." },
+    { text: "Odds: 8.34 : 1 (Kielce)", keep: "Odds: 8.34 : 1 (Kielce)" },
+    { text: "The odds: 6.51 : 1 at Kielce.", keep: "The odds: 6.51 : 1 at Kielce." },
+    { text: "Odds: good.", keep: "Odds: good." },
   ]
 
   it("strips only the token and keeps the text around it", () => {
-    expect(forms).toHaveLength(80)
+    expect(forms).toHaveLength(89)
     for (const item of forms) {
       expect(finishAdvisorReply(item.text), item.text).toBe(item.keep)
     }
   })
 
-  it("never leaves a brace or an odds: fragment", () => {
+  it("never leaves a brace", () => {
     for (const item of forms) {
-      expect(finishAdvisorReply(item.text), item.text).not.toMatch(/[{}\uFF5B\uFF5D]|odds:/)
+      expect(finishAdvisorReply(item.text), item.text).not.toMatch(/[{}\uFF5B\uFF5D]/)
     }
   })
 })
