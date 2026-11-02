@@ -294,26 +294,31 @@ async function analyzeAdvisorCards(container) {
 }
 
 /** @param {import('playwright').Page} page */
-async function readQueueOrderLabels(page) {
+async function readQueueSnapshots(page) {
   return page.evaluate(() => {
     const items = document.querySelectorAll("[data-testid=queued-orders] > li")
-    return [...items].map((li) => {
-      const p = li.querySelector("div > p") ?? li
-      return (p.textContent ?? "")
-        .replace(/\s*Remove\s*$/i, "")
-        .replace(/\s+/g, " ")
-        .trim()
-    })
+    /** @type {unknown[]} */
+    const rows = []
+    for (const li of items) {
+      const raw = li.getAttribute("data-queued-order")
+      if (!raw) continue
+      try {
+        rows.push(JSON.parse(raw))
+      } catch {
+        /* ignore */
+      }
+    }
+    return rows
   })
 }
 
 /** @param {import('playwright').Locator} card */
-async function readExpectedQueueLinesFromCard(card) {
-  const raw = await card.getAttribute("data-advisor-queue-lines")
+async function readCardOrderSnapshots(card) {
+  const raw = await card.getAttribute("data-advisor-orders")
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : []
+    return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
   }
@@ -334,19 +339,26 @@ async function acceptFirstValidAdvisorCard(page, container) {
     return { ok: false, report: `${count} card(s); ${report || "no cards"}` }
   }
   const card = container.locator("[data-testid=advisor-suggestion]").nth(pick.index)
-  const expectedLines = await readExpectedQueueLinesFromCard(card)
-  const beforeTexts = await readQueueOrderLabels(page)
+  const cardOrders = await readCardOrderSnapshots(card)
+  const before = await readQueueSnapshots(page)
+  const mode = pick.action === "accept" ? "accept" : "override"
   if (pick.action === "accept") {
     await card.locator("[data-testid=advisor-accept]").click()
   } else {
     await card.locator("[data-testid=advisor-override]").click()
   }
-  const afterTexts = await readQueueOrderLabels(page)
-  const queueCheck = assertQueueReflectsAdvisorAction(beforeTexts, afterTexts, expectedLines)
+  const after = await readQueueSnapshots(page)
+  const queueCheck = assertQueueReflectsAdvisorAction({
+    before,
+    after,
+    cardOrders,
+    cardLabel: pick.label,
+    mode,
+  })
   if (!queueCheck.ok) {
     return {
       ok: false,
-      report: `${count} card(s); ${pick.action} "${pick.label}" but ${queueCheck.message}; expected=[${expectedLines.join(" | ")}] before=[${beforeTexts.join(" | ")}] after=[${afterTexts.join(" | ")}]; ${report}`,
+      report: `${count} card(s); ${mode} "${pick.label}" but ${queueCheck.message}; cardOrders=${cardOrders.length} before=${before.length} after=${after.length}; ${report}`,
     }
   }
   return {

@@ -11,6 +11,7 @@ import {
 } from "@/lib/gm/advisor-types"
 import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
 import { advisorOrdersQueueLineTexts, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { snapshotAdvisorCardOrders } from "@/lib/queue-snapshot"
 import type { GameState } from "@/lib/types"
 
 const STORAGE_KEY = "ostfront-advisor-v1"
@@ -253,6 +254,10 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                 card.order,
                 ...(card.companions ?? []),
               ])
+              const orderSnapshots = snapshotAdvisorCardOrders(state, [
+                card.order,
+                ...(card.companions ?? []),
+              ])
               return (
               <article
                 key={card.id}
@@ -260,6 +265,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
                 data-testid="advisor-suggestion"
                 data-advisor-state={card.queue}
                 data-advisor-queue-lines={JSON.stringify(queueLineTexts)}
+                data-advisor-orders={JSON.stringify(orderSnapshots)}
               >
                 <p className="text-sm">{card.label}</p>
                 {card.queue === "duplicate" && (

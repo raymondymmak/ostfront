@@ -9,6 +9,7 @@ import { combinedEngagementOdds, engagementOdds, findProvince, type EngagementPr
 import { ordersLocked } from "@/lib/finale"
 import { interpretOrders } from "@/lib/gm/interpret"
 import { combinedQueueLines, formatQueuedOrderLine, type QueuedOrder } from "@/lib/orders"
+import { snapshotQueuedOrder } from "@/lib/queue-snapshot"
 import type { GameState } from "@/lib/types"
 
 type OrderPanelProps = {
@@ -127,7 +128,7 @@ export function OrderPanel({
             const odds =
               order.kind === "attack" && order.to ? queuedAttackOdds(state, queue, order) : null
             return (
-              <li key={order.id} className="rounded-lg border border-border p-2.5">
+              <li key={order.id} className="rounded-lg border border-border p-2.5" data-queued-order={JSON.stringify(snapshotQueuedOrder(state, order))}>
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm">{formatQueuedOrderLine(state, order)}</p>
                   <Button

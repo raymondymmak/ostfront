@@ -287,7 +287,7 @@ function applyAdvisorOrder(
   return applyCancelRecruit(state, { type: "cancelRecruit", id: order.buildId })
 }
 
-function advisorDrafts(state: GameState, orders: AdvisorOrder[]): QueuedOrder[] {
+export function advisorDrafts(state: GameState, orders: AdvisorOrder[]): QueuedOrder[] {
   const drafts: QueuedOrder[] = []
   for (const order of orders) {
     if (order.type === "fortify") {
