@@ -10,7 +10,7 @@ import {
   type AdvisorResponse,
 } from "@/lib/gm/advisor-types"
 import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
-import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { advisorOrdersQueueLineTexts, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
 
 const STORAGE_KEY = "ostfront-advisor-v1"
@@ -249,12 +249,17 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
             </p>
             {refreshAdvisorCards(state, message.suggestions ?? [], queuedOrders).map((card) => {
               const action = advisorCardAction(card)
+              const queueLineTexts = advisorOrdersQueueLineTexts(state, [
+                card.order,
+                ...(card.companions ?? []),
+              ])
               return (
               <article
                 key={card.id}
                 className="rounded-md border border-[#c6a15a]/35 bg-[#1a140e]/80 p-2.5"
                 data-testid="advisor-suggestion"
                 data-advisor-state={card.queue}
+                data-advisor-queue-lines={JSON.stringify(queueLineTexts)}
               >
                 <p className="text-sm">{card.label}</p>
                 {card.queue === "duplicate" && (

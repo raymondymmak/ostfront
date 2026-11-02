@@ -1,4 +1,5 @@
 import { RECRUIT } from "@/lib/engine/economy"
+import { KIND_LABEL } from "@/lib/format"
 import {
   applyAttack,
   applyCancelRecruit,
@@ -334,4 +335,28 @@ export type QueuedOrder = {
   unitIds: string[]
   unitKind?: UnitKind
   buildId?: string
+}
+
+/** Player-visible queue line for one queued arrow (matches the Orders tab list). */
+export function formatQueuedOrderLine(state: GameState, order: QueuedOrder): string {
+  const from = findProvince(state, order.from)
+  const to = order.to ? findProvince(state, order.to) : undefined
+  if (order.kind === "fortify") {
+    return `Fortify ${from?.name ?? order.from}`
+  }
+  if (order.kind === "recruit") {
+    return `Raise ${order.unitKind ? KIND_LABEL[order.unitKind] : "troops"} at ${from?.name ?? order.from}`
+  }
+  if (order.kind === "cancelRecruit") {
+    return "Cancel a formation in the yards"
+  }
+  if (order.kind === "attack") {
+    return `Attack ${to?.name ?? order.to} from ${from?.name ?? order.from}`
+  }
+  return `Move to ${to?.name ?? order.to} from ${from?.name ?? order.from}`
+}
+
+/** One queue line per advisor order after filing (main order plus companions). */
+export function advisorOrdersQueueLineTexts(state: GameState, orders: AdvisorOrder[]): string[] {
+  return advisorDrafts(state, orders).map((draft) => formatQueuedOrderLine(state, draft))
 }

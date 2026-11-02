@@ -307,6 +307,18 @@ async function readQueueOrderLabels(page) {
   })
 }
 
+/** @param {import('playwright').Locator} card */
+async function readExpectedQueueLinesFromCard(card) {
+  const raw = await card.getAttribute("data-advisor-queue-lines")
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : []
+  } catch {
+    return []
+  }
+}
+
 /** @param {import('playwright').Page} page @param {import('playwright').Locator} container */
 async function acceptFirstValidAdvisorCard(page, container) {
   const { count, rows } = await analyzeAdvisorCards(container)
@@ -322,6 +334,7 @@ async function acceptFirstValidAdvisorCard(page, container) {
     return { ok: false, report: `${count} card(s); ${report || "no cards"}` }
   }
   const card = container.locator("[data-testid=advisor-suggestion]").nth(pick.index)
+  const expectedLines = await readExpectedQueueLinesFromCard(card)
   const beforeTexts = await readQueueOrderLabels(page)
   if (pick.action === "accept") {
     await card.locator("[data-testid=advisor-accept]").click()
@@ -329,11 +342,11 @@ async function acceptFirstValidAdvisorCard(page, container) {
     await card.locator("[data-testid=advisor-override]").click()
   }
   const afterTexts = await readQueueOrderLabels(page)
-  const queueCheck = assertQueueReflectsAdvisorAction(beforeTexts, afterTexts, pick.label)
+  const queueCheck = assertQueueReflectsAdvisorAction(beforeTexts, afterTexts, expectedLines)
   if (!queueCheck.ok) {
     return {
       ok: false,
-      report: `${count} card(s); ${pick.action} "${pick.label}" but ${queueCheck.message}; before=[${beforeTexts.join(" | ")}] after=[${afterTexts.join(" | ")}]; ${report}`,
+      report: `${count} card(s); ${pick.action} "${pick.label}" but ${queueCheck.message}; expected=[${expectedLines.join(" | ")}] before=[${beforeTexts.join(" | ")}] after=[${afterTexts.join(" | ")}]; ${report}`,
     }
   }
   return {

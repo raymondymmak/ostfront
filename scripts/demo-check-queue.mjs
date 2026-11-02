@@ -8,6 +8,16 @@ export function normalizeOrderLine(text) {
 }
 
 /** @param {string[]} lines */
+function lineCounts(lines) {
+  /** @type {Map<string, number>} */
+  const counts = new Map()
+  for (const line of lines.map(normalizeOrderLine).filter(Boolean)) {
+    counts.set(line, (counts.get(line) ?? 0) + 1)
+  }
+  return counts
+}
+
+/** @param {string[]} lines */
 export function queueOrderLinesChanged(before, after) {
   const a = before.map(normalizeOrderLine).filter(Boolean).sort()
   const b = after.map(normalizeOrderLine).filter(Boolean).sort()
@@ -15,29 +25,38 @@ export function queueOrderLinesChanged(before, after) {
   return a.some((line, index) => line !== b[index])
 }
 
-/** @param {string[]} queueLines @param {string} cardLabel */
-export function queueIncludesAcceptedLabel(queueLines, cardLabel) {
-  const want = normalizeOrderLine(cardLabel).toLowerCase()
+/**
+ * @param {string[]} before
+ * @param {string[]} after
+ * @param {string} expectedLine
+ */
+export function lineNewlyPresentInQueue(before, after, expectedLine) {
+  const want = normalizeOrderLine(expectedLine)
   if (!want) return false
-  return queueLines.map(normalizeOrderLine).some((line) => {
-    const got = line.toLowerCase()
-    return got === want || got.includes(want)
-  })
+  const beforeCount = lineCounts(before).get(want) ?? 0
+  const afterCount = lineCounts(after).get(want) ?? 0
+  return afterCount > beforeCount
 }
 
 /**
  * @param {string[]} before
  * @param {string[]} after
- * @param {string} cardLabel
+ * @param {string[]} expectedLines
  */
-export function assertQueueReflectsAdvisorAction(before, after, cardLabel) {
+export function assertQueueReflectsAdvisorAction(before, after, expectedLines) {
+  const expected = expectedLines.map(normalizeOrderLine).filter(Boolean)
+  if (!expected.length) {
+    return { ok: false, message: "card has no expected queue lines" }
+  }
   if (!queueOrderLinesChanged(before, after)) {
     return { ok: false, message: "queue order lines unchanged" }
   }
-  if (!queueIncludesAcceptedLabel(after, cardLabel)) {
-    return {
-      ok: false,
-      message: `queue missing accepted order "${normalizeOrderLine(cardLabel)}"`,
+  for (const line of expected) {
+    if (!lineNewlyPresentInQueue(before, after, line)) {
+      return {
+        ok: false,
+        message: `queue missing newly filed line "${line}"`,
+      }
     }
   }
   return { ok: true, message: "queue updated" }
