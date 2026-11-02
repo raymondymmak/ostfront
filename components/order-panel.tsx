@@ -6,10 +6,10 @@ import { Separator } from "@/components/ui/separator"
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, findProvince, type EngagementPreview } from "@/lib/engine/turn"
-import { KIND_LABEL } from "@/lib/format"
 import { ordersLocked } from "@/lib/finale"
 import { interpretOrders } from "@/lib/gm/interpret"
-import { combinedQueueLines, type QueuedOrder } from "@/lib/orders"
+import { combinedQueueLines, formatQueuedOrderLine, type QueuedOrder } from "@/lib/orders"
+import { snapshotQueuedOrder } from "@/lib/queue-snapshot"
 import type { GameState } from "@/lib/types"
 
 type OrderPanelProps = {
@@ -60,6 +60,7 @@ export function OrderPanel({
             size="sm"
             variant={orderMode ? "default" : "outline"}
             aria-pressed={orderMode}
+            data-testid="draw-arrows"
             disabled={closed}
             onClick={() => {
               if (closed) return
@@ -121,26 +122,15 @@ export function OrderPanel({
         {queue.length === 0 && (
           <p className="text-sm text-muted-foreground">No arrows yet. Unordered formations hold.</p>
         )}
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-2" data-testid="queued-orders">
           {queue.map((order) => {
             const from = findProvince(state, order.from)
-            const to = order.to ? findProvince(state, order.to) : undefined
             const odds =
               order.kind === "attack" && order.to ? queuedAttackOdds(state, queue, order) : null
             return (
-              <li key={order.id} className="rounded-lg border border-border p-2.5">
+              <li key={order.id} className="rounded-lg border border-border p-2.5" data-queued-order={JSON.stringify(snapshotQueuedOrder(state, order))}>
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm">
-                    {order.kind === "fortify"
-                      ? `Fortify ${from?.name ?? order.from}`
-                      : order.kind === "recruit"
-                        ? `Raise ${order.unitKind ? KIND_LABEL[order.unitKind] : "troops"} at ${from?.name ?? order.from}`
-                        : order.kind === "cancelRecruit"
-                          ? "Cancel a formation in the yards"
-                          : order.kind === "attack"
-                            ? `Attack ${to?.name ?? order.to} from ${from?.name ?? order.from}`
-                            : `Move to ${to?.name ?? order.to} from ${from?.name ?? order.from}`}
-                  </p>
+                  <p className="text-sm">{formatQueuedOrderLine(state, order)}</p>
                   <Button
                     type="button"
                     size="xs"

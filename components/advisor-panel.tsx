@@ -10,7 +10,8 @@ import {
   type AdvisorResponse,
 } from "@/lib/gm/advisor-types"
 import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
-import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { advisorOrdersQueueLineTexts, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { snapshotAdvisorCardOrders } from "@/lib/queue-snapshot"
 import type { GameState } from "@/lib/types"
 
 const STORAGE_KEY = "ostfront-advisor-v1"
@@ -232,7 +233,11 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
           </p>
         )}
         {messages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className="flex flex-col gap-2">
+          <div
+            key={`${message.role}-${index}`}
+            className="flex flex-col gap-2"
+            data-testid="advisor-exchange"
+          >
             <p
               className={
                 message.role === "user"
@@ -245,12 +250,22 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
             </p>
             {refreshAdvisorCards(state, message.suggestions ?? [], queuedOrders).map((card) => {
               const action = advisorCardAction(card)
+              const queueLineTexts = advisorOrdersQueueLineTexts(state, [
+                card.order,
+                ...(card.companions ?? []),
+              ])
+              const orderSnapshots = snapshotAdvisorCardOrders(state, [
+                card.order,
+                ...(card.companions ?? []),
+              ])
               return (
               <article
                 key={card.id}
                 className="rounded-md border border-[#c6a15a]/35 bg-[#1a140e]/80 p-2.5"
                 data-testid="advisor-suggestion"
                 data-advisor-state={card.queue}
+                data-advisor-queue-lines={JSON.stringify(queueLineTexts)}
+                data-advisor-orders={JSON.stringify(orderSnapshots)}
               >
                 <p className="text-sm">{card.label}</p>
                 {card.queue === "duplicate" && (
@@ -370,7 +385,7 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
           }}
           className="w-full resize-none rounded-md border border-[#c6a15a]/35 bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-[#f3e2a8]/40 focus-visible:border-[#c6a15a]"
         />
-        <Button type="submit" size="sm" disabled={busy || !draft.trim()}>
+        <Button type="submit" size="sm" disabled={busy || !draft.trim()} data-testid="advisor-send">
           Send
         </Button>
       </form>
