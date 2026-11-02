@@ -11,6 +11,7 @@ import { chromium } from "playwright"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { join } from "node:path"
 import { configureRedaction, redactSensitiveText, redactUrl } from "./demo-check-redact.mjs"
+import { assertQueueReflectsAdvisorAction } from "./demo-check-queue.mjs"
 
 const PRODUCTION_URL = "https://raymondymmak-ostfront.vercel.app"
 const OUT_DIR = "demo-check-output"
@@ -292,6 +293,20 @@ async function analyzeAdvisorCards(container) {
   return { count, rows }
 }
 
+/** @param {import('playwright').Page} page */
+async function readQueueOrderLabels(page) {
+  return page.evaluate(() => {
+    const items = document.querySelectorAll("[data-testid=queued-orders] > li")
+    return [...items].map((li) => {
+      const p = li.querySelector("div > p") ?? li
+      return (p.textContent ?? "")
+        .replace(/\s*Remove\s*$/i, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    })
+  })
+}
+
 /** @param {import('playwright').Page} page @param {import('playwright').Locator} container */
 async function acceptFirstValidAdvisorCard(page, container) {
   const { count, rows } = await analyzeAdvisorCards(container)
@@ -307,24 +322,23 @@ async function acceptFirstValidAdvisorCard(page, container) {
     return { ok: false, report: `${count} card(s); ${report || "no cards"}` }
   }
   const card = container.locator("[data-testid=advisor-suggestion]").nth(pick.index)
-  await page.locator("[data-testid=tab-orders]").click()
-  const before = await page.locator("[data-testid=queued-orders] > li").count()
+  const beforeTexts = await readQueueOrderLabels(page)
   if (pick.action === "accept") {
     await card.locator("[data-testid=advisor-accept]").click()
   } else {
     await card.locator("[data-testid=advisor-override]").click()
   }
-  await page.locator("[data-testid=tab-orders]").click()
-  const after = await page.locator("[data-testid=queued-orders] > li").count()
-  if (after <= before) {
+  const afterTexts = await readQueueOrderLabels(page)
+  const queueCheck = assertQueueReflectsAdvisorAction(beforeTexts, afterTexts, pick.label)
+  if (!queueCheck.ok) {
     return {
       ok: false,
-      report: `${count} card(s); ${pick.action} "${pick.label}" but queue unchanged (${before}→${after}); ${report}`,
+      report: `${count} card(s); ${pick.action} "${pick.label}" but ${queueCheck.message}; before=[${beforeTexts.join(" | ")}] after=[${afterTexts.join(" | ")}]; ${report}`,
     }
   }
   return {
     ok: true,
-    report: `${count} card(s); ${pick.action} "${pick.label}"; ${report}`,
+    report: `${count} card(s); ${pick.action} "${pick.label}" (${queueCheck.message}); ${report}`,
   }
 }
 
