@@ -191,20 +191,6 @@ async function expectText(locator, snippet) {
   await locator.getByText(snippet, { exact: false }).first().waitFor({ state: "visible", timeout: 15_000 })
 }
 
-/** @param {import('playwright').Page} page */
-async function readQueuedOrderTexts(page) {
-  await page.locator("[data-testid=tab-orders]").click()
-  const items = page.locator("[data-testid=queued-orders] > li")
-  const count = await items.count()
-  /** @type {string[]} */
-  const texts = []
-  for (let i = 0; i < count; i++) {
-    texts.push(((await items.nth(i).textContent()) ?? "").replace(/\s+/g, " ").trim())
-  }
-  return texts
-}
-
-/** @param {import('playwright').Page} page */
 async function ensureAdvisorPanelOpen(page) {
   const panel = page.locator("[data-testid=advisor-panel]")
   if (await panel.isVisible().catch(() => false)) return
