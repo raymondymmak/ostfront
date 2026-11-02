@@ -212,73 +212,16 @@ async function ensureAdvisorPanelOpen(page) {
   await panel.waitFor({ state: "visible", timeout: 10_000 })
 }
 
-/** @param {string} text */
-function orderSignature(text) {
-  const t = text.replace(/\s+/g, " ").trim().toLowerCase()
-  let m = t.match(/^fortify (.+)$/)
-  if (m) return `fortify:${m[1]}`
-  m = t.match(/^raise ([a-z]+) at (.+)$/)
-  if (m) return `recruit:${m[2]}:${m[1]}`
-  m = t.match(/^attack (.+) from (.+)$/)
-  if (m) return `attack:${m[1]}:${m[2]}`
-  m = t.match(/^move to (.+) from (.+)$/)
-  if (m) return `move:${m[1]}:${m[2]}`
-  return null
-}
-
-/** @param {string} label @param {string[]} queuedTexts */
-function cardLabelDuplicatesQueue(label, queuedTexts) {
-  const cardSig = orderSignature(label)
-  if (!cardSig) return false
-  for (const row of queuedTexts) {
-    const rowSig = orderSignature(row)
-    if (rowSig === cardSig) return true
-  }
-  return false
-}
-
-/**
- * @param {import('playwright').Locator} exchange
- * @param {string[]} queuedTexts
- */
-async function analyzeAdvisorCards(exchange, queuedTexts) {
-  const cards = exchange.locator("[data-testid=advisor-suggestion]")
-  const count = await cards.count()
-  /** @type {{ index: number, label: string, skip: string | null }[]} */
-  const rows = []
-  for (let i = 0; i < count; i++) {
-    const card = cards.nth(i)
-    const label = ((await card.locator("p").first().textContent()) ?? "").replace(/\s+/g, " ").trim()
-    const rejectVisible = await card.getByText("The engine rejects this").isVisible().catch(() => false)
-    const accept = card.locator("[data-testid=advisor-accept]")
-    const hasAccept = (await accept.count()) > 0
-    let skip = null
-    if (count === 0) skip = "no cards"
-    else if (rejectVisible) {
-      const body = ((await card.textContent()) ?? "").replace(/\s+/g, " ").trim()
-      skip = body.includes("The engine rejects this.")
-        ? body.split("The engine rejects this.")[1]?.trim() || "engine rejected"
-        : "engine rejected"
-    } else if (!hasAccept) skip = "no Accept control (invalid or orders closed)"
-    else if (cardLabelDuplicatesQueue(label, queuedTexts)) skip = "duplicates an order already in the queue"
-    rows.push({ index: i, label: label || `(card ${i + 1})`, skip })
-  }
-  return { count, rows }
-}
-
 /** @param {import('playwright').Page} page @param {number} repliesBefore */
-async function waitForAdvisorExchange(page, repliesBefore) {
+async function waitForAdvisorReplyContainer(page, repliesBefore) {
   await page.waitForFunction(
     (before) => document.querySelectorAll("[data-testid=advisor-reply]").length > before,
     repliesBefore,
     { timeout: ADVISOR_TIMEOUT_MS },
   )
-  const exchange = page
-    .locator("[data-testid=advisor-exchange]")
-    .filter({ has: page.locator("[data-testid=advisor-reply]") })
-    .nth(repliesBefore)
-  await exchange.locator("[data-testid=advisor-reply]").waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
-  return exchange
+  const reply = page.locator("[data-testid=advisor-reply]").nth(repliesBefore)
+  await reply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
+  return reply.locator("xpath=..")
 }
 
 /** @param {import('playwright').Page} page @param {string} question */
@@ -286,39 +229,117 @@ async function sendAdvisorQuestion(page, question) {
   const repliesBefore = await page.locator("[data-testid=advisor-reply]").count()
   await page.locator("[data-testid=advisor-input]").fill(question)
   await page.locator("[data-testid=advisor-send]").click()
-  return waitForAdvisorExchange(page, repliesBefore)
+  return waitForAdvisorReplyContainer(page, repliesBefore)
 }
 
-/**
- * @param {import('playwright').Page} page
- * @param {import('playwright').Locator} exchange
- * @param {string[]} queuedTexts
- */
-async function acceptFirstValidAdvisorCard(page, exchange, queuedTexts) {
-  const { count, rows } = await analyzeAdvisorCards(exchange, queuedTexts)
-  const report = rows.map((row) =>
-    row.skip ? `card ${row.index + 1} "${row.label}": ${row.skip}` : `card ${row.index + 1} "${row.label}": acceptable`,
-  )
-  const pick = rows.find((row) => !row.skip)
-  if (!pick) {
-    return {
-      ok: false,
-      report: `${count} card(s); ${report.join("; ")}`,
+/** @param {import('playwright').Locator} container */
+async function analyzeAdvisorCards(container) {
+  const cards = container.locator("[data-testid=advisor-suggestion]")
+  const count = await cards.count()
+  /** @type {{ index: number, label: string, state: string, action: "accept" | "override" | null, skip: string | null }[]} */
+  const rows = []
+  for (let i = 0; i < count; i++) {
+    const card = cards.nth(i)
+    const state = (await card.getAttribute("data-advisor-state")) ?? "unknown"
+    const label = ((await card.locator("p").first().textContent()) ?? "").replace(/\s+/g, " ").trim()
+    if (state === "duplicate") {
+      const accept = card.locator("[data-testid=advisor-accept]")
+      if ((await accept.count()) > 0 && !(await accept.isDisabled())) {
+        throw new Error(`duplicate card "${label || i + 1}" must have disabled Accept`)
+      }
+      rows.push({
+        index: i,
+        label: label || `(card ${i + 1})`,
+        state,
+        action: null,
+        skip: "duplicate (Already queued)",
+      })
+      continue
     }
+    const rejectVisible = await card.getByText("The engine rejects this").isVisible().catch(() => false)
+    if (rejectVisible) {
+      const body = ((await card.textContent()) ?? "").replace(/\s+/g, " ").trim()
+      const reason = body.includes("The engine rejects this.")
+        ? body.split("The engine rejects this.")[1]?.trim() || "engine rejected"
+        : "engine rejected"
+      rows.push({ index: i, label: label || `(card ${i + 1})`, state, action: null, skip: reason })
+      continue
+    }
+    if (state === "new") {
+      const accept = card.locator("[data-testid=advisor-accept]").first()
+      if ((await accept.count()) === 0 || (await accept.isDisabled())) {
+        rows.push({
+          index: i,
+          label: label || `(card ${i + 1})`,
+          state,
+          action: null,
+          skip: "new card missing enabled Accept",
+        })
+      } else {
+        rows.push({ index: i, label: label || `(card ${i + 1})`, state, action: "accept", skip: null })
+      }
+      continue
+    }
+    if (state === "conflict") {
+      const override = card.locator("[data-testid=advisor-override]").first()
+      if ((await override.count()) === 0) {
+        rows.push({
+          index: i,
+          label: label || `(card ${i + 1})`,
+          state,
+          action: null,
+          skip: "conflict card missing Override",
+        })
+      } else {
+        rows.push({ index: i, label: label || `(card ${i + 1})`, state, action: "override", skip: null })
+      }
+      continue
+    }
+    rows.push({
+      index: i,
+      label: label || `(card ${i + 1})`,
+      state,
+      action: null,
+      skip: `unexpected data-advisor-state="${state}"`,
+    })
   }
-  const card = exchange.locator("[data-testid=advisor-suggestion]").nth(pick.index)
+  return { count, rows }
+}
+
+/** @param {import('playwright').Page} page @param {import('playwright').Locator} container */
+async function acceptFirstValidAdvisorCard(page, container) {
+  const { count, rows } = await analyzeAdvisorCards(container)
+  const describe = (row) => {
+    const head = `card ${row.index + 1} [${row.state}] "${row.label}"`
+    return row.skip ? `${head}: ${row.skip}` : `${head}: usable (${row.action})`
+  }
+  const report = rows.map(describe).join("; ")
+  const pick =
+    rows.find((row) => row.state === "new" && row.action === "accept" && !row.skip) ??
+    rows.find((row) => row.state === "conflict" && row.action === "override" && !row.skip)
+  if (!pick || !pick.action) {
+    return { ok: false, report: `${count} card(s); ${report || "no cards"}` }
+  }
+  const card = container.locator("[data-testid=advisor-suggestion]").nth(pick.index)
   await page.locator("[data-testid=tab-orders]").click()
   const before = await page.locator("[data-testid=queued-orders] > li").count()
-  await card.locator("[data-testid=advisor-accept]").click()
+  if (pick.action === "accept") {
+    await card.locator("[data-testid=advisor-accept]").click()
+  } else {
+    await card.locator("[data-testid=advisor-override]").click()
+  }
   await page.locator("[data-testid=tab-orders]").click()
   const after = await page.locator("[data-testid=queued-orders] > li").count()
   if (after <= before) {
     return {
       ok: false,
-      report: `${count} card(s); accepted "${pick.label}" but queue unchanged (${before}→${after}); ${report.join("; ")}`,
+      report: `${count} card(s); ${pick.action} "${pick.label}" but queue unchanged (${before}→${after}); ${report}`,
     }
   }
-  return { ok: true, report: `${count} card(s); accepted "${pick.label}"; ${report.join("; ")}` }
+  return {
+    ok: true,
+    report: `${count} card(s); ${pick.action} "${pick.label}"; ${report}`,
+  }
 }
 
 /** @param {import('playwright').Page} page @param {string} pattern RegExp source or substring for fortify */
@@ -573,10 +594,9 @@ function buildSteps(cli, targets) {
         /** @type {string | undefined} */
         let lastReport
         for (let attempt = 0; attempt < prompts.length; attempt++) {
-          const queuedTexts = await readQueuedOrderTexts(page)
           await ensureAdvisorPanelOpen(page)
-          const exchange = await sendAdvisorQuestion(page, prompts[attempt])
-          const outcome = await acceptFirstValidAdvisorCard(page, exchange, queuedTexts)
+          const container = await sendAdvisorQuestion(page, prompts[attempt])
+          const outcome = await acceptFirstValidAdvisorCard(page, container)
           lastReport = outcome.report
           log(`step 16 attempt ${attempt + 1}: ${lastReport}`)
           if (outcome.ok) return

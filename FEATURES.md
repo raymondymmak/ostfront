@@ -1,5 +1,23 @@
 # Ostfront feature map (QA & agents)
 
+## Chief of Staff suggestions
+
+The advisor panel is `[data-testid=advisor-panel]`. Each suggestion is `[data-testid=advisor-suggestion]` and carries `data-advisor-state`:
+
+| State | Meaning | Control |
+| --- | --- | --- |
+| `new` | The order does not reuse a queued formation. | **Accept** `[data-testid=advisor-accept]` files every formation on the card, or none. |
+| `duplicate` | Same order type, same units, and same target as an order already queued. | Shown, marked **Already queued** (`[data-testid=advisor-queue]`). Accept is disabled. |
+| `conflict` | Reuses a division that already has a different queued order. | Shown, marked **Conflicts with:** the existing order. **Override** `[data-testid=advisor-override]` replaces that division's queued order. |
+
+Suggestions are dropped when they are not a legal order. Open cards are re-marked when the queue changes. Illegal orders show **The engine rejects this.** with no Accept. See product docs on `lib/gm/advisor.ts` for full rules.
+
+## Game-master events
+
+An event the engine rejects stays on the turn record with status `rejected`. The chronicle shows it as **Rejected** in `[data-testid=resolution-log]`. It is not removed before the turn is resolved.
+
+---
+
 Route for every feature: **`/`** (single-page app). Unless noted, actions assume a campaign is in progress (scenario picker closed).
 
 Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when test ids are not set.
@@ -20,8 +38,8 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 | **Recruit** | **Province** tab at a yard: `[data-testid=recruit-panel]`; `[data-testid=recruit-infantry]` etc. | Queue shows **Raise … at** |
 | **Map mode Control / Supply / Unrest** | `[data-testid=map-mode-none]`, `map-mode-supply`, `map-mode-unrest`. | `[data-testid=overlay-scale]` visible for Supply/Unrest only. |
 | **Toggle rails** | Map legend → `[data-testid=rail-toggle]`. | Label **On** ↔ **Off**. |
-| **Chief of Staff** | `[data-testid=advisor-toggle]`; panel `[data-testid=advisor-panel]`. Starters, or `[data-testid=advisor-input]` + `[data-testid=advisor-send]`. POST **`/api/advisor`**. | `[data-testid=advisor-reply]`; optional **Accept** `[data-testid=advisor-accept]`. |
-| **End turn (button)** | **Close the fortnight** `[data-testid=end-turn]`. POST **`/api/turn`**. | `[data-testid=stavka-deliberating]` clears; new Chronicle date; `[data-testid=resolution-log]`. |
+| **Chief of Staff** | `[data-testid=advisor-toggle]`; panel `[data-testid=advisor-panel]`. Starters, or `[data-testid=advisor-input]` + `[data-testid=advisor-send]`. POST **`/api/advisor`**. | `[data-testid=advisor-reply]`; cards with `data-advisor-state` **`new`** (Accept), **`conflict`** (Override), or **`duplicate`** (**Already queued**, disabled Accept). |
+| **End turn (button)** | **Close the fortnight** `[data-testid=end-turn]`. POST **`/api/turn`**. | `[data-testid=stavka-deliberating]` clears; new Chronicle date; `[data-testid=resolution-log]` includes **Resolved** / **Rejected**. |
 | **End turn (keyboard)** | **Ctrl+Enter** / **Cmd+Enter** with focus on the page. | Same as button. |
 | **GM narration** | Chronicle article after end turn. | Narration paragraphs; badge **Game master** (not **Staff simulation** when LLM ran). |
 | **Finale banner / end screen** | Not run in `demo-check` (needs a finished campaign). When `state.result` is set: `[data-testid=finale-banner]`, **See result** `[data-testid=see-result]`, modal `[data-testid=endgame]`. | Grade, reason, score; **Play again** → `[data-testid=scenario-picker]`. |
@@ -41,4 +59,4 @@ Protected previews: `VERCEL_AUTOMATION_BYPASS_SECRET` or share link in **`DEMO_U
 
 Writes screenshots and redacted logs under `demo-check-output/` (gitignored).
 
-When you add or change a player-visible feature, update this table and extend `scripts/demo-check.mjs`.
+When you add or change a player-visible feature, update this file and extend `scripts/demo-check.mjs`.
