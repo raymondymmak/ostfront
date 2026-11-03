@@ -1,6 +1,9 @@
-import { readFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { gunzipSync } from "node:zlib"
 import { describe, expect, it } from "vitest"
 import * as turf from "@turf/turf"
 import { COUNTRY_LABELS, STATE_OWNERS, WORLD_STATES } from "@/lib/data/geometry"
@@ -114,6 +117,25 @@ describe("theater owner fixes", () => {
     expect(COUNTRY_LABELS.some((label) => label.owner === "egypt")).toBe(false)
     expect(WORLD_STATES.some((state) => state.owner === "egypt")).toBe(false)
     expect(theater.ownerColors.egypt).toBeUndefined()
+  })
+
+  it("reproduces the committed geometry from the main baseline", () => {
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+    const baseline = gunzipSync(readFileSync(join(root, "tests/fixtures/theater-geometry-a4433d1.json.gz")))
+    const dir = mkdtempSync(join(tmpdir(), "theater-owners-"))
+    const target = join(dir, "theater-geometry.json")
+    writeFileSync(target, baseline)
+    const run = () =>
+      execFileSync(process.execPath, ["scripts/patch-theater-owners.mjs"], {
+        cwd: root,
+        env: { ...process.env, THEATER_GEOMETRY_PATH: target },
+        encoding: "utf8",
+      })
+    run()
+    const once = readFileSync(target, "utf8")
+    expect(once).toBe(readFileSync(geometryPath, "utf8"))
+    run()
+    expect(readFileSync(target, "utf8")).toBe(once)
   })
 
   it("places every changed owner's labels inside that owner's states", () => {

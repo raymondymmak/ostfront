@@ -5,9 +5,9 @@
  * GeoJSON stay off the machine). Country borders are shared arcs whose two
  * states have different owner_1914 values, so they can be rebuilt from the
  * topology. Labels are rebuilt for owners whose non-playable states changed.
- * Each stored point is checked again after rounding to 6 decimals and must sit
- * strictly inside one of that owner's own states. A point that only landed on
- * the merged outline (Romania, after it lost Southern Bessarabia) is replaced.
+ * Each label is pointOnFeature on the merged country, clipped to the eastern
+ * frame. After rounding to 6 decimals it must sit strictly inside one of that
+ * owner's own states, or it steps toward the piece centroid until it does.
  *
  * On current main the border layer is 564 geometries (553 LineStrings and 11
  * MultiLineStrings) covering 576 arcs. The check below compares that arc set.
@@ -16,13 +16,15 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { feature } from "topojson-client"
+import { feature, merge } from "topojson-client"
 import * as turf from "@turf/turf"
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(SCRIPT_DIR, "..")
 const FIXES_PATH = resolve(SCRIPT_DIR, "theater-owner-fixes.json")
-const GEOMETRY_PATH = resolve(ROOT, "lib/data/theater-geometry.json")
+const GEOMETRY_PATH = process.env.THEATER_GEOMETRY_PATH
+  ? resolve(process.env.THEATER_GEOMETRY_PATH)
+  : resolve(ROOT, "lib/data/theater-geometry.json")
 
 /** Same frame as EASTERN_VIEW in scripts/build-hoi4-theater.py. */
 const EASTERN_VIEW = [-3.0286, -3.248, 3.5801, 3.105]
@@ -146,23 +148,40 @@ function roundedInterior(coordinates, features) {
   return strictlyInside(point, features) ? point : null
 }
 
-/** pointOnFeature, then a step toward the centroid, kept only if rounding stays inside. */
-function interiorPoint(geometry, features) {
-  const pieces = polygonPieces(geometry).sort((left, right) => geometryArea(right) - geometryArea(left))
-  for (const piece of pieces) {
-    const polygon = { type: "Feature", properties: {}, geometry: piece }
-    const onSurface = turf.pointOnFeature(polygon).geometry.coordinates
-    const center = turf.centroid(polygon).geometry.coordinates
-    const direct = roundedInterior(onSurface, features) || roundedInterior(center, features)
-    if (direct) return direct
-    for (let step = 1; step <= 20; step++) {
-      const t = step / 20
-      const stepped = roundedInterior(
-        [onSurface[0] + (center[0] - onSurface[0]) * t, onSurface[1] + (center[1] - onSurface[1]) * t],
-        features,
-      )
-      if (stepped) return stepped
-    }
+function stepToward(from, to, features) {
+  let best = null
+  for (let step = 1; step <= 20; step++) {
+    const t = step / 20
+    const stepped = roundedInterior(
+      [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t],
+      features,
+    )
+    if (stepped) best = stepped
+  }
+  return best
+}
+
+/**
+ * pointOnFeature, rounded. If that lands outside the owner's states, keep the
+ * step toward the centroid that is still inside and closest to the centroid.
+ * A merged outline can put both that point and its centroid in the notch
+ * (Romania). Then step toward the largest owned state's own interior point.
+ */
+function anchoredPoint(geometry, features) {
+  const polygon = { type: "Feature", properties: {}, geometry }
+  const onSurface = turf.pointOnFeature(polygon).geometry.coordinates
+  const direct = roundedInterior(onSurface, features)
+  if (direct) return direct
+  const alongPiece = stepToward(onSurface, turf.centroid(polygon).geometry.coordinates, features)
+  if (alongPiece) return alongPiece
+  const ranked = [...features].sort((left, right) => geometryArea(right.geometry) - geometryArea(left.geometry))
+  for (const stateFeature of ranked) {
+    const target =
+      roundedInterior(turf.pointOnFeature(stateFeature).geometry.coordinates, features) ||
+      roundedInterior(turf.centroid(stateFeature).geometry.coordinates, features)
+    if (!target) continue
+    const alongState = stepToward(onSurface, target, features)
+    if (alongState) return alongState
   }
   return null
 }
@@ -170,32 +189,6 @@ function interiorPoint(geometry, features) {
 function labelPointsInside(label, features) {
   const points = label.labels?.length ? label.labels : [label.label]
   return points.every((point) => strictlyInside(roundPoint(point[0], point[1]), features))
-}
-
-function rankedPieces(features, clip) {
-  const pieces = []
-  for (const stateFeature of features) {
-    for (const part of polygonPieces(stateFeature.geometry)) {
-      const source = clip
-        ? turf.bboxClip({ type: "Feature", properties: {}, geometry: part }, EASTERN_VIEW)
-        : { type: "Feature", properties: {}, geometry: part }
-      for (const piece of polygonPieces(source.geometry)) {
-        const area = geometryArea(piece)
-        if (area < (clip ? MIN_CLIP_AREA : 0) || area === 0) continue
-        pieces.push({ geometry: piece, area })
-      }
-    }
-  }
-  pieces.sort((left, right) => right.area - left.area)
-  return pieces
-}
-
-function firstInterior(pieces, features) {
-  for (const piece of pieces) {
-    const point = interiorPoint(piece.geometry, features)
-    if (point) return point
-  }
-  return null
 }
 
 function euclidean(a, b) {
@@ -226,12 +219,33 @@ function changedOwnerSet(before, after) {
 }
 
 function labelForOwner(data, owner, name) {
+  const objects = data.topology.objects.states.geometries.filter(
+    (geometry) => !geometry.properties.playable && geometry.properties.owner_1914 === owner,
+  )
+  if (objects.length === 0) return null
   const owned = ownerStateFeatures(data, owner)
-  if (owned.length === 0) return null
+  const merged = merge(data.topology, objects)
+  const parts = polygonPieces(merged).map((geometry) => ({ type: "Feature", properties: {}, geometry }))
+  if (parts.length === 0) return null
+  const visible = []
+  for (const part of parts) {
+    const clipped = turf.bboxClip(part, EASTERN_VIEW)
+    const area = geometryArea(clipped.geometry)
+    if (area < MIN_CLIP_AREA) continue
+    visible.push({ feature: clipped, area })
+  }
   const points = []
-  const frame = firstInterior(rankedPieces(owned, true), owned)
-  if (frame) points.push(frame)
-  const far = firstInterior(rankedPieces(owned, false), owned)
+  if (visible.length > 0) {
+    const best = visible.reduce((left, right) => (left.area >= right.area ? left : right))
+    const pieces = polygonPieces(best.feature.geometry)
+    const piece = pieces.reduce((left, right) => (geometryArea(left) >= geometryArea(right) ? left : right))
+    const frame = anchoredPoint(piece, owned)
+    if (frame) points.push(frame)
+  }
+  const largest = parts.reduce((left, right) =>
+    geometryArea(left.geometry) >= geometryArea(right.geometry) ? left : right,
+  )
+  const far = anchoredPoint(largest.geometry, owned)
   if (far && (points.length === 0 || euclidean(far, points[0]) > FAR_LABEL_DEG)) points.push(far)
   if (points.length === 0) return null
   return { owner, name, label: points[0], labels: points }
