@@ -140,7 +140,9 @@ OWNER_OVERRIDES = {
 
 # De jure sovereign on 28 July 1914, after the name match. Occupation does not
 # change the owner. A protectorate is painted as the protecting power unless
-# the polity was actually sovereign (Egypt, Albania, Nepal, Bhutan, Oman).
+# the polity was actually sovereign (Albania, Nepal, Bhutan, Oman). Egypt is
+# not in that list: it was a British protectorate from 18 December 1914.
+# scripts/theater-owner-fixes.json is merged in below on import.
 DE_JURE_OVERRIDES = {
     "Bosnia": (
         "austro_hungarian_empire",
@@ -173,6 +175,13 @@ DE_JURE_OVERRIDES = {
     ),
     "Maldives": ("united_kingdom", "British protectorate since 1887."),
 }
+
+_OWNER_FIXES_PATH = Path(__file__).resolve().parent / "theater-owner-fixes.json"
+with _OWNER_FIXES_PATH.open(encoding="utf-8") as _owner_fixes_file:
+    _OWNER_FIXES = json.load(_owner_fixes_file)
+DE_JURE_OVERRIDES.update(
+    {row["stateId"]: (row["owner"], row["reason"]) for row in _OWNER_FIXES}
+)
 
 # Name did not match a mod file, and the area vote is on the wrong side of a border.
 FALLBACK_JUDGMENTS = {

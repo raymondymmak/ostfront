@@ -15,7 +15,8 @@
     "test": "vitest run",
     "llm-logs": "tsx scripts/list-llm-logs.ts",
     "map": "tsx scripts/map-graph.ts",
-    "build:theater": "python3 scripts/build-hoi4-theater.py"
+    "build:theater": "python3 scripts/build-hoi4-theater.py",
+    "map:owners": "node scripts/patch-theater-owners.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -39,10 +40,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/topojson-client": "^3.1.5",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "mapshaper": "^0.7.90",
     "playwright": "^1.49.1",
+    "topojson-client": "^3.1.0",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
