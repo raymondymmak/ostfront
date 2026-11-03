@@ -1,0 +1,142 @@
+[
+  {
+    "stateId": "Hulunbuir",
+    "owner": "china",
+    "reason": "Raymond's decision: de jure Chinese; the 1915 Sino-Russian agreement kept Barga Chinese."
+  },
+  {
+    "stateId": "Tonkin",
+    "owner": "france",
+    "reason": "French Indochina since 1884; the fallback spilled into Guangxi/Yunnan."
+  },
+  {
+    "stateId": "Arunachal_Pradesh",
+    "owner": "united_kingdom",
+    "reason": "Raymond's decision: British India under the McMahon Line, Simla, March 1914."
+  },
+  {
+    "stateId": "Qandahar",
+    "owner": "afghanistan",
+    "reason": "Afghan since 1747, west of the 1893 Durand Line."
+  },
+  {
+    "stateId": "West_Azerbaijan",
+    "owner": "persia",
+    "reason": "Persian sovereign territory; Russian troops were occupiers."
+  },
+  {
+    "stateId": "East_Azerbaijan",
+    "owner": "persia",
+    "reason": "Persian; Tabriz was occupied, not annexed."
+  },
+  {
+    "stateId": "Cairo",
+    "owner": "united_kingdom",
+    "reason": "Raymond's decision: British protectorate from 18 Dec 1914. Matches Matrouh and Eastern_Desert (already UK)."
+  },
+  {
+    "stateId": "Alexandria",
+    "owner": "united_kingdom",
+    "reason": "Raymond's decision: British protectorate from 18 Dec 1914. Matches Matrouh and Eastern_Desert (already UK)."
+  },
+  {
+    "stateId": "Suez",
+    "owner": "united_kingdom",
+    "reason": "Raymond's decision: British protectorate from 18 Dec 1914. Matches Matrouh and Eastern_Desert (already UK)."
+  },
+  {
+    "stateId": "Sinai",
+    "owner": "united_kingdom",
+    "reason": "Raymond's decision: British protectorate from 18 Dec 1914. Matches Matrouh and Eastern_Desert (already UK)."
+  },
+  {
+    "stateId": "Aswan",
+    "owner": "united_kingdom",
+    "reason": "Raymond's decision: British protectorate from 18 Dec 1914. Matches Matrouh and Eastern_Desert (already UK)."
+  },
+  {
+    "stateId": "Western_Desert",
+    "owner": "united_kingdom",
+    "reason": "Raymond's decision: British protectorate from 18 Dec 1914. Matches Matrouh and Eastern_Desert (already UK)."
+  },
+  {
+    "stateId": "Pyrénées_Atlantiques",
+    "owner": "france",
+    "reason": "Basses-Pyrénées, a French department since 1790."
+  },
+  {
+    "stateId": "Southern_Bessarabia",
+    "owner": "russia",
+    "reason": "Returned to Russia by the Treaty of Berlin, 1878."
+  },
+  {
+    "stateId": "Santiago",
+    "owner": "chile",
+    "reason": "Chilean territory (capital; 1883 Araucanía; 1902 Andes award; 1881 treaty)."
+  },
+  {
+    "stateId": "Araucanía",
+    "owner": "chile",
+    "reason": "Chilean territory (capital; 1883 Araucanía; 1902 Andes award; 1881 treaty)."
+  },
+  {
+    "stateId": "Aysén",
+    "owner": "chile",
+    "reason": "Chilean territory (capital; 1883 Araucanía; 1902 Andes award; 1881 treaty)."
+  },
+  {
+    "stateId": "Magallanes",
+    "owner": "chile",
+    "reason": "Chilean territory (capital; 1883 Araucanía; 1902 Andes award; 1881 treaty)."
+  },
+  {
+    "stateId": "Montevideo",
+    "owner": "uruguay",
+    "reason": "Uruguay's capital."
+  },
+  {
+    "stateId": "Chaco_Boreal",
+    "owner": "paraguay",
+    "reason": "Raymond's decision: Paraguayan-administered in 1914, the usual depiction."
+  },
+  {
+    "stateId": "Pastaza",
+    "owner": "ecuador",
+    "reason": "Raymond's decision: Ecuador held the upper Pastaza in 1914."
+  },
+  {
+    "stateId": "Van",
+    "owner": "ottoman_empire",
+    "reason": "Ottoman on both dates; Russians arrived 19 May 1915."
+  },
+  {
+    "stateId": "Ticino",
+    "owner": "switzerland",
+    "reason": "Swiss cantons (Ticino 1803, Valais 1815)."
+  },
+  {
+    "stateId": "Western_Swiss_Alps",
+    "owner": "switzerland",
+    "reason": "Swiss cantons (Ticino 1803, Valais 1815)."
+  },
+  {
+    "stateId": "Kentung_and_Yawnghwe",
+    "owner": "united_kingdom",
+    "reason": "Shan States in British Burma."
+  },
+  {
+    "stateId": "Ngari",
+    "owner": "tibet",
+    "reason": "De facto independent Tibet after 1912-13. Keeps a Tibet on the map once Arunachal goes British."
+  },
+  {
+    "stateId": "Shigatse",
+    "owner": "tibet",
+    "reason": "De facto independent Tibet after 1912-13. Keeps a Tibet on the map once Arunachal goes British."
+  },
+  {
+    "stateId": "Nagqu",
+    "owner": "tibet",
+    "reason": "De facto independent Tibet after 1912-13. Keeps a Tibet on the map once Arunachal goes British."
+  }
+]
