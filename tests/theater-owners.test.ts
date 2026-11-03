@@ -18,6 +18,7 @@ type TopologyGeometry = {
 const geometryPath = resolve(dirname(fileURLToPath(import.meta.url)), "../lib/data/theater-geometry.json")
 const theater = JSON.parse(readFileSync(geometryPath, "utf8")) as {
   ownerColors: Record<string, string>
+  ownerAudit: { deJure: Array<{ id: string; owner: string; resolvedOwner: string; reason: string }> }
   topology: {
     objects: {
       states: { geometries: Array<TopologyGeometry & { properties: { owner_1914: string } }> }
@@ -115,15 +116,39 @@ describe("theater owner fixes", () => {
     expect(theater.ownerColors.egypt).toBeUndefined()
   })
 
-  it("places each changed owner's label inside that owner's states", () => {
-    const changed = [...new Set(fixes.map((row) => row.owner))]
+  it("places every changed owner's labels inside that owner's states", () => {
+    const changed = new Set(fixes.map((row) => row.owner))
+    for (const row of fixes) {
+      const prior = theater.ownerAudit.deJure.find((entry) => entry.id === row.stateId && entry.reason === row.reason)
+      expect(prior, row.stateId).toBeTruthy()
+      if (prior!.resolvedOwner !== row.owner) changed.add(prior!.resolvedOwner)
+    }
+    for (const owner of ["romania", "mongolia", "argentina", "bolivia", "peru", "italy", "spain"]) {
+      expect(changed.has(owner), owner).toBe(true)
+    }
     for (const owner of changed) {
+      if (owner === "egypt") {
+        expect(COUNTRY_LABELS.some((entry) => entry.owner === "egypt")).toBe(false)
+        continue
+      }
       const label = COUNTRY_LABELS.find((entry) => entry.owner === owner)
       expect(label, owner).toBeTruthy()
       const states = WORLD_STATES.filter((state) => state.owner === owner)
       expect(states.length, owner).toBeGreaterThan(0)
-      const inside = states.some((state) => turf.booleanPointInPolygon(label!.label, state.geometry))
-      expect(inside, owner).toBe(true)
+      const points = label!.labels ?? [label!.label]
+      expect(points.length, owner).toBeGreaterThan(0)
+      expect(label!.label, owner).toEqual(points[0])
+      for (const [index, point] of points.entries()) {
+        const rounded: [number, number] = [round6(point[0]), round6(point[1])]
+        const inside = states.some((state) =>
+          turf.booleanPointInPolygon(rounded, state.geometry, { ignoreBoundary: true }),
+        )
+        expect(inside, `${owner} labels[${index}] ${rounded.join(",")}`).toBe(true)
+      }
     }
   })
 })
+
+function round6(value: number) {
+  return Math.round(value * 1e6) / 1e6
+}
