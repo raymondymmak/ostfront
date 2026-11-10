@@ -480,14 +480,16 @@ describe("simultaneous orders", () => {
     const bare = resolveTurn(board(), orders([{ type: "attack", from: "home", target: "town", units: ["guns"] }]), {
       rng: highRoll(),
     })
-    const dug = resolveTurn(
+    const ordered = resolveTurn(
       board(),
-      orders([
-        { type: "attack", from: "home", target: "town", units: ["guns"] },
-        { type: "fortify", province: "town" },
-      ]),
+      orders([{ type: "fortify", province: "town" }]),
       { rng: highRoll() },
     )
+    expect(ordered.state.provinces.find((item) => item.id === "town")!.fort).toBe(0)
+    expect(ordered.state.provinces.find((item) => item.id === "town")!.fortPending).toBe(1)
+    const dug = resolveTurn(ordered.state, orders([{ type: "attack", from: "home", target: "town", units: ["guns"] }]), {
+      rng: highRoll(),
+    })
     const odds = (summary: string) => Number(summary.match(/odds (\d+\.\d+)/)?.[1])
     expect(dug.state.provinces.find((item) => item.id === "town")!.fort).toBeGreaterThanOrEqual(1)
     expect(odds(dug.record.resolutions.find((item) => item.proposal.type === "attack")!.summary)).toBeLessThan(
@@ -556,6 +558,7 @@ describe("simultaneous orders", () => {
         units: [unit("third", "russia", 80)],
       }),
     ])
+    applySupply(board)
     const preview = combinedEngagementOdds(board, "lublin", [
       { fromId: "krakow", unitIds: ["eleventh"] },
       { fromId: "kielce", unitIds: ["guard"] },

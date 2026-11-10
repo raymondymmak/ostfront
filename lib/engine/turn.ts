@@ -1,6 +1,7 @@
 import { applySupply } from "@/lib/data/scenario"
 import {
   addPurse,
+  FORTIFY_IP_COST,
   projectIncome,
   RECRUIT,
   recruitmentYard,
@@ -24,7 +25,7 @@ import {
   standingUnits,
 } from "@/lib/engine/echelon"
 import { resolveManeuvers } from "@/lib/engine/simultaneous"
-import { decaySupplyModifier } from "@/lib/engine/supply"
+import { attackerSupplyFromProvince, decaySupplyModifier, defenderSupplyInProvince } from "@/lib/engine/supply"
 import { clamp, FACTION_LABEL, scenarioDate, signed } from "@/lib/format"
 import { makeRng, rollD6 } from "@/lib/rng"
 import type {
@@ -80,7 +81,27 @@ export function resolveTurn(
   for (const province of state.provinces) {
     province.supplyModifier = decaySupplyModifier(province.supplyModifier)
   }
-  applySupply(state)
+
+  const logistics: string[] = []
+  for (const province of state.provinces) {
+    const pending = province.fortPending ?? 0
+    if (pending <= 0) continue
+    const before = province.fort
+    province.fort = clamp(province.fort + pending, 0, 3)
+    province.fortPending = 0
+    if (province.fort > before) {
+      logistics.push(
+        `${province.name} completes entrenchments begun last fortnight. Fortification level is now ${province.fort}.`,
+      )
+    }
+  }
+
+  const capacityNotes = applySupply(state)
+  for (const note of capacityNotes) {
+    logistics.push(
+      `${note.name}: ${note.garrisonStrength} strength exceeds supply capacity ${note.capacity}. Effective supply ${note.effectiveSupply} (network ${note.baseSupply}).`,
+    )
+  }
 
   const rng = options.rng ?? makeRng(state.seed + state.turn * 9973)
   const usedUnits = new Set<string>()
@@ -96,7 +117,7 @@ export function resolveTurn(
     .filter((proposal): proposal is FortifyProposal => proposal.type === "fortify")
     .sort((a, b) => a.province.localeCompare(b.province))
   for (const proposal of digging) {
-    resolutions.push(applyFortify(state, proposal, fortified))
+    resolutions.push(applyFortify(state, proposal, fortified, usedUnits))
   }
 
   const shocks = gm.proposals
@@ -116,9 +137,14 @@ export function resolveTurn(
     applyEvent(state, event, spent),
   )
 
-  resolutions.push(...resolveManeuvers(state, gm.proposals, rng, attacked))
+  resolutions.push(...resolveManeuvers(state, gm.proposals, rng, attacked, usedUnits))
 
-  applySupply(state)
+  const capacityAfter = applySupply(state)
+  for (const note of capacityAfter) {
+    logistics.push(
+      `${note.name}: ${note.garrisonStrength} strength exceeds supply capacity ${note.capacity}. Effective supply ${note.effectiveSupply} (network ${note.baseSupply}).`,
+    )
+  }
 
   const controlChanges: ControlChange[] = []
   for (const province of state.provinces) {
@@ -134,7 +160,6 @@ export function resolveTurn(
   }
   const changedIds = new Set(controlChanges.map((change) => change.provinceId))
 
-  const logistics: string[] = []
   for (const province of state.provinces) {
     if (province.controller !== province.owner) {
       province.unrest = clamp(province.unrest + 5, 0, 100)
@@ -257,7 +282,7 @@ function applyProposal(
     case "attack":
       return applyAttack(state, proposal, usedUnits, rollD6(rng), attacked)
     case "fortify":
-      return applyFortify(state, proposal, fortified)
+      return applyFortify(state, proposal, fortified, usedUnits)
     case "modify":
       return applyModify(state, proposal, spent)
     case "recruit":
@@ -376,10 +401,10 @@ export function applyAttack(
   const defenderPool = target.units.filter((unit) => unit.faction === target.controller)
   const attackerBodies = fightingUnits(from.units, independentFormations(attackerParty))
   const defenderBodies = fightingUnits(defenderPool)
-  const attack = attackerPower(attackerBodies, from.supply, target.terrain, target.fort)
+  const attack = attackerPower(attackerBodies, attackerSupplyFromProvince(from), target.terrain, target.fort)
   const defense = defenderPower(
     defenderBodies,
-    target.supply,
+    defenderSupplyInProvince(target),
     target.terrain,
     target.fort,
   )
@@ -432,6 +457,10 @@ export function applyAttack(
       retreatSummary = "The province was empty."
     }
     target.units.push(...survivingAttackers)
+    if (target.controller !== faction && target.fort > 0) {
+      target.fort = clamp(target.fort - 1, 0, 3)
+      target.fortPending = 0
+    }
     target.controller = faction
     if (faction !== target.owner) target.unrest = clamp(target.unrest + 12, 0, 100)
     else target.unrest = clamp(target.unrest - 8, 0, 100)
@@ -495,6 +524,7 @@ export function applyFortify(
   state: GameState,
   proposal: FortifyProposal,
   fortified: Set<string>,
+  usedUnits: Set<string> = new Set(),
 ): Resolution {
   const province = findProvince(state, proposal.province)
   if (!province) return reject(proposal, "Unknown province.")
@@ -504,13 +534,18 @@ export function applyFortify(
       `${province.name} is already digging in this fortnight.`,
     )
   }
-  const garrison = province.units.some(
-    (unit) => unit.faction === province.controller,
+  const garrison = independentFormations(
+    province.units.filter((unit) => unit.faction === province.controller),
   )
-  if (!garrison) {
+  if (!garrison.length) {
     return reject(proposal, `No fortifiable garrison in ${province.name}.`)
   }
-  if (province.fort >= 3) {
+  const busy = garrison.find((unit) => usedUnits.has(unit.id))
+  if (busy) {
+    return reject(proposal, `${busy.name} already has orders this fortnight.`)
+  }
+  const pending = province.fortPending ?? 0
+  if (province.fort + pending >= 3) {
     return reject(proposal, `${province.name} is already fortified to level 3.`)
   }
   if (province.supply < 40) {
@@ -519,12 +554,26 @@ export function applyFortify(
       `${province.name} lacks the supply to dig (supply ${province.supply}, need 40).`,
     )
   }
-  province.fort += 1
+  const faction = province.controller
+  const purse = state.treasury[faction]
+  if (purse.ip < FORTIFY_IP_COST) {
+    return reject(
+      proposal,
+      `${FACTION_LABEL[faction]} lack industry to dig in (${purse.ip} IP, need ${FORTIFY_IP_COST}).`,
+    )
+  }
+  state.treasury[faction] = { ...purse, ip: purse.ip - FORTIFY_IP_COST }
+  province.fortPending = pending + 1
   fortified.add(province.id)
+  for (const unit of garrison) {
+    for (const member of partyOf(province.units, [unit.id])) {
+      usedUnits.add(member.id)
+    }
+  }
   return {
     proposal,
     status: "applied",
-    summary: `${province.name} digs in. Fortification level is now ${province.fort}.`,
+    summary: `${province.name} digs in (${FORTIFY_IP_COST} IP). The garrison holds the ground this fortnight; entrenchments finish next fortnight at level ${province.fort + province.fortPending}.`,
   }
 }
 
@@ -876,13 +925,13 @@ export function combinedEngagementOdds(
     const attackers = fightingUnits(from.units, independentFormations(partyOf(from.units, prong.unitIds)))
     if (!attackers.length) continue
     if (!origins.includes(from.id)) origins.push(from.id)
-    attack += attackerPower(attackers, from.supply, target.terrain, target.fort)
+    attack += attackerPower(attackers, attackerSupplyFromProvince(from), target.terrain, target.fort)
   }
   if (!origins.length) return null
   const multiplier = flankMultiplier(origins.length)
   attack *= multiplier
   const defenders = fightingUnits(target.units.filter((unit) => unit.faction === target.controller))
-  const defense = defenderPower(defenders, target.supply, target.terrain, target.fort)
+  const defense = defenderPower(defenders, defenderSupplyInProvince(target), target.terrain, target.fort)
   const encircled =
     origins.length > 1 &&
     defenders.length > 0 &&

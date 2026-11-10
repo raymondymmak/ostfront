@@ -118,6 +118,13 @@ export function comparePredictionSupply(
     return { headline: "Prediction vs engine", paragraphs, stance: "misaligned" }
   }
 
+  if (favorsHeavy && supplyPlan.allInConvergence) {
+    paragraphs.push(
+      "You expected the heavy stack or both columns to carry the assault; convergence pooled an over-capacity garrison whose effective supply is below the network line.",
+    )
+    return { headline: "Prediction vs plan", paragraphs, stance: "misaligned" }
+  }
+
   if (favorsHeavy && choseHeavy && feedback.kind === "supply_chose_starved_stack") {
     paragraphs.push(
       "You predicted the heavy stack would carry the assault; the resolver used that province’s low supply factor, so the lean column would have been stronger before the die.",

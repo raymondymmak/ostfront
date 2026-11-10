@@ -12,6 +12,7 @@ export type FeedbackKind =
   | "no_attack"
   | "supply_sound_fed_column"
   | "supply_chose_starved_stack"
+  | "supply_all_in_convergence"
   | "supply_no_attack"
   | "supply_wrong_target"
   | "other"

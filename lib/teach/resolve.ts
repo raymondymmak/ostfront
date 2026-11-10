@@ -237,7 +237,7 @@ export async function teachCoachBeforeResolve(
 
 export function verifiedSupplyCombatConstants() {
   return {
-    attackerSupplyFactor: "max(0.15, supply / 100)",
+    attackerSupplyFactor: "max(0.15, attackerSupply / 100) where attackerSupply uses effective supply (depot floor 72% of network)",
     defenderSupplyFactor: "max(0.3, supply / 100)",
     minMarchSupply: 30,
     supplyFormula: "100 - pathCost * 11 (+ modifier, clamped 0–100)",
@@ -249,5 +249,7 @@ export function verifiedSupplyCombatConstants() {
       target: "kielce",
       heavySupplyModifier: -45,
     },
+    provinceCapacity:
+      "capacity = terrain base + depot bonus (when controlled) + 6×rail links; effective supply = network supply × min(1, capacity÷garrison strength) when over capacity",
   } as const
 }

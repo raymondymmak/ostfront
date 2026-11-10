@@ -105,6 +105,7 @@ export function authoritativeLessonState(
   ]
 
   const lublin = findProvince(state, "lublin")!
+  lublin.fort = variant === "guided" ? 2 : lublin.fort
   lublin.units = [
     unit({
       id: "teach-xxiv",
@@ -144,7 +145,7 @@ function authoritativeSupplyLessonState(variant: TeachVariant): GameState {
       name: "Fed Corps",
       faction: "central",
       kind: "infantry",
-      strength: 34,
+      strength: 36,
       morale: 78,
     }),
   ]
@@ -169,7 +170,7 @@ function authoritativeSupplyLessonState(variant: TeachVariant): GameState {
       name: "Russian IX",
       faction: "russia",
       kind: "infantry",
-      strength: variant === "guided" ? 44 : 40,
+      strength: variant === "guided" ? 32 : 34,
       morale: 68,
     }),
   ]

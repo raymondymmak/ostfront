@@ -15,6 +15,8 @@ export const RECRUIT: Record<
   artillery: { mp: 2, ip: 7, turns: 2, strength: 25, morale: 74, label: "Heavy artillery" },
 }
 
+export const FORTIFY_IP_COST = 2
+
 export const HEAL_POINTS = 8
 export const POINTS_PER_MP = 4
 export const HEAL_SUPPLY = 50
