@@ -850,25 +850,18 @@ function buildSteps(cli, targets) {
         await gotoChecked(page, `${base}/teach`)
         await page.locator("[data-testid=teach-begin-supply]").click()
         await page.locator("[data-testid=teach-app]").waitFor({ state: "visible", timeout: 60_000 })
+        await page.waitForTimeout(MAP_SETTLE_MS)
+        await selectKrakowOnMap(page)
+        await page.getByRole("button").filter({ hasText: /Kielce/ }).first().click()
+        await page.locator("[data-testid=tab-orders]").click()
+        await page.locator("[data-testid=queued-orders]").getByText(/Kielce/i).waitFor({ state: "visible", timeout: 15_000 })
         await page.locator("[data-testid=map-mode-supply]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 10_000 })
-        const katowice = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
-        const kielcePt = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
-        if (!katowice || !kielcePt) throw new Error("Map projection unavailable for supply lesson.")
-        await page.mouse.click(katowice.x, katowice.y)
-        await page.waitForTimeout(350)
-        await page.locator("[data-testid=tab-province]").click()
-        const attackKielce = page.getByRole("button", { name: /Attack/i }).filter({ hasText: /Kielce/i })
-        if (await attackKielce.count()) {
-          await attackKielce.first().click()
-        } else {
-          await page.mouse.click(kielcePt.x, kielcePt.y)
-        }
         await page.locator("[data-testid=teach-reasoning]").fill(
-          "More troops always means a stronger attack from Katowice.",
+          "Fed corps from Kraków hits harder than the starved heavy stack at Katowice because supply scales attack power.",
         )
         await page.locator("[data-testid=teach-prediction]").fill(
-          "Heavy corps breaks Kielce because headcount wins regardless of supply.",
+          "Lean column takes Kielce; engine preview favours well-supplied attack over raw headcount.",
         )
         await page.locator("[data-testid=teach-resolve]").click()
         const feedback = page.locator("[data-testid=teach-feedback]")
@@ -877,7 +870,7 @@ function buildSteps(cli, targets) {
         if (kind !== "supply_chose_starved_stack" && kind !== "supply_sound_fed_column") {
           throw new Error(`Unexpected supply feedback kind: ${kind ?? "missing"}`)
         }
-        await page.locator("[data-testid=teach-evidence]").getByText(/ratio/i).waitFor({ state: "visible" })
+        await page.locator("[data-testid=teach-evidence]").getByText(/ratio/i).first().waitFor({ state: "visible" })
       },
     },
   ]
