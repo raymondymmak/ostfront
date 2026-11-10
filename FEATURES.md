@@ -1,5 +1,25 @@
 # Ostfront features
 
+## Teaching drill (Sprint 1 / Phase 2A)
+
+Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach]`. Campaign at **`/`** is unchanged.
+
+| Step | Selector / API | Proof |
+| --- | --- | --- |
+| Open drill | `[data-testid=teach-begin]` on setup | `[data-testid=teach-app]` visible; `[data-testid=teach-mode-badge]` in HUD |
+| Coach question | `[data-testid=teach-question]` | Guided variant only; silent shows `[data-testid=teach-silent-banner]` |
+| Hints | `[data-testid=teach-request-hint]` | Hint text in `[data-testid=teach-hints]`; map `[data-coach-highlights]` lists province ids |
+| Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; pooled line when two attacks share a target |
+| Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares it to server-derived plan facts (not used to fabricate odds) |
+| Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** — LLM when configured, else labelled rules/fallback (`data-coach-source` on `[data-testid=teach-coach-reply]`) |
+| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided drill uses fixed die roll 1 (teaching only, not campaign RNG) |
+| Resolve | `[data-testid=teach-resolve]` or Orders **Resolve this fortnight** | POST **`/api/teach/resolve`** (server lesson state + orders only). `[data-testid=teach-feedback]` with `data-feedback-kind`; coach post line `[data-testid=teach-coach-post]`; `[data-testid=teach-attempt-id]` with `data-record-persistence`=`confirmed` \| `failed` \| `unavailable` |
+| Silent follow-up | `[data-testid=teach-start-silent]` after guided feedback | `[data-teach-variant=silent]`; no hint or discuss before resolve; persistence message is truthful (confirmed only after private put+head verify) |
+
+Session snapshot: GET **`/api/teach/session?lessonId=converging-lublin&variant=guided|silent`** (includes `pedagogy.disclosure`).
+
+Trust: teaching resolve does **not** accept client `GameState` for grading (scoped mitigation for #26). Full campaign **`/api/turn`** still trusts browser state.
+
 ## Chief of Staff suggestions
 
 The advisor panel is `[data-testid=advisor-panel]`. Each suggestion is `[data-testid=advisor-suggestion]` and carries `data-advisor-state`, `data-advisor-queue-lines` (display text per order), and `data-advisor-orders` (structured kind/origin/target/units for QA). Queued arrows expose the same structure on each `[data-testid=queued-orders]` row via `data-queued-order`.

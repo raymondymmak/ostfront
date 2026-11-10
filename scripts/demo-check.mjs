@@ -22,6 +22,7 @@ const TURN_TIMEOUT_MS = 140_000
 const ADVISOR_TIMEOUT_MS = 45_000
 const KATOWICE_LON_LAT = [-0.375, -0.48]
 const KRAKOW_LON_LAT = [-0.022, -0.632]
+const KIELCE_LON_LAT = [-0.113, -0.385]
 
 function parseCli(argv) {
   const flags = {
@@ -713,6 +714,122 @@ function buildSteps(cli, targets) {
         await page.getByRole("button", { name: "Restart" }).click()
         await page.getByRole("button", { name: "Confirm restart" }).click()
         await page.locator("[data-testid=scenario-picker]").waitFor({ state: "visible", timeout: 15_000 })
+      },
+    },
+    {
+      id: "22-teach-load",
+      name: "Open converging-attacks teaching drill",
+      async run({ page }) {
+        const base = targets.appUrl.replace(/\/$/, "")
+        await gotoChecked(page, `${base}/teach`)
+        await page.locator("[data-testid=teach-begin]").click()
+        await page.locator("[data-testid=teach-app]").waitFor({ state: "visible", timeout: 60_000 })
+        await page.locator("[data-testid=teach-question]").waitFor({ state: "visible", timeout: 15_000 })
+      },
+    },
+    {
+      id: "23-teach-hint",
+      name: "Request coach hint (province-anchored)",
+      async run({ page }) {
+        await page.locator("[data-testid=teach-request-hint]").click()
+        await page.waitForTimeout(300)
+        const map = page.locator("[data-testid=war-map]")
+        const highlights = await map.getAttribute("data-coach-highlights")
+        if (!highlights?.includes("lublin")) {
+          throw new Error(`Expected coach highlight on lublin, got: ${highlights ?? "(none)"}`)
+        }
+      },
+    },
+    {
+      id: "24-teach-queue-converging",
+      name: "Queue two-prong attack on Lublin",
+      async run({ page }) {
+        const krakow = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
+        const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
+        if (!krakow || !kielce) throw new Error("Map projection unavailable for teaching drill.")
+        await page.mouse.click(krakow.x, krakow.y)
+        await page.waitForTimeout(350)
+        await page.locator("[data-testid=tab-province]").click()
+        const attackLublin = page.getByRole("button", { name: /Attack/i }).filter({ hasText: /Lublin/i })
+        await attackLublin.first().click()
+        await page.mouse.click(kielce.x, kielce.y)
+        await page.waitForTimeout(350)
+        await page.locator("[data-testid=tab-province]").click()
+        await attackLublin.first().click()
+        await page.locator("[data-testid=tab-orders]").click()
+        await expectText(page.locator("[data-testid=queued-orders]"), "Lublin")
+      },
+    },
+    {
+      id: "25-teach-discuss",
+      name: "Discuss reasoning with coach (guided)",
+      async run({ page }) {
+        await page.locator("[data-testid=teach-pedagogy-notice]").waitFor({ state: "visible" })
+        await page.locator("[data-testid=teach-reasoning]").fill(
+          "Two separate battles from Kraków and Kielce.",
+        )
+        await page.locator("[data-testid=teach-discuss-plan]").click()
+        const reply = page.locator("[data-testid=teach-coach-reply]")
+        await reply.waitFor({ state: "visible", timeout: 30_000 })
+        const stance = await reply.getAttribute("data-coach-stance")
+        if (stance !== "misconception" && stance !== "partial" && stance !== "unclear" && stance !== "fallback") {
+          throw new Error(`Expected coach to challenge separate-battle reasoning, got stance=${stance}`)
+        }
+      },
+    },
+    {
+      id: "26-teach-resolve",
+      name: "Resolve teaching fortnight with engine feedback",
+      async run({ page }) {
+        await page.locator("[data-testid=teach-reasoning]").fill(
+          "Combine both prongs into one converging assault.",
+        )
+        await page.locator("[data-testid=teach-resolve]").click()
+        await page.locator("[data-testid=teach-feedback]").waitFor({ state: "visible", timeout: 30_000 })
+        const kind = await page.locator("[data-testid=teach-feedback] p").first().getAttribute("data-feedback-kind")
+        if (kind !== "sound_converging_unlucky" && kind !== "sound_converging_success") {
+          throw new Error(`Unexpected teach feedback kind: ${kind ?? "missing"}`)
+        }
+        await page.locator("[data-testid=teach-evidence]").getByText(/roll \d/i).waitFor({ state: "visible" })
+      },
+    },
+    {
+      id: "27-teach-silent",
+      name: "Silent variation shows no coach hints",
+      async run({ page }) {
+        await page.locator("[data-testid=teach-start-silent]").click()
+        await page
+          .locator("[data-testid=teach-panel][data-teach-variant=silent]")
+          .waitFor({ state: "visible", timeout: 60_000 })
+        await page.locator("[data-testid=teach-silent-banner]").waitFor({ state: "visible", timeout: 10_000 })
+        if (await page.locator("[data-testid=teach-request-hint]").count()) {
+          throw new Error("Hint control visible in silent mode")
+        }
+        const krakow = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
+        const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
+        if (!krakow || !kielce) throw new Error("Map projection unavailable for silent drill.")
+        await page.mouse.click(krakow.x, krakow.y)
+        await page.waitForTimeout(350)
+        await page.locator("[data-testid=tab-province]").click()
+        await page
+          .getByRole("button", { name: /Attack/i })
+          .filter({ hasText: /Lublin/i })
+          .first()
+          .click()
+        await page.mouse.click(kielce.x, kielce.y)
+        await page.waitForTimeout(350)
+        await page.locator("[data-testid=tab-province]").click()
+        await page
+          .getByRole("button", { name: /Attack/i })
+          .filter({ hasText: /Lublin/i })
+          .first()
+          .click()
+        await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Kraków and Kielce together.")
+        await page.locator("[data-testid=teach-resolve]").click()
+        const feedback = page.locator("[data-testid=teach-feedback]")
+        await feedback.waitFor({ state: "visible", timeout: 30_000 })
+        await page.locator("[data-testid=teach-attempt-id]").waitFor({ state: "visible" })
+        await page.locator("[data-testid=teach-coach-post]").waitFor({ state: "visible" })
       },
     },
   ]

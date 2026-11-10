@@ -15,9 +15,10 @@ type HudProps = {
   onReset: () => void
   advisorOpen: boolean
   onAdvisor: () => void
+  teachMode?: boolean
 }
 
-export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor }: HudProps) {
+export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMode }: HudProps) {
   const central = strength(state, "central")
   const russia = strength(state, "russia")
   const held = {
@@ -134,18 +135,24 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor }: HudPro
             </p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={advisorOpen ? "default" : "outline"}
-              aria-expanded={advisorOpen}
-              data-testid="advisor-toggle"
-              onClick={onAdvisor}
-            >
-              Chief of Staff
-            </Button>
+            {teachMode ? (
+              <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs" data-testid="teach-mode-badge">
+                Teaching drill
+              </span>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant={advisorOpen ? "default" : "outline"}
+                aria-expanded={advisorOpen}
+                data-testid="advisor-toggle"
+                onClick={onAdvisor}
+              >
+                Chief of Staff
+              </Button>
+            )}
             <Button type="button" size="sm" variant="outline" onClick={onReset}>
-              {armReset ? "Confirm restart" : "Restart"}
+              {armReset ? "Confirm restart" : teachMode ? "Restart drill" : "Restart"}
             </Button>
           </div>
         </div>

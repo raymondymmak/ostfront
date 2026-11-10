@@ -23,6 +23,7 @@ type ProvincePanelProps = {
   onRecruit: (provinceId: string, kind: UnitKind) => void
   onCancelRecruit: (buildId: string) => void
   queue?: QueuedOrder[]
+  recruitDisabled?: boolean
 }
 
 export function ProvincePanel({
@@ -35,6 +36,7 @@ export function ProvincePanel({
   onRecruit,
   onCancelRecruit,
   queue = [],
+  recruitDisabled,
 }: ProvincePanelProps) {
   if (!province) {
     return (
@@ -109,7 +111,7 @@ export function ProvincePanel({
             ) : null}
           </div>
         ) : null}
-        {friendly && !closed && recruitmentYard(province, "central") ? (
+        {friendly && !closed && !recruitDisabled && recruitmentYard(province, "central") ? (
           <div data-testid="recruit-panel" className="flex flex-col gap-2">
             <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Raise troops</h3>
             <p className="text-sm text-muted-foreground">
