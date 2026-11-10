@@ -1,6 +1,7 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import type { PlanAnalysis } from "@/lib/teach/plan"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
+import type { RecordPersistenceStatus, TeachRecordResult } from "@/lib/teach/record"
 import type { TurnRecord } from "@/lib/types"
 
 export type FeedbackKind =
@@ -23,7 +24,8 @@ export type TeachFeedback = {
   coachFallbackReason?: string
   followUp: string | null
   attemptId: string | null
-  recordPersistence: "blob" | "unavailable"
+  recordPersistence: RecordPersistenceStatus
+  recordPersistenceMessage: string | null
 }
 
 function parseRoll(summary: string): number | null {
@@ -140,6 +142,7 @@ export function buildTeachFeedback(
     followUp: null,
     attemptId: null,
     recordPersistence: "unavailable",
+    recordPersistenceMessage: null,
   }
 }
 
@@ -152,16 +155,13 @@ export function attachCoachToFeedback(
     fallbackReason?: string
     followUp: string | null
   },
-  record: { attemptId: string; persistence: "blob" | "unavailable" },
+  record: TeachRecordResult,
   variant: TeachVariant,
+  persistenceMessage: string,
 ): TeachFeedback {
   const paragraphs = [...mechanical.paragraphs]
   if (variant === "silent") {
-    paragraphs.push(
-      record.persistence === "blob"
-        ? `Attempt ${record.attemptId} stored server-side for review (plan, reasoning, engine outcome).`
-        : `Attempt ${record.attemptId} logged in this response only; blob storage is not configured on the host.`,
-    )
+    paragraphs.push(persistenceMessage)
   }
   return {
     ...mechanical,
@@ -173,5 +173,6 @@ export function attachCoachToFeedback(
     followUp: coach.followUp,
     attemptId: record.attemptId,
     recordPersistence: record.persistence,
+    recordPersistenceMessage: persistenceMessage,
   }
 }

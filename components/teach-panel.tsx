@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import type { CoachHint } from "@/lib/teach/coach"
 import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { LessonMeta } from "@/lib/teach/lessons"
+import { persistenceShortLabel } from "@/lib/teach/record"
 
 type TeachPanelProps = {
   meta: LessonMeta
@@ -93,8 +94,8 @@ export function TeachPanel({
         )}
         {variant === "silent" && (
           <p className="mt-3 text-xs text-muted-foreground" data-testid="teach-silent-banner">
-            Coach is silent until after you resolve. Plan on the map and state your reasoning; it is stored
-            server-side with your orders.
+            Coach is silent until after you resolve. Plan on the map and state your reasoning. After resolve,
+            the server reports whether your attempt was stored privately — only when that write is verified.
           </p>
         )}
         {variant === "guided" && (
@@ -174,9 +175,16 @@ function TeachFeedbackBlock({ feedback }: { feedback: TeachFeedback }) {
         <p key={line.slice(0, 48)}>{line}</p>
       ))}
       {feedback.attemptId && (
-        <p className="text-xs text-muted-foreground" data-testid="teach-attempt-id">
-          Attempt {feedback.attemptId}
-          {feedback.recordPersistence === "blob" ? " (stored server-side)" : " (persistence unavailable on host)"}
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="teach-attempt-id"
+          data-record-persistence={feedback.recordPersistence}
+        >
+          {feedback.recordPersistenceMessage ?? (
+            <>
+              Attempt {feedback.attemptId} ({persistenceShortLabel(feedback.recordPersistence)})
+            </>
+          )}
         </p>
       )}
       <ul className="list-disc pl-4 text-xs text-muted-foreground" data-testid="teach-evidence">

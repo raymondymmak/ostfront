@@ -3,7 +3,7 @@ import { interpretOrders } from "@/lib/gm/interpret"
 import { resolveTurn } from "@/lib/engine/turn"
 import { buildLessonDispatch } from "@/lib/teach/dispatch"
 import { attachCoachToFeedback, buildTeachFeedback } from "@/lib/teach/feedback"
-import { scheduleTeachRecord } from "@/lib/teach/record"
+import { persistTeachRecord, persistenceStatusMessage } from "@/lib/teach/record"
 import { coachReasoning } from "@/lib/teach/reasoning-coach"
 import {
   authoritativeLessonState,
@@ -64,7 +64,7 @@ export async function teachResolveTurn(
     reasoning,
     mechanical,
   })
-  const stored = scheduleTeachRecord({
+  const stored = await persistTeachRecord({
     meta,
     variant,
     reasoning,
@@ -76,11 +76,13 @@ export async function teachResolveTurn(
     combatRoll,
     record,
   })
+  const persistenceMessage = persistenceStatusMessage(stored)
   const feedback = attachCoachToFeedback(
     mechanical,
     coach,
     stored,
     variant,
+    persistenceMessage,
   )
   return { state: next, record, plan, feedback, combatRoll }
 }

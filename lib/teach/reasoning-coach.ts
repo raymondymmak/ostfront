@@ -68,7 +68,7 @@ export async function coachReasoning(input: {
   if (input.variant === "silent") {
     return {
       reply:
-        "Silent drill: your plan and reasoning are stored for review. Outcome numbers below are from the resolver.",
+        "Silent drill: outcome numbers below are from the resolver. After this resolve, storage status is reported separately — it is confirmed only when the private write succeeds.",
       stance: trimmed ? "unclear" : "absent",
       followUp: null,
       highlights: [{ provinceId: input.meta.targetProvinceId, uiId: "tab-orders" }],

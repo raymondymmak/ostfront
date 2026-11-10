@@ -13,8 +13,8 @@ Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach
 | Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares it to server-derived plan facts (not used to fabricate odds) |
 | Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** — LLM when configured, else labelled rules/fallback (`data-coach-source` on `[data-testid=teach-coach-reply]`) |
 | Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided drill uses fixed die roll 1 (teaching only, not campaign RNG) |
-| Resolve | `[data-testid=teach-resolve]` or Orders **Resolve this fortnight** | POST **`/api/teach/resolve`** (server lesson state + orders only). `[data-testid=teach-feedback]` with `data-feedback-kind`; coach post line `[data-testid=teach-coach-post]`; attempt `[data-testid=teach-attempt-id]` |
-| Silent follow-up | `[data-testid=teach-start-silent]` after guided feedback | `[data-teach-variant=silent]`; no hint or discuss control before resolve; reasoning stored with attempt id after resolve |
+| Resolve | `[data-testid=teach-resolve]` or Orders **Resolve this fortnight** | POST **`/api/teach/resolve`** (server lesson state + orders only). `[data-testid=teach-feedback]` with `data-feedback-kind`; coach post line `[data-testid=teach-coach-post]`; `[data-testid=teach-attempt-id]` with `data-record-persistence`=`confirmed` \| `failed` \| `unavailable` |
+| Silent follow-up | `[data-testid=teach-start-silent]` after guided feedback | `[data-teach-variant=silent]`; no hint or discuss before resolve; persistence message is truthful (confirmed only after private put+head verify) |
 
 Session snapshot: GET **`/api/teach/session?lessonId=converging-lublin&variant=guided|silent`** (includes `pedagogy.disclosure`).
 
