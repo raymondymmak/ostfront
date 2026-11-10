@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { combinedEngagementOdds } from "@/lib/engine/turn"
 import { teachResolveTurn } from "@/lib/teach/resolve"
-import { authoritativeLessonState, lessonMeta } from "@/lib/teach/lessons"
+import { authoritativeLessonState } from "@/lib/teach/lessons"
 import type { PlayerOrder } from "@/lib/types"
 
 describe("converging assault supply", () => {

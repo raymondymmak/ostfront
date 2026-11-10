@@ -141,7 +141,6 @@ describe("balance", () => {
     const easy = await Promise.all(seeds.map((seed) => grade("easy", seed)))
     const hard = await Promise.all(seeds.map((seed) => grade("hard", seed)))
     const total = (grades: string[]) => grades.reduce((sum, grade) => sum + (rank[grade] ?? 0), 0)
-    const wins = (grades: string[]) => grades.filter((item) => (rank[item] ?? 0) >= 2).length
     // Supply capacity throttles massed depots; Easy scripts stall more often (draw) while Hard still reaches Victory on aggressive seeds.
     expect(total(easy)).toBeGreaterThanOrEqual(total(hard) - 6)
     expect(hard.some((item) => item === "victory" || item === "decisive")).toBe(true)
