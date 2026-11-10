@@ -86,7 +86,8 @@ export type GameState = {
   version: 1
   turn: number
   date: string
-  seed: number
+  /** Server-only for live campaigns; omitted in API responses to the browser. */
+  seed?: number
   provinces: Province[]
   scenario: ScenarioId
   difficulty: Difficulty
@@ -193,6 +194,8 @@ export type TurnRecord = {
 
 export type SaveGame = {
   version: 2
+  /** Set when the campaign is owned by the server store. */
+  gameId?: string
   state: GameState
   log: TurnRecord[]
 }

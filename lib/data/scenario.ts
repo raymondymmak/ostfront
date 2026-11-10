@@ -105,9 +105,14 @@ export function createInitialState(difficulty: Difficulty = "normal"): GameState
   return assemble(difficulty)
 }
 
-export function createScenario(id: ScenarioId = "gorlice", difficulty: Difficulty = "normal"): GameState {
+export function createScenario(
+  id: ScenarioId = "gorlice",
+  difficulty: Difficulty = "normal",
+  seed?: number,
+): GameState {
   const state = createInitialState(difficulty)
   state.scenario = id
+  if (seed !== undefined) state.seed = seed >>> 0
   return state
 }
 
@@ -174,7 +179,7 @@ export function rebindState(state: GameState): GameState {
   const rebound = createInitialState(state.difficulty ?? "normal")
   rebound.turn = state.turn
   rebound.date = scenarioDate("gorlice", state.turn)
-  rebound.seed = state.seed || START_SEED
+  rebound.seed = state.seed ?? START_SEED
   rebound.treasury = {
     central: { ...(state.treasury?.central ?? rebound.treasury.central) },
     russia: { ...(state.treasury?.russia ?? rebound.treasury.russia) },

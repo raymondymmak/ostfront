@@ -59,7 +59,7 @@ export const GameStateSchema = z.object({
   version: z.literal(1),
   turn: z.number().int().min(0),
   date: z.string(),
-  seed: z.number(),
+  seed: z.number().optional(),
   provinces: z.array(ProvinceSchema).min(1),
   scenario: z.enum(["gorlice"]).default("gorlice"),
   difficulty: z.enum(["easy", "normal", "hard"]).default("normal"),
@@ -145,6 +145,24 @@ export const PlayerOrderSchema = z.discriminatedUnion("type", [
 export const TurnRequestSchema = z.object({
   state: GameStateSchema,
   orders: z.array(PlayerOrderSchema).max(40),
+})
+
+export const NewGameRequestSchema = z
+  .object({
+    difficulty: z.enum(["easy", "normal", "hard"]).default("normal"),
+  })
+  .strict()
+
+export const ServerTurnRequestSchema = z
+  .object({
+    gameId: z.string().regex(/^[a-f0-9]{32}$/),
+    expectedTurn: z.number().int().min(0),
+    orders: z.array(PlayerOrderSchema).max(40),
+  })
+  .strict()
+
+export const CampaignQuerySchema = z.object({
+  gameId: z.string().regex(/^[a-f0-9]{32}$/),
 })
 
 export const AdvisorMessageSchema = z.object({
