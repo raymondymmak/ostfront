@@ -21,7 +21,17 @@ Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach
 
 Session: GET **`/api/teach/session?lessonId=…&variant=…&priorAttemptId=…`**.
 
-Verified supply/combat (engine): attacker `max(0.15, supply/100)`; defender floor `0.3`; march/attack blocked below supply `30`; supply trace `100 − pathCost×11`, rail edge cost `1`.
+Verified supply/combat (engine): attacker `max(0.15, supply/100)`; defender floor `0.3`; march/attack blocked below supply `30`; network supply `100 − pathCost×11`, rail edge cost `1`.
+
+### Province supply capacity (Sprint 3)
+
+Each province has a **garrison supply capacity** (terrain base + depot bonus when controlled + 6× rail links). When fighting strength in the province exceeds capacity, **effective supply** scales as `networkSupply × min(1, capacity ÷ garrisonStrength)` — shown on the map Supply overlay and used for **attacks launched from** that province. **Defenders** still use the network line (`networkSupply`) in combat. **Your depot** still issues bulk rations: attacks launched from a depot you control never march below **72% of network supply**, even when the map shows overcrowding. Over-capacity provinces are spelled out in the fortnight **Chronicle** logistics.
+
+**Converging attacks:** when any prong marches below supply **60**, the flank bonus is off and the pooled battle uses the **worst prong’s launch supply**, then scales it by `objective capacity ÷ (garrison + attackers)` when the combined column overfills the target. Well-fed prongs (all ≥ 60) still pool per-prong power with the normal flank multiplier (converging Lublin lesson).
+
+### Fortify (Sprint 3)
+
+**Fortify** costs **2 industry**, binds the province garrison for that fortnight (no move/attack), and raises fort **one level on the next fortnight** (max 3). Capturing a fortified province reduces its fort by **one level** when control changes. Queue text still uses `[data-testid=fortify]`; the resolution log names IP spent and when entrenchments complete.
 
 Trust: teaching resolve does **not** accept client `GameState` for grading (scoped mitigation for #26). Full campaign **`/api/turn`** still trusts browser state.
 

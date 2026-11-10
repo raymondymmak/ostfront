@@ -1,8 +1,8 @@
+import { assaultAttackPower } from "@/lib/engine/assault"
 import {
   attackerPower,
   defenderPower,
   ENCIRCLEMENT_DEFENDER_LOSS,
-  flankMultiplier,
   resolveCombat,
   type CombatOutcome,
 } from "@/lib/engine/combat"
@@ -13,6 +13,7 @@ import {
   partyOf,
 } from "@/lib/engine/echelon"
 import { clamp, FACTION_LABEL } from "@/lib/format"
+import { defenderSupplyInProvince } from "@/lib/engine/supply"
 import { rollD6 } from "@/lib/rng"
 import type {
   AttackProposal,
@@ -68,6 +69,7 @@ export function resolveManeuvers(
   proposals: Proposal[],
   rng: Rng,
   attacked: Set<string>,
+  reservedUnits: Set<string> = new Set(),
 ): Resolution[] {
   const supplyAtStart = new Map(state.provinces.map((province) => [province.id, province.supply]))
   const controllerAtStart = new Map(state.provinces.map((province) => [province.id, province.controller]))
@@ -88,9 +90,18 @@ export function resolveManeuvers(
       continue
     }
     const ids = item.party.map((unit) => unit.id)
-    const busy = item.party.find((unit) => claimed.has(unit.id))
+    const busy =
+      item.party.find((unit) => claimed.has(unit.id)) ??
+      item.party.find((unit) => reservedUnits.has(unit.id))
     if (busy) {
-      resolutions.push(reject(item.proposal, `${busy.name} already has orders this fortnight.`))
+      resolutions.push(
+        reject(
+          item.proposal,
+          reservedUnits.has(busy.id)
+            ? `${busy.name} is digging in and cannot march this fortnight.`
+            : `${busy.name} already has orders this fortnight.`,
+        ),
+      )
       continue
     }
     for (const id of ids) claimed.add(id)
@@ -237,18 +248,24 @@ export function resolveManeuvers(
   for (const assault of assaults) {
     const roll = rolls.get(assault.key) ?? 1
     const origins = [...new Set(assault.prongs.map((prong) => prong.from.id))].sort()
-    let attack = 0
     const attackerBodyList: Unit[] = []
     for (const prong of [...assault.prongs].sort((a, b) => a.key.localeCompare(b.key))) {
-      const bodies = attackBodies(prong)
-      attackerBodyList.push(...bodies)
-      attack += attackerPower(bodies, prong.from.supply, assault.target.terrain, assault.target.fort)
+      attackerBodyList.push(...attackBodies(prong))
     }
-    attack *= flankMultiplier(origins.length)
+    const prepared = assault.prongs.map((prong) => ({
+      from: prong.from,
+      bodies: attackBodies(prong),
+    }))
+    const { attack } = assaultAttackPower(assault.target, prepared)
     const defenderPool = assault.target.units.filter((unit) => unit.faction === assault.target.controller)
     const fullBodies = fightingUnits(defenderPool)
     const virtual = defenseBodies(assault.target, moverIds, attackerIds)
-    const defense = defenderPower(virtual, assault.target.supply, assault.target.terrain, assault.target.fort)
+    const defense = defenderPower(
+      virtual,
+      defenderSupplyInProvince(assault.target),
+      assault.target.terrain,
+      assault.target.fort,
+    )
     const exitAtStart = retreatOptions(
       state,
       assault.target.id,
@@ -422,6 +439,10 @@ export function resolveManeuvers(
     province.units = buckets.get(province.id) ?? []
     const taken = captures.get(province.id)
     if (!taken) continue
+    if (province.controller !== taken && province.fort > 0) {
+      province.fort = clamp(province.fort - 1, 0, 3)
+      province.fortPending = 0
+    }
     province.controller = taken
     if (taken !== province.owner) province.unrest = clamp(province.unrest + 12, 0, 100)
     else province.unrest = clamp(province.unrest - 8, 0, 100)

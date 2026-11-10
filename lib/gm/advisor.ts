@@ -1186,7 +1186,7 @@ function detailFor(map: GameState, order: AdvisorOrder, odds: string | null): st
   if (order.type === "fortify") {
     const province = findProvince(map, order.provinceId)
     return province
-      ? `${province.name} fort ${province.fort} would become ${province.fort + 1}. Supply ${province.supply}.`
+      ? `${province.name} fort ${province.fort} would become ${province.fort + (province.fortPending ?? 0) + 1} next fortnight (2 IP). Supply ${province.supply}.`
       : "Fortify."
   }
   if (order.type === "recruit") {

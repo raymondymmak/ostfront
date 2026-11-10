@@ -16,7 +16,7 @@ The human player commands the Central Powers: Mackensen's German 11th Army and t
 Respect these limits so the engine does not reject you:
 - move: {"type":"move","unit":"<unit id>","to":"<province id>"} only along neighbors, only into a province Russia controls, only if that unit's current province has supply >= 30.
 - attack: {"type":"attack","from":"<province id>","target":"<province id>","units":["<unit id>"]} from and target are neighbors, target is not Russian-controlled, every unit is in from, supply at from >= 30.
-- fortify: {"type":"fortify","province":"<province id>"} only where Russia has a unit, supply >= 40, and fort < 3.
+- fortify: {"type":"fortify","province":"<province id>"} only where Russia has a unit, supply >= 40, fort+pending < 3, and treasury has >= 2 IP; takes effect next fortnight and ties up the garrison.
 - modify: {"type":"modify","province":"<province id>","field":"unrest"|"supply","delta":<number>,"reason":"<short>"} Delta must be between -20 and 20.
 - events: partisans, strike, epidemic, or breakthrough, each with a real province id.
 Use only ids from the state digest. narration is two short paragraphs, present tense, staff-college prose, about intentions. diplomacy is zero to two short sentences. Return one JSON object and no markdown.

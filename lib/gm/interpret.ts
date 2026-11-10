@@ -1,5 +1,6 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { attackerPower } from "@/lib/engine/combat"
+import { attackerSupplyFromProvince } from "@/lib/engine/supply"
 import { fightingUnits, independentFormations } from "@/lib/engine/echelon"
 import { findProvince } from "@/lib/engine/turn"
 import { normalizeName } from "@/lib/format"
@@ -231,7 +232,7 @@ function bestOrigin(
       province.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
     )
     if (!units.length) continue
-    const power = attackerPower(units, province.supply, target.terrain, target.fort)
+    const power = attackerPower(units, attackerSupplyFromProvince(province), target.terrain, target.fort)
     if (!best || power > best.power) best = { province, power }
   }
   return best?.province

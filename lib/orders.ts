@@ -1,4 +1,4 @@
-import { RECRUIT } from "@/lib/engine/economy"
+import { FORTIFY_IP_COST, RECRUIT } from "@/lib/engine/economy"
 import { KIND_LABEL } from "@/lib/format"
 import {
   applyAttack,
@@ -100,7 +100,8 @@ export function provinceActionState(
   const fortifyQueued = queue.some((order) => order.kind === "fortify" && order.from === provinceId)
   let fortifyReason: string | null = null
   if (fortifyQueued) fortifyReason = "Fortify queued"
-  else if ((province?.fort ?? 0) >= 3) fortifyReason = "Fortified to level 3"
+  else if ((province?.fort ?? 0) + (province?.fortPending ?? 0) >= 3) fortifyReason = "Fortified to level 3"
+  else if (budget.ip < FORTIFY_IP_COST) fortifyReason = `Need ${FORTIFY_IP_COST} industry to dig in`
   else if ((province?.supply ?? 0) < 40) fortifyReason = `Supply ${province?.supply ?? 0}, need 40 to dig`
   else if (!province?.units.some((unit) => unit.faction === "central")) fortifyReason = "No garrison to dig in"
 

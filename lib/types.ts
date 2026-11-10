@@ -69,8 +69,12 @@ export type Province = {
   owner: Faction
   controller: Faction
   supply: number
+  /** Rail-network supply before garrison capacity scaling; used for defence where applicable. */
+  networkSupply?: number
   unrest: number
   fort: number
+  /** Fort levels ordered this fortnight; applied at the opening of the next fortnight. */
+  fortPending?: number
   units: Unit[]
   /** A depot feeds its faction only while that faction controls the province. */
   depot?: Faction

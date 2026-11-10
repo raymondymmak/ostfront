@@ -1,6 +1,6 @@
 import { blankCampaign } from "@/lib/data/campaign"
 import { CATALOG, blankProvince } from "@/lib/data/catalog"
-import { computeSupply } from "@/lib/engine/supply"
+import { applyProvinceSupplyCapacity, computeSupply, type SupplyCapacityNote } from "@/lib/engine/supply"
 import { scenarioDate } from "@/lib/format"
 import type { Difficulty, Echelon, Faction, GameState, ScenarioId, Unit, UnitKind } from "@/lib/types"
 
@@ -130,7 +130,7 @@ function assemble(difficulty: Difficulty): GameState {
   return state
 }
 
-export function applySupply(state: GameState): void {
+export function applySupply(state: GameState): SupplyCapacityNote[] {
   const supply = computeSupply(
     state.provinces.map((province) => ({
       id: province.id,
@@ -141,9 +141,13 @@ export function applySupply(state: GameState): void {
     })),
     linksOf(state),
   )
+  const overCapacity: SupplyCapacityNote[] = []
   for (const province of state.provinces) {
-    province.supply = supply[province.id] ?? 0
+    const base = supply[province.id] ?? 0
+    const note = applyProvinceSupplyCapacity(province, base)
+    if (note) overCapacity.push(note)
   }
+  return overCapacity
 }
 
 export function linksOf(
@@ -186,6 +190,7 @@ export function rebindState(state: GameState): GameState {
     province.controller = current.controller
     province.unrest = current.unrest
     province.fort = current.fort
+    province.fortPending = current.fortPending ?? 0
     province.supplyModifier = current.supplyModifier ?? 0
     province.units = current.units.map((unit) => ({
       ...unit,
@@ -193,6 +198,7 @@ export function rebindState(state: GameState): GameState {
       maxStrength: unit.maxStrength ?? unit.strength,
     }))
     province.supply = current.supply
+    province.networkSupply = current.networkSupply
   }
   applySupply(rebound)
   return rebound

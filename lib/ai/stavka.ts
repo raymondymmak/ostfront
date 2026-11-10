@@ -1,6 +1,7 @@
 import { attackerPower, defenderPower } from "@/lib/engine/combat"
 import { fightingUnits, formationStrength, independentFormations } from "@/lib/engine/echelon"
-import { canAfford, RECRUIT, recruitmentYard, spendable } from "@/lib/engine/economy"
+import { canAfford, FORTIFY_IP_COST, RECRUIT, recruitmentYard, spendable } from "@/lib/engine/economy"
+import { attackerSupplyFromProvince, defenderSupplyInProvince } from "@/lib/engine/supply"
 import { combinedEngagementOdds, findProvince } from "@/lib/engine/turn"
 import { scenarioSpec } from "@/lib/data/objectives"
 import type {
@@ -266,9 +267,13 @@ function planReserveMoves(
 }
 
 function planFortify(state: GameState): Proposal | null {
+  const purse = state.treasury.russia
+  if (purse.ip < FORTIFY_IP_COST) return null
   const threatened = [...russianProvinces(state)]
     .filter((province) => isVictoryCity(state, province.id) || province.depot === "russia")
-    .filter((province) => province.fort < 3 && province.supply >= 40)
+    .filter(
+      (province) => province.fort + (province.fortPending ?? 0) < 3 && province.supply >= 40,
+    )
     .filter((province) => garrisonUnits(province).length > 0)
     .sort((a, b) => compareFortify(state, a, b))
   const province = threatened[0]
@@ -376,7 +381,7 @@ function primaryThreatNeighbor(state: GameState, province: Province): string | n
     const neighbor = findProvince(state, neighborId)
     if (!neighbor || neighbor.controller !== "central") continue
     const enemy = neighbor.units.filter((unit) => unit.faction === "central")
-    const power = attackerPower(enemy, neighbor.supply, province.terrain, province.fort)
+    const power = attackerPower(enemy, attackerSupplyFromProvince(neighbor), province.terrain, province.fort)
     if (power > best) {
       best = power
       bestId = neighborId
@@ -459,8 +464,13 @@ function odds(attackers: Unit[], from: Province, target: Province): number {
   const attackBodies = fightingUnits(from.units, attackers)
   const defenseBodies = fightingUnits(target.units.filter((unit) => unit.faction === target.controller))
   if (!defenseBodies.length) return Number.POSITIVE_INFINITY
-  const attack = attackerPower(attackBodies, from.supply, target.terrain, target.fort)
-  const defense = defenderPower(defenseBodies, target.supply, target.terrain, target.fort)
+  const attack = attackerPower(attackBodies, attackerSupplyFromProvince(from), target.terrain, target.fort)
+  const defense = defenderPower(
+    defenseBodies,
+    defenderSupplyInProvince(target),
+    target.terrain,
+    target.fort,
+  )
   return attack / Math.max(8, defense)
 }
 
@@ -486,11 +496,14 @@ function threatRatio(state: GameState, province: Province): number {
     const neighbor = findProvince(state, neighborId)
     if (!neighbor || neighbor.controller !== "central") continue
     const enemy = neighbor.units.filter((unit) => unit.faction === "central")
-    threat = Math.max(threat, attackerPower(enemy, neighbor.supply, province.terrain, province.fort))
+    threat = Math.max(
+      threat,
+      attackerPower(enemy, attackerSupplyFromProvince(neighbor), province.terrain, province.fort),
+    )
   }
   const defense = defenderPower(
     garrisonUnits(province),
-    province.supply,
+    defenderSupplyInProvince(province),
     province.terrain,
     province.fort,
   )
