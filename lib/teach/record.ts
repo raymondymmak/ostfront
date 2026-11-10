@@ -1,4 +1,5 @@
 import { head, put } from "@vercel/blob"
+import { MAX_PREDICTION_LENGTH } from "@/lib/teach/prediction"
 import type { ReasoningCoachResult } from "@/lib/teach/reasoning-coach"
 import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
@@ -14,11 +15,16 @@ export type TeachAttemptRecord = {
   lessonId: string
   variant: TeachVariant
   reasoning: string
+  prediction: string
   selectedProvinceIds: string[]
   orders: PlayerOrder[]
   planSummary: string
   feedbackKind: string
   combatRoll: number
+  beliefKey: string
+  beliefSummary: string
+  beliefId: string | null
+  beliefPersistence: RecordPersistenceStatus
   coach: Pick<ReasoningCoachResult, "reply" | "stance" | "source" | "fallbackReason">
   persistence: RecordPersistenceStatus
 }
@@ -61,6 +67,7 @@ export async function persistTeachRecord(input: {
   meta: LessonMeta
   variant: TeachVariant
   reasoning: string
+  prediction: string
   selectedProvinceIds: string[]
   orders: PlayerOrder[]
   plan: PlanAnalysis
@@ -68,8 +75,13 @@ export async function persistTeachRecord(input: {
   coach: ReasoningCoachResult
   combatRoll: number
   record: TurnRecord
+  beliefKey: string
+  beliefSummary: string
+  beliefId: string | null
+  beliefPersistence: RecordPersistenceStatus
+  attemptId?: string
 }): Promise<TeachRecordResult> {
-  const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16)
+  const id = input.attemptId ?? crypto.randomUUID().replace(/-/g, "").slice(0, 16)
   const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
 
   if (!token) {
@@ -83,11 +95,16 @@ export async function persistTeachRecord(input: {
     lessonId: input.meta.lessonId,
     variant: input.variant,
     reasoning: input.reasoning.slice(0, 2000),
+    prediction: input.prediction.slice(0, MAX_PREDICTION_LENGTH),
     selectedProvinceIds: input.selectedProvinceIds.slice(0, 20),
     orders: input.orders,
     planSummary: input.plan.engineLines.join(" "),
     feedbackKind: input.feedback.kind,
     combatRoll: input.combatRoll,
+    beliefKey: input.beliefKey,
+    beliefSummary: input.beliefSummary.slice(0, 500),
+    beliefId: input.beliefId,
+    beliefPersistence: input.beliefPersistence,
     coach: {
       reply: input.coach.reply,
       stance: input.coach.stance,

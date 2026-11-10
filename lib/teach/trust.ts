@@ -10,6 +10,9 @@
  * - Teach attempts may be written to private blob storage when configured; the
  *   API returns persistence=confirmed only after put+head verify. There is no
  *   public read/list endpoint for attempts.
+ * - Learner beliefs are extracted on the server from reasoning/prediction text;
+ *   clients may pass priorAttemptId for recall only — belief ids and contents
+ *   cannot be injected on POST bodies.
  * - Numeric feedback strings are taken from engine previews and resolver summaries.
  *
  * Residual risk: a client could lie in reasoning text or mis-render the map before

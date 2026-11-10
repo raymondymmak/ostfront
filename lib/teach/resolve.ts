@@ -1,9 +1,26 @@
 import { buildStaffTurn } from "@/lib/gm/cascade"
 import { interpretOrders } from "@/lib/gm/interpret"
 import { resolveTurn } from "@/lib/engine/turn"
+import {
+  extractLearnerBelief,
+  loadBeliefForAttempt,
+  persistLearnerBelief,
+  beliefRecallQuestion,
+} from "@/lib/teach/belief"
 import { buildLessonDispatch } from "@/lib/teach/dispatch"
-import { attachCoachToFeedback, buildTeachFeedback } from "@/lib/teach/feedback"
+import {
+  attachCoachToFeedback,
+  attachPredictionToFeedback,
+  buildTeachFeedback,
+  type TeachFeedback,
+} from "@/lib/teach/feedback"
 import { persistTeachRecord, persistenceStatusMessage } from "@/lib/teach/record"
+import type { RecordPersistenceStatus } from "@/lib/teach/record"
+import {
+  comparePredictionConverging,
+  comparePredictionSupply,
+  validatePrediction,
+} from "@/lib/teach/prediction"
 import { coachReasoning } from "@/lib/teach/reasoning-coach"
 import {
   authoritativeLessonState,
@@ -14,8 +31,9 @@ import {
 } from "@/lib/teach/lessons"
 import { analyzeOrders } from "@/lib/teach/plan"
 import { lessonMeta } from "@/lib/teach/lessons"
+import { analyzeSupplyLesson } from "@/lib/teach/supply-plan"
+import { buildSupplyTeachFeedback, mergeSupplyFeedbackShell } from "@/lib/teach/supply-feedback"
 import type { PlayerOrder, TurnRecord } from "@/lib/types"
-import type { TeachFeedback } from "@/lib/teach/feedback"
 
 export type TeachResolveResult = {
   state: ReturnType<typeof authoritativeLessonState>
@@ -23,6 +41,8 @@ export type TeachResolveResult = {
   plan: ReturnType<typeof analyzeOrders>
   feedback: TeachFeedback
   combatRoll: number
+  beliefId: string | null
+  beliefPersistence: RecordPersistenceStatus
 }
 
 function fixedRollRng(roll: number): () => number {
@@ -34,13 +54,29 @@ function fixedRollRng(roll: number): () => number {
   }
 }
 
+export class TeachResolveValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "TeachResolveValidationError"
+  }
+}
+
 export async function teachResolveTurn(
   lessonId: TeachLessonId,
   variant: TeachVariant,
   orders: PlayerOrder[],
   reasoning: string,
+  prediction: string,
   selectedProvinceIds: string[],
+  priorAttemptId?: string,
 ): Promise<TeachResolveResult> {
+  const predictionCheck = validatePrediction(prediction)
+  if (!predictionCheck.ok) {
+    throw new TeachResolveValidationError(predictionCheck.error)
+  }
+
+  const priorBelief = priorAttemptId ? await loadBeliefForAttempt(priorAttemptId) : null
+
   const state = authoritativeLessonState(lessonId, variant)
   const interpreted = interpretOrders(state, orders)
   const emptyStaff = { narration: "", proposals: [], events: [], diplomacy: [] as string[] }
@@ -53,7 +89,54 @@ export async function teachResolveTurn(
   })
   const plan = analyzeOrders(state, orders)
   const meta = lessonMeta(lessonId, variant)
-  const mechanical = buildTeachFeedback(meta, variant, plan, record)
+
+  let mechanical: TeachFeedback
+  if (meta.lessonType === "supply") {
+    const supplyPlan = analyzeSupplyLesson(state, meta, orders)
+    const shell = buildSupplyTeachFeedback(meta, variant, supplyPlan, record)
+    const stubForPredict: TeachFeedback = {
+      kind: shell.kind,
+      headline: shell.headline,
+      paragraphs: shell.paragraphs,
+      evidence: shell.evidence,
+      pointers: shell.pointers,
+      coachReply: "",
+      coachStance: "absent",
+      coachSource: "rules",
+      followUp: null,
+      attemptId: null,
+      recordPersistence: "unavailable",
+      recordPersistenceMessage: null,
+      predictionParagraphs: [],
+      beliefSummary: null,
+      beliefPersistence: null,
+    }
+    const predictionCmp = comparePredictionSupply(predictionCheck.prediction, supplyPlan, stubForPredict)
+    mechanical = mergeSupplyFeedbackShell(shell, {
+      coachReply: "",
+      coachStance: "absent",
+      coachSource: "rules",
+      followUp: null,
+      attemptId: null,
+      recordPersistence: "unavailable",
+      recordPersistenceMessage: null,
+      predictionParagraphs: predictionCmp.paragraphs,
+      beliefSummary: priorBelief?.belief.summary ?? null,
+      beliefPersistence: priorBelief?.persistence ?? null,
+    }) as TeachFeedback
+  } else {
+    mechanical = buildTeachFeedback(meta, variant, plan, record)
+    const predictionCmp = comparePredictionConverging(predictionCheck.prediction, plan, meta, mechanical)
+    mechanical = attachPredictionToFeedback(mechanical, predictionCmp.paragraphs)
+    if (priorBelief) {
+      mechanical = {
+        ...mechanical,
+        beliefSummary: priorBelief.belief.summary,
+        beliefPersistence: priorBelief.persistence,
+      }
+    }
+  }
+
   const dispatch = buildLessonDispatch(state, meta, plan, orders, combatRoll)
   const coach = await coachReasoning({
     phase: "post_resolve",
@@ -62,12 +145,25 @@ export async function teachResolveTurn(
     dispatch,
     plan,
     reasoning,
+    prediction: predictionCheck.prediction,
     mechanical,
+    priorBelief: priorBelief?.belief ?? null,
   })
+
+  const extracted = extractLearnerBelief(lessonId, reasoning, predictionCheck.prediction)
+  const attemptId = crypto.randomUUID().replace(/-/g, "").slice(0, 16)
+  const beliefStored = await persistLearnerBelief({
+    attemptId,
+    lessonId,
+    variant,
+    belief: extracted,
+  })
+
   const stored = await persistTeachRecord({
     meta,
     variant,
     reasoning,
+    prediction: predictionCheck.prediction,
     selectedProvinceIds,
     orders,
     plan,
@@ -75,16 +171,37 @@ export async function teachResolveTurn(
     coach,
     combatRoll,
     record,
+    beliefKey: extracted.key,
+    beliefSummary: extracted.summary,
+    beliefId: beliefStored.beliefId,
+    beliefPersistence: beliefStored.persistence,
+    attemptId,
   })
+
   const persistenceMessage = persistenceStatusMessage(stored)
-  const feedback = attachCoachToFeedback(
-    mechanical,
-    coach,
-    stored,
-    variant,
-    persistenceMessage,
-  )
-  return { state: next, record, plan, feedback, combatRoll }
+  let feedback = attachCoachToFeedback(mechanical, coach, stored, variant, persistenceMessage)
+  feedback = {
+    ...feedback,
+    beliefSummary: extracted.summary,
+    beliefPersistence: beliefStored.persistence,
+  }
+
+  if (priorBelief && variant === "silent" && meta.lessonType === "convergence") {
+    feedback = {
+      ...feedback,
+      followUp: beliefRecallQuestion(priorBelief.belief),
+    }
+  }
+
+  return {
+    state: next,
+    record,
+    plan,
+    feedback,
+    combatRoll,
+    beliefId: beliefStored.beliefId,
+    beliefPersistence: beliefStored.persistence,
+  }
 }
 
 /** Pre-resolve coach (guided only); shared with /api/teach/coach */
@@ -93,6 +210,8 @@ export async function teachCoachBeforeResolve(
   variant: TeachVariant,
   orders: PlayerOrder[],
   reasoning: string,
+  prediction: string,
+  priorAttemptId?: string,
 ) {
   if (variant === "silent") {
     return { blocked: true as const, reason: "Coach is silent before resolve in this variation." }
@@ -101,6 +220,7 @@ export async function teachCoachBeforeResolve(
   const plan = analyzeOrders(state, orders)
   const meta = lessonMeta(lessonId, variant)
   const dispatch = buildLessonDispatch(state, meta, plan, orders, TEACH_GUIDED_COMBAT_ROLL)
+  const priorBelief = priorAttemptId ? await loadBeliefForAttempt(priorAttemptId) : null
   const coach = await coachReasoning({
     phase: "pre_resolve",
     variant,
@@ -108,7 +228,26 @@ export async function teachCoachBeforeResolve(
     dispatch,
     plan,
     reasoning,
+    prediction,
     mechanical: null,
+    priorBelief: priorBelief?.belief ?? null,
   })
   return { blocked: false as const, coach, highlights: coach.highlights }
+}
+
+export function verifiedSupplyCombatConstants() {
+  return {
+    attackerSupplyFactor: "max(0.15, supply / 100)",
+    defenderSupplyFactor: "max(0.3, supply / 100)",
+    minMarchSupply: 30,
+    supplyFormula: "100 - pathCost * 11 (+ modifier, clamped 0–100)",
+    railEdgeCost: 1,
+    supplyFalloffPerCost: 11,
+    supplyLessonPreviews: {
+      heavyFrom: "katowice",
+      fedFrom: "krakow",
+      target: "kielce",
+      heavySupplyModifier: -45,
+    },
+  } as const
 }

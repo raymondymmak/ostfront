@@ -5,6 +5,7 @@ import {
   TEACH_GUIDED_COMBAT_ROLL,
   TEACH_SILENT_COMBAT_ROLL,
 } from "@/lib/teach/lessons"
+import { beliefRecallQuestion, loadBeliefForAttempt } from "@/lib/teach/belief"
 import { teachingTrustAssessment } from "@/lib/teach/trust"
 import { TeachSessionQuerySchema } from "@/lib/schema"
 
@@ -15,16 +16,18 @@ export async function GET(request: Request) {
   const parsed = TeachSessionQuerySchema.safeParse({
     lessonId: url.searchParams.get("lessonId") ?? "converging-lublin",
     variant: url.searchParams.get("variant") ?? "guided",
+    priorAttemptId: url.searchParams.get("priorAttemptId") ?? undefined,
   })
   if (!parsed.success) {
     return Response.json({ error: "Invalid teaching session query." }, { status: 400 })
   }
 
-  const { lessonId, variant } = parsed.data
+  const { lessonId, variant, priorAttemptId } = parsed.data
   const state = authoritativeLessonState(lessonId, variant)
   const meta = lessonMeta(lessonId, variant)
   const prompt = coachPrompt(meta)
   const hints = coachHints(meta, state, variant)
+  const priorBelief = priorAttemptId ? await loadBeliefForAttempt(priorAttemptId) : null
 
   return Response.json({
     meta,
@@ -42,5 +45,14 @@ export async function GET(request: Request) {
       { provinceId: meta.targetProvinceId, uiId: "tab-province" },
       ...meta.prongProvinceIds.map((provinceId) => ({ provinceId })),
     ],
+    beliefRecall: priorBelief
+      ? {
+          summary: priorBelief.belief.summary,
+          key: priorBelief.belief.key,
+          question: beliefRecallQuestion(priorBelief.belief),
+          persistence: priorBelief.persistence,
+          priorAttemptId,
+        }
+      : null,
   })
 }

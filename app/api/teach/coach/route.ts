@@ -32,8 +32,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid coach request." }, { status: 400 })
   }
 
-  const { lessonId, variant, orders, reasoning } = parsed.data
-  const outcome = await teachCoachBeforeResolve(lessonId, variant, orders, reasoning)
+  const { lessonId, variant, orders, reasoning, prediction, priorAttemptId } = parsed.data
+  const outcome = await teachCoachBeforeResolve(
+    lessonId,
+    variant,
+    orders,
+    reasoning,
+    prediction,
+    priorAttemptId,
+  )
 
   if (outcome.blocked) {
     return Response.json({ error: outcome.reason }, { status: 403 })

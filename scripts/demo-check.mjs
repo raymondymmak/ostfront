@@ -784,6 +784,9 @@ function buildSteps(cli, targets) {
         await page.locator("[data-testid=teach-reasoning]").fill(
           "Combine both prongs into one converging assault.",
         )
+        await page.locator("[data-testid=teach-prediction]").fill(
+          "Merged battle on Lublin; converging odds favour us before the teaching die.",
+        )
         await page.locator("[data-testid=teach-resolve]").click()
         await page.locator("[data-testid=teach-feedback]").waitFor({ state: "visible", timeout: 30_000 })
         const kind = await page.locator("[data-testid=teach-feedback] p").first().getAttribute("data-feedback-kind")
@@ -802,6 +805,10 @@ function buildSteps(cli, targets) {
           .locator("[data-testid=teach-panel][data-teach-variant=silent]")
           .waitFor({ state: "visible", timeout: 60_000 })
         await page.locator("[data-testid=teach-silent-banner]").waitFor({ state: "visible", timeout: 10_000 })
+        const beliefRecall = page.locator("[data-testid=teach-belief-recall]")
+        if (await beliefRecall.count()) {
+          await beliefRecall.waitFor({ state: "visible", timeout: 5000 })
+        }
         if (await page.locator("[data-testid=teach-request-hint]").count()) {
           throw new Error("Hint control visible in silent mode")
         }
@@ -825,11 +832,49 @@ function buildSteps(cli, targets) {
           .first()
           .click()
         await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Kraków and Kielce together.")
+        await page.locator("[data-testid=teach-prediction]").fill(
+          "Still one merged battle; odds may hurt us on roll 4 but convergence is sound.",
+        )
         await page.locator("[data-testid=teach-resolve]").click()
         const feedback = page.locator("[data-testid=teach-feedback]")
         await feedback.waitFor({ state: "visible", timeout: 30_000 })
         await page.locator("[data-testid=teach-attempt-id]").waitFor({ state: "visible" })
         await page.locator("[data-testid=teach-coach-post]").waitFor({ state: "visible" })
+        const beliefLine = page.locator("[data-testid=teach-belief-stored]")
+        if (await beliefLine.count()) {
+          await beliefLine.waitFor({ state: "visible" })
+        }
+      },
+    },
+    {
+      id: "28-teach-supply",
+      name: "Supply lesson with map overlay and prediction",
+      async run({ page }) {
+        const base = targets.appUrl.replace(/\/$/, "")
+        await gotoChecked(page, `${base}/teach`)
+        await page.locator("[data-testid=teach-begin-supply]").click()
+        await page.locator("[data-testid=teach-app]").waitFor({ state: "visible", timeout: 60_000 })
+        await page.waitForTimeout(MAP_SETTLE_MS)
+        await selectKrakowOnMap(page)
+        await page.getByRole("button").filter({ hasText: /Kielce/ }).first().click()
+        await page.locator("[data-testid=tab-orders]").click()
+        await page.locator("[data-testid=queued-orders]").getByText(/Kielce/i).waitFor({ state: "visible", timeout: 15_000 })
+        await page.locator("[data-testid=map-mode-supply]").click()
+        await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 10_000 })
+        await page.locator("[data-testid=teach-reasoning]").fill(
+          "Fed corps from Kraków hits harder than the starved heavy stack at Katowice because supply scales attack power.",
+        )
+        await page.locator("[data-testid=teach-prediction]").fill(
+          "Lean column takes Kielce; engine preview favours well-supplied attack over raw headcount.",
+        )
+        await page.locator("[data-testid=teach-resolve]").click()
+        const feedback = page.locator("[data-testid=teach-feedback]")
+        await feedback.waitFor({ state: "visible", timeout: 30_000 })
+        const kind = await feedback.locator("p").first().getAttribute("data-feedback-kind")
+        if (kind !== "supply_chose_starved_stack" && kind !== "supply_sound_fed_column") {
+          throw new Error(`Unexpected supply feedback kind: ${kind ?? "missing"}`)
+        }
+        await page.locator("[data-testid=teach-evidence]").getByText(/ratio/i).first().waitFor({ state: "visible" })
       },
     },
   ]
