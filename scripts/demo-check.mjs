@@ -845,7 +845,7 @@ function buildSteps(cli, targets) {
     {
       id: "28-teach-supply",
       name: "Supply lesson with map overlay and prediction",
-      async run({ page, targets }) {
+      async run({ page }) {
         const base = targets.appUrl.replace(/\/$/, "")
         await gotoChecked(page, `${base}/teach`)
         await page.locator("[data-testid=teach-begin-supply]").click()
