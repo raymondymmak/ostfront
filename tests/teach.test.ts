@@ -37,9 +37,14 @@ describe("teaching — converging lublin", () => {
       { type: "attack", from: "krakow", target: "lublin", unitIds: ["teach-11"] },
       { type: "attack", from: "kielce", target: "lublin", unitIds: ["teach-kie"] },
     ]
-    const result = await teachResolveTurn("converging-lublin", "guided", orders, "Combine directions.", [
-      "lublin",
-    ])
+    const result = await teachResolveTurn(
+      "converging-lublin",
+      "guided",
+      orders,
+      "Combine directions.",
+      "Both prongs merge; converging odds favour us before the die.",
+      ["lublin"],
+    )
     expect(result.plan.convergingOnTarget).toBe("lublin")
     expect(result.combatRoll).toBe(1)
     expect(result.record.resolutions.some((r) => /Two-pronged|Concentric/.test(r.summary))).toBe(
@@ -56,7 +61,14 @@ describe("teaching — converging lublin", () => {
     ]
     const plan = analyzeOrders(authoritativeLessonState("converging-lublin", "guided"), orders)
     expect(plan.singleProngOnTarget).toBe(true)
-    const result = await teachResolveTurn("converging-lublin", "guided", orders, "One blow.", [])
+    const result = await teachResolveTurn(
+      "converging-lublin",
+      "guided",
+      orders,
+      "One blow.",
+      "A single prong takes Lublin this fortnight.",
+      [],
+    )
     expect(result.feedback.kind).toBe("reasonable_single_prong")
   })
 

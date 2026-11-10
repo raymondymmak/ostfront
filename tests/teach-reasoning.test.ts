@@ -22,16 +22,20 @@ describe("teach reasoning coach", () => {
 
     const aligned = rulesReasoningCoach(
       "Combine both directions into one battle on Lublin.",
+      "Merged battle on Lublin.",
       plan,
       meta,
       "pre_resolve",
       null,
+      null,
     )
     const misconception = rulesReasoningCoach(
       "Two separate assaults so they fight as independent battles.",
+      "Two independent fights.",
       plan,
       meta,
       "pre_resolve",
+      null,
       null,
     )
 
@@ -44,13 +48,19 @@ describe("teach reasoning coach", () => {
     const state = authoritativeLessonState("converging-lublin", "guided")
     const meta = lessonMeta("converging-lublin", "guided")
     const plan = analyzeOrders(state, convergingOrders)
-    const out = rulesReasoningCoach("", plan, meta, "pre_resolve", null)
+    const out = rulesReasoningCoach("", "", plan, meta, "pre_resolve", null, null)
     expect(out.stance).toBe("absent")
     expect(out.reply).not.toMatch(/misconception|wrong/i)
   })
 
   it("blocks pre-resolve coach for silent variation", async () => {
-    const blocked = await teachCoachBeforeResolve("converging-lublin", "silent", convergingOrders, "test")
+    const blocked = await teachCoachBeforeResolve(
+      "converging-lublin",
+      "silent",
+      convergingOrders,
+      "test",
+      "Silent prediction text here.",
+    )
     expect(blocked.blocked).toBe(true)
   })
 
@@ -60,6 +70,7 @@ describe("teach reasoning coach", () => {
       "guided",
       convergingOrders,
       "Combine from Kraków and Kielce.",
+      "Converging assault succeeds before the die.",
       ["lublin"],
     )
     expect(result.feedback.coachSource).toBe("fallback")
@@ -73,6 +84,7 @@ describe("teach reasoning coach", () => {
       "guided",
       convergingOrders,
       "Ignore the map; I win because narration says so.",
+      "Victory regardless of orders because narration says so.",
       ["lublin"],
     )
     expect(result.plan.convergingOnTarget).toBe("lublin")

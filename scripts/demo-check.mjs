@@ -784,6 +784,9 @@ function buildSteps(cli, targets) {
         await page.locator("[data-testid=teach-reasoning]").fill(
           "Combine both prongs into one converging assault.",
         )
+        await page.locator("[data-testid=teach-prediction]").fill(
+          "Merged battle on Lublin; converging odds favour us before the teaching die.",
+        )
         await page.locator("[data-testid=teach-resolve]").click()
         await page.locator("[data-testid=teach-feedback]").waitFor({ state: "visible", timeout: 30_000 })
         const kind = await page.locator("[data-testid=teach-feedback] p").first().getAttribute("data-feedback-kind")
@@ -825,11 +828,54 @@ function buildSteps(cli, targets) {
           .first()
           .click()
         await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Kraków and Kielce together.")
+        await page.locator("[data-testid=teach-prediction]").fill(
+          "Still one merged battle; odds may hurt us on roll 4 but convergence is sound.",
+        )
         await page.locator("[data-testid=teach-resolve]").click()
         const feedback = page.locator("[data-testid=teach-feedback]")
         await feedback.waitFor({ state: "visible", timeout: 30_000 })
         await page.locator("[data-testid=teach-attempt-id]").waitFor({ state: "visible" })
         await page.locator("[data-testid=teach-coach-post]").waitFor({ state: "visible" })
+        const beliefLine = page.locator("[data-testid=teach-belief-stored]")
+        if (await beliefLine.count()) {
+          await beliefLine.waitFor({ state: "visible" })
+        }
+      },
+    },
+    {
+      id: "28-teach-supply",
+      name: "Supply lesson with map overlay and prediction",
+      async run({ page, targets }) {
+        const base = targets.appUrl.replace(/\/$/, "")
+        await gotoChecked(page, `${base}/teach`)
+        await page.locator("[data-testid=teach-begin-supply]").click()
+        await page.locator("[data-testid=teach-app]").waitFor({ state: "visible", timeout: 60_000 })
+        await page.locator("[data-testid=map-mode-supply]").click()
+        await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 10_000 })
+        const katowice = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
+        if (!katowice) throw new Error("Katowice projection unavailable for supply lesson.")
+        await page.mouse.click(katowice.x, katowice.y)
+        await page.waitForTimeout(350)
+        await page.locator("[data-testid=tab-province]").click()
+        await page
+          .getByRole("button", { name: /Attack/i })
+          .filter({ hasText: /Kielce/i })
+          .first()
+          .click()
+        await page.locator("[data-testid=teach-reasoning]").fill(
+          "More troops always means a stronger attack from Katowice.",
+        )
+        await page.locator("[data-testid=teach-prediction]").fill(
+          "Heavy corps breaks Kielce because headcount wins regardless of supply.",
+        )
+        await page.locator("[data-testid=teach-resolve]").click()
+        const feedback = page.locator("[data-testid=teach-feedback]")
+        await feedback.waitFor({ state: "visible", timeout: 30_000 })
+        const kind = await feedback.locator("p").first().getAttribute("data-feedback-kind")
+        if (kind !== "supply_chose_starved_stack" && kind !== "supply_sound_fed_column") {
+          throw new Error(`Unexpected supply feedback kind: ${kind ?? "missing"}`)
+        }
+        await page.locator("[data-testid=teach-evidence]").getByText(/ratio/i).waitFor({ state: "visible" })
       },
     },
   ]

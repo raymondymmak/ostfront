@@ -21,6 +21,9 @@ export function coachHints(
   variant: TeachVariant,
 ): CoachHint[] {
   if (variant === "silent") return []
+  if (meta.lessonType === "supply") {
+    return coachSupplyHints(meta, state)
+  }
 
   const target = meta.targetProvinceId
   const previews = meta.prongProvinceIds.map((fromId) =>
@@ -62,6 +65,48 @@ export function coachHints(
   }
 
   return hints
+}
+
+function coachSupplyHints(meta: LessonMeta, state: GameState): CoachHint[] {
+  const [heavyId, fedId] = meta.prongProvinceIds
+  const target = meta.targetProvinceId
+  const heavyUnits = teachUnitsFrom(state, heavyId)
+  const fedUnits = teachUnitsFrom(state, fedId)
+  const heavyPreview = combinedEngagementOdds(state, target, [{ fromId: heavyId, unitIds: heavyUnits }])
+  const fedPreview = combinedEngagementOdds(state, target, [{ fromId: fedId, unitIds: fedUnits }])
+  const heavyProvince = state.provinces.find((p) => p.id === heavyId)!
+  const fedProvince = state.provinces.find((p) => p.id === fedId)!
+  const targetName = CATALOG_BY_ID[target]?.name ?? target
+
+  return [
+    {
+      level: 1,
+      text: `Turn on Supply on the map. Compare ${heavyProvince.name} (${heavyProvince.supply}) with ${fedProvince.name} (${fedProvince.supply}). Formations need supply ≥ 30 to march.`,
+      highlights: [
+        { provinceId: heavyId, uiId: "map-mode-supply", label: heavyProvince.name },
+        { provinceId: fedId, uiId: "map-mode-supply", label: fedProvince.name },
+      ],
+    },
+    {
+      level: 2,
+      text: `Queue one attack on ${targetName}. Read the engine preview attack/defence values in Orders — never trust headcount alone.`,
+      highlights: [
+        { provinceId: target, uiId: "tab-province", label: targetName },
+        { uiId: "tab-orders", label: "Orders" },
+      ],
+    },
+    {
+      level: 3,
+      text:
+        heavyPreview && fedPreview
+          ? `Engine preview before the die: ${heavyProvince.name} attack ${heavyPreview.attack.toFixed(1)} (ratio ${heavyPreview.ratio.toFixed(2)}) vs ${fedProvince.name} attack ${fedPreview.attack.toFixed(1)} (ratio ${fedPreview.ratio.toFixed(2)}). Attacker supply factor is max(0.15, supply÷100).`
+          : `Check attack odds in Orders after queuing from either launch province.`,
+      highlights: [
+        { uiId: "attack-odds", label: "Attack odds" },
+        { uiId: "map-mode-supply", label: "Supply overlay" },
+      ],
+    },
+  ]
 }
 
 function teachUnitsFrom(state: GameState, provinceId: string): string[] {

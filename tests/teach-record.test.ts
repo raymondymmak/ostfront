@@ -41,6 +41,7 @@ const baseInput = () => {
     meta,
     variant: "guided" as const,
     reasoning: "Combine prongs.",
+    prediction: "Merged converging battle on Lublin before the die.",
     selectedProvinceIds: ["lublin"],
     orders,
     plan,
@@ -53,6 +54,10 @@ const baseInput = () => {
       source: "rules" as const,
     },
     combatRoll: 1,
+    beliefKey: "unclassified",
+    beliefSummary: "Combine prongs.",
+    beliefId: null,
+    beliefPersistence: "unavailable" as const,
     record: {
       turn: 0,
       date: "2 May 1915",

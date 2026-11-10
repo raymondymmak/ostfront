@@ -2,6 +2,7 @@ import { z } from "zod"
 import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
 import type { LessonDispatch } from "@/lib/teach/dispatch"
 import type { TeachFeedback } from "@/lib/teach/feedback"
+import type { LearnerBeliefRecord } from "@/lib/teach/belief"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
 import type { PlanAnalysis } from "@/lib/teach/plan"
 import { dispatchForLlm } from "@/lib/teach/dispatch"
@@ -58,7 +59,9 @@ export async function coachReasoning(input: {
   dispatch: LessonDispatch
   plan: PlanAnalysis
   reasoning: string
+  prediction: string
   mechanical: TeachFeedback | null
+  priorBelief?: LearnerBeliefRecord | null
 }): Promise<ReasoningCoachResult> {
   if (input.variant === "silent" && input.phase === "pre_resolve") {
     return silentBlocked()
@@ -76,14 +79,29 @@ export async function coachReasoning(input: {
     }
   }
 
-  const rules = rulesReasoningCoach(trimmed, input.plan, input.meta, input.phase, input.mechanical)
+  const rules = rulesReasoningCoach(
+    trimmed,
+    input.prediction,
+    input.plan,
+    input.meta,
+    input.phase,
+    input.mechanical,
+    input.priorBelief ?? null,
+  )
 
   if (!llmConfigured()) {
     return { ...rules, source: "fallback", fallbackReason: "LLM_API_KEY is not set" }
   }
 
   const models = resolveLlmModels()
-  const user = buildCoachUserMessage(input.dispatch, trimmed, input.phase, input.mechanical)
+  const user = buildCoachUserMessage(
+    input.dispatch,
+    trimmed,
+    input.prediction,
+    input.phase,
+    input.mechanical,
+    input.priorBelief ?? null,
+  )
   const llm = await llmChat({
     model: models.cheap,
     system: COACH_SYSTEM,
@@ -137,14 +155,20 @@ function silentBlocked(): ReasoningCoachResult {
 function buildCoachUserMessage(
   dispatch: LessonDispatch,
   reasoning: string,
+  prediction: string,
   phase: "pre_resolve" | "post_resolve",
   mechanical: TeachFeedback | null,
+  priorBelief: LearnerBeliefRecord | null,
 ): string {
   const parts = [
     `PHASE: ${phase}`,
     `DISPATCH:\n${dispatchForLlm(dispatch)}`,
     `PLAYER_REASONING: ${reasoning || "(empty)"}`,
+    `PLAYER_PREDICTION: ${prediction.trim() || "(empty)"}`,
   ]
+  if (priorBelief) {
+    parts.push(`PRIOR_BELIEF: ${priorBelief.key} — ${priorBelief.summary}`)
+  }
   if (mechanical) {
     parts.push(
       `OUTCOME_KIND: ${mechanical.kind}`,
@@ -157,13 +181,19 @@ function buildCoachUserMessage(
 /** Deterministic baseline; contrasting reasoning text yields different replies even without LLM. */
 export function rulesReasoningCoach(
   reasoning: string,
+  prediction: string,
   plan: PlanAnalysis,
   meta: LessonMeta,
   phase: "pre_resolve" | "post_resolve",
   mechanical: TeachFeedback | null,
+  priorBelief: LearnerBeliefRecord | null,
 ): ReasoningCoachResult {
+  if (meta.lessonType === "supply") {
+    return rulesSupplyCoach(reasoning, prediction, meta, phase, mechanical, priorBelief)
+  }
+
   const converging = plan.convergingOnTarget === meta.targetProvinceId
-  const text = reasoning.toLowerCase()
+  const text = `${reasoning}\n${prediction}`.toLowerCase()
   const highlights: CoachHighlight[] = [
     { provinceId: meta.targetProvinceId, uiId: "tab-orders" },
   ]
@@ -239,11 +269,81 @@ export function rulesReasoningCoach(
     }
   }
 
+  if (priorBelief && phase === "post_resolve" && meta.variant === "silent") {
+    return {
+      reply: `You wrote earlier that ${priorBelief.summary} Does the resolver evidence still support that?`,
+      stance: "unclear",
+      followUp: null,
+      highlights,
+      source: "rules",
+    }
+  }
+
   return {
     reply:
       phase === "post_resolve" && mechanical
         ? `${mechanical.headline}. I read your reasoning against the queued plan; see the engine evidence below.`
         : "I compared your reasoning to the queued plan. Verify on the map that both prongs share the objective this fortnight.",
+    stance: "unclear",
+    followUp: null,
+    highlights,
+    source: "rules",
+  }
+}
+
+function rulesSupplyCoach(
+  reasoning: string,
+  prediction: string,
+  meta: LessonMeta,
+  phase: "pre_resolve" | "post_resolve",
+  mechanical: TeachFeedback | null,
+  priorBelief: LearnerBeliefRecord | null,
+): ReasoningCoachResult {
+  const text = `${reasoning}\n${prediction}`.toLowerCase()
+  const highlights: CoachHighlight[] = [
+    { provinceId: meta.targetProvinceId, uiId: "tab-province" },
+    { provinceId: meta.prongProvinceIds[0], uiId: "map-mode-supply" },
+    { provinceId: meta.prongProvinceIds[1], uiId: "map-mode-supply" },
+    { uiId: "tab-orders" },
+  ]
+
+  const thinksHeadcount = /\b(more troops|bigger|headcount|sheer numbers|larger stack)\b/.test(text)
+  const thinksSupply = /\b(supply|starved|well.?fed|rail|depot)\b/.test(text)
+
+  if (thinksHeadcount && !thinksSupply) {
+    return {
+      reply:
+        "You lean on headcount. Compare the engine preview attack values from Katowice versus Kraków in Orders — supply scales attack power, it is not raw strength.",
+      stance: "misconception",
+      followUp: phase === "pre_resolve" ? "Which province shows higher supply on the map overlay?" : null,
+      highlights,
+      source: "rules",
+    }
+  }
+
+  if (thinksSupply && thinksHeadcount) {
+    return {
+      reply:
+        "You name both mass and supply. Check which preview line is higher before the die — that is the trade-off this lesson is testing.",
+      stance: "partial",
+      followUp: null,
+      highlights,
+      source: "rules",
+    }
+  }
+
+  if (phase === "post_resolve" && mechanical) {
+    return {
+      reply: `${mechanical.headline}. Use the engine evidence list — not coach prose — to judge your prediction.`,
+      stance: thinksSupply ? "aligned" : "unclear",
+      followUp: priorBelief ? `Earlier you believed: ${priorBelief.summary} Still true?` : null,
+      highlights,
+      source: "rules",
+    }
+  }
+
+  return {
+    reply: "Toggle Supply, queue one attack, and state a prediction before resolve.",
     stance: "unclear",
     followUp: null,
     highlights,

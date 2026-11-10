@@ -14,6 +14,9 @@ type TeachPanelProps = {
   pedagogyDisclosure: string
   reasoning: string
   onReasoning: (value: string) => void
+  prediction: string
+  onPrediction: (value: string) => void
+  beliefRecall: { summary: string; question: string } | null
   hints: CoachHint[]
   hintLevel: number
   onHint: () => void
@@ -27,6 +30,7 @@ type TeachPanelProps = {
   feedback: TeachFeedback | null
   onSilent: () => void
   silentAvailable: boolean
+  onSupplyLesson?: () => void
 }
 
 export function TeachPanel({
@@ -36,6 +40,9 @@ export function TeachPanel({
   variant,
   reasoning,
   onReasoning,
+  prediction,
+  onPrediction,
+  beliefRecall,
   hints,
   hintLevel,
   onHint,
@@ -50,6 +57,7 @@ export function TeachPanel({
   feedback,
   onSilent,
   silentAvailable,
+  onSupplyLesson,
 }: TeachPanelProps) {
   const nextHint = hints.find((item) => item.level === hintLevel + 1)
 
@@ -98,6 +106,11 @@ export function TeachPanel({
             the server reports whether your attempt was stored privately — only when that write is verified.
           </p>
         )}
+        {beliefRecall && (
+          <p className="mt-3 text-xs text-muted-foreground" data-testid="teach-belief-recall">
+            Earlier belief (server record): {beliefRecall.summary} {beliefRecall.question}
+          </p>
+        )}
         {variant === "guided" && (
           <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs" data-testid="teach-pedagogy-notice">
             {pedagogyDisclosure}
@@ -113,6 +126,18 @@ export function TeachPanel({
           value={reasoning}
           onChange={(event) => onReasoning(event.target.value)}
           placeholder="A sentence on why you chose this plan…"
+          disabled={Boolean(feedback) || busy}
+        />
+        <label className="mt-4 block text-xs font-medium text-muted-foreground" htmlFor="teach-prediction">
+          Your prediction (required before resolve)
+        </label>
+        <textarea
+          id="teach-prediction"
+          data-testid="teach-prediction"
+          className="mt-1 min-h-[4.5rem] w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          value={prediction}
+          onChange={(event) => onPrediction(event.target.value)}
+          placeholder="What will happen when you resolve, and why?"
           disabled={Boolean(feedback) || busy}
         />
         {variant === "guided" && !feedback && (
@@ -145,15 +170,28 @@ export function TeachPanel({
             type="button"
             className="w-full"
             data-testid="teach-resolve"
-            disabled={busy}
+            disabled={busy || prediction.trim().length < 12}
             onClick={onResolve}
           >
             {busy ? "Resolving…" : "Resolve this fortnight"}
           </Button>
         ) : silentAvailable && variant === "guided" ? (
-          <Button type="button" className="w-full" data-testid="teach-start-silent" onClick={onSilent}>
-            Continue to silent variation
-          </Button>
+          <div className="space-y-2">
+            <Button type="button" className="w-full" data-testid="teach-start-silent" onClick={onSilent}>
+              Continue to silent variation
+            </Button>
+            {onSupplyLesson && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                data-testid="teach-start-supply"
+                onClick={onSupplyLesson}
+              >
+                Supply vs headcount lesson
+              </Button>
+            )}
+          </div>
         ) : (
           <p className="text-center text-xs text-muted-foreground">Drill complete.</p>
         )}
@@ -170,6 +208,12 @@ function TeachFeedbackBlock({ feedback }: { feedback: TeachFeedback }) {
       </p>
       {feedback.coachReply && (
         <p data-testid="teach-coach-post">{feedback.coachReply}</p>
+      )}
+      {feedback.beliefSummary && (
+        <p className="text-xs text-muted-foreground" data-testid="teach-belief-stored">
+          Recorded belief: {feedback.beliefSummary}
+          {feedback.beliefPersistence ? ` (${persistenceShortLabel(feedback.beliefPersistence)})` : ""}
+        </p>
       )}
       {feedback.paragraphs.map((line) => (
         <p key={line.slice(0, 48)}>{line}</p>

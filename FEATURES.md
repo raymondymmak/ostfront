@@ -1,22 +1,27 @@
 # Ostfront features
 
-## Teaching drill (Sprint 1 / Phase 2A)
+## Teaching drill (Sprint 1–2 / Phase 2A–2B)
 
 Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach]`. Campaign at **`/`** is unchanged.
 
 | Step | Selector / API | Proof |
 | --- | --- | --- |
-| Open drill | `[data-testid=teach-begin]` on setup | `[data-testid=teach-app]` visible; `[data-testid=teach-mode-badge]` in HUD |
+| Open drill | `[data-testid=teach-begin]` or `[data-testid=teach-begin-supply]` | `[data-testid=teach-app]`; lessons `converging-lublin` \| `supply-tradeoff` |
 | Coach question | `[data-testid=teach-question]` | Guided variant only; silent shows `[data-testid=teach-silent-banner]` |
-| Hints | `[data-testid=teach-request-hint]` | Hint text in `[data-testid=teach-hints]`; map `[data-coach-highlights]` lists province ids |
-| Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; pooled line when two attacks share a target |
-| Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares it to server-derived plan facts (not used to fabricate odds) |
-| Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** — LLM when configured, else labelled rules/fallback (`data-coach-source` on `[data-testid=teach-coach-reply]`) |
-| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided drill uses fixed die roll 1 (teaching only, not campaign RNG) |
-| Resolve | `[data-testid=teach-resolve]` or Orders **Resolve this fortnight** | POST **`/api/teach/resolve`** (server lesson state + orders only). `[data-testid=teach-feedback]` with `data-feedback-kind`; coach post line `[data-testid=teach-coach-post]`; `[data-testid=teach-attempt-id]` with `data-record-persistence`=`confirmed` \| `failed` \| `unavailable` |
-| Silent follow-up | `[data-testid=teach-start-silent]` after guided feedback | `[data-teach-variant=silent]`; no hint or discuss before resolve; persistence message is truthful (confirmed only after private put+head verify) |
+| Hints | `[data-testid=teach-request-hint]` | Guided only; supply hints reference `[data-testid=map-mode-supply]` |
+| Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; engine preview attack/defence lines |
+| Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares to server plan |
+| Prediction (required) | `[data-testid=teach-prediction]` | Server rejects resolve if under 12 chars; stored on attempt; compared post-resolve in feedback |
+| Belief recall | `[data-testid=teach-belief-recall]` | Silent session with `priorAttemptId`; server-loaded belief — not client-writable |
+| Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** |
+| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided fixed die roll disclosed before resolve |
+| Resolve | `[data-testid=teach-resolve]` | POST **`/api/teach/resolve`** with `prediction` (strict schema). `[data-testid=teach-belief-stored]` shows belief persistence status |
+| Silent follow-up | `[data-testid=teach-start-silent]` | No hints; optional belief recall from prior guided attempt |
+| Supply lesson | `[data-testid=teach-start-supply]` or setup button | Trade-off Katowice (heavy, lower supply) vs Kraków (lean, depot-fed); preview ratios from engine |
 
-Session snapshot: GET **`/api/teach/session?lessonId=converging-lublin&variant=guided|silent`** (includes `pedagogy.disclosure`).
+Session: GET **`/api/teach/session?lessonId=…&variant=…&priorAttemptId=…`**.
+
+Verified supply/combat (engine): attacker `max(0.15, supply/100)`; defender floor `0.3`; march/attack blocked below supply `30`; supply trace `100 − pathCost×11`, rail edge cost `1`.
 
 Trust: teaching resolve does **not** accept client `GameState` for grading (scoped mitigation for #26). Full campaign **`/api/turn`** still trusts browser state.
 

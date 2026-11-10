@@ -14,7 +14,7 @@ import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { spendable } from "@/lib/engine/economy"
 import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { CoachHint } from "@/lib/teach/coach"
-import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
+import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lessons"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { GameState, PlayerOrder, TurnRecord, UnitKind } from "@/lib/types"
 
@@ -25,11 +25,15 @@ type SessionPayload = {
   state: GameState
   pedagogy: { disclosure: string }
   highlights: Array<{ provinceId?: string; uiId?: string }>
+  beliefRecall?: { summary: string; question: string } | null
 }
 
 export function TeachingApp() {
+  const [lessonId, setLessonId] = useState<TeachLessonId>("converging-lublin")
   const [variant, setVariant] = useState<TeachVariant>("guided")
   const [session, setSession] = useState<SessionPayload | null>(null)
+  const [priorAttemptId, setPriorAttemptId] = useState<string | null>(null)
+  const [beliefRecall, setBeliefRecall] = useState<{ summary: string; question: string } | null>(null)
   const [state, setState] = useState<GameState | null>(null)
   const [selectedId, setSelectedId] = useState("lublin")
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
@@ -38,6 +42,7 @@ export function TeachingApp() {
   const [hintLevel, setHintLevel] = useState(0)
   const [coachHighlightIds, setCoachHighlightIds] = useState<string[]>([])
   const [reasoning, setReasoning] = useState("")
+  const [prediction, setPrediction] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
@@ -52,13 +57,18 @@ export function TeachingApp() {
   const [coachStance, setCoachStance] = useState<string | null>(null)
   const [followUp, setFollowUp] = useState<string | null>(null)
 
-  const loadSession = useCallback(async (nextVariant: TeachVariant) => {
+  const loadSession = useCallback(async (
+    nextLessonId: TeachLessonId,
+    nextVariant: TeachVariant,
+    nextPriorAttemptId?: string | null,
+  ) => {
     setBusy(true)
     setError(null)
     setFeedback(null)
     setRecord(null)
     setQueue([])
     setReasoning("")
+    setPrediction("")
     setHintLevel(0)
     setFlash([])
     setCoachReply(null)
@@ -66,14 +76,18 @@ export function TeachingApp() {
     setCoachStance(null)
     setFollowUp(null)
     try {
+      const priorQuery = nextPriorAttemptId ? `&priorAttemptId=${nextPriorAttemptId}` : ""
       const response = await fetch(
-        `/api/teach/session?lessonId=converging-lublin&variant=${nextVariant}`,
+        `/api/teach/session?lessonId=${nextLessonId}&variant=${nextVariant}${priorQuery}`,
       )
       const payload = (await response.json()) as SessionPayload & { error?: string }
       if (!response.ok) throw new Error(payload.error ?? "Could not load teaching session.")
       setSession(payload)
       setState(payload.state)
+      setLessonId(nextLessonId)
       setVariant(nextVariant)
+      setPriorAttemptId(nextPriorAttemptId ?? null)
+      setBeliefRecall(payload.beliefRecall ?? null)
       setSelectedId(payload.meta.targetProvinceId)
       setCoachHighlightIds(
         payload.highlights.map((item) => item.provinceId).filter((id): id is string => Boolean(id)),
@@ -175,10 +189,12 @@ export function TeachingApp() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lessonId: "converging-lublin",
+          lessonId,
           variant,
           orders,
           reasoning,
+          prediction,
+          priorAttemptId: priorAttemptId ?? undefined,
         }),
       })
       const payload = (await response.json()) as {
@@ -211,7 +227,7 @@ export function TeachingApp() {
     const response = await fetch("/api/teach/hint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lessonId: "converging-lublin", variant, level: next }),
+      body: JSON.stringify({ lessonId, variant, level: next }),
     })
     if (!response.ok) return
     const payload = (await response.json()) as { hint?: CoachHint }
@@ -237,11 +253,13 @@ export function TeachingApp() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lessonId: "converging-lublin",
+          lessonId,
           variant,
           orders,
           reasoning,
+          prediction,
           selectedProvinceIds,
+          priorAttemptId: priorAttemptId ?? undefined,
         }),
       })
       const payload = (await response.json()) as {
@@ -260,6 +278,9 @@ export function TeachingApp() {
       setCoachHighlightIds(
         payload.feedback.pointers.map((p) => p.provinceId).filter((id): id is string => Boolean(id)),
       )
+      if (payload.feedback.attemptId && variant === "guided" && lessonId === "converging-lublin") {
+        setPriorAttemptId(payload.feedback.attemptId)
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Resolve failed.")
     } finally {
@@ -274,19 +295,28 @@ export function TeachingApp() {
         data-testid="teach-setup"
       >
         <div className="max-w-md space-y-4 rounded-lg border border-border p-6">
-          <h1 className="font-display text-2xl">Converging attacks</h1>
+          <h1 className="font-display text-2xl">Teaching drills</h1>
           <p className="text-sm text-muted-foreground">
-            One guided fortnight on Lublin, then a silent variation. Numbers come from the engine; the coach does
-            not file orders for you.
+            Converging attacks on Lublin, then supply vs headcount. Predict outcomes before resolve; beliefs are
+            stored server-side for silent follow-ups.
           </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button
             type="button"
             data-testid="teach-begin"
             disabled={busy}
-            onClick={() => void loadSession("guided")}
+            onClick={() => void loadSession("converging-lublin", "guided")}
           >
-            {busy ? "Loading…" : "Begin guided drill"}
+            {busy ? "Loading…" : "Begin converging-attacks drill"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="teach-begin-supply"
+            disabled={busy}
+            onClick={() => void loadSession("supply-tradeoff", "guided")}
+          >
+            Supply vs headcount lesson
           </Button>
           <p className="text-center text-xs">
             <Link href="/" className="underline">
@@ -303,7 +333,7 @@ export function TeachingApp() {
       <Hud
         state={state}
         armReset={false}
-        onReset={() => void loadSession(variant)}
+        onReset={() => void loadSession(lessonId, variant, priorAttemptId)}
         advisorOpen={false}
         onAdvisor={() => {}}
         teachMode
@@ -388,6 +418,9 @@ export function TeachingApp() {
           pedagogyDisclosure={pedagogyDisclosure}
           reasoning={reasoning}
           onReasoning={setReasoning}
+          prediction={prediction}
+          onPrediction={setPrediction}
+          beliefRecall={beliefRecall}
           hints={session.hints}
           hintLevel={hintLevel}
           onHint={() => void requestHint()}
@@ -400,7 +433,12 @@ export function TeachingApp() {
           onResolve={() => void resolveDrill()}
           feedback={feedback}
           silentAvailable
-          onSilent={() => void loadSession("silent")}
+          onSilent={() => void loadSession("converging-lublin", "silent", priorAttemptId)}
+          onSupplyLesson={
+            lessonId === "converging-lublin" && variant === "guided" && feedback
+              ? () => void loadSession("supply-tradeoff", "guided")
+              : undefined
+          }
         />
       </div>
       <div className="border-t border-border px-4 py-2 text-center text-xs text-muted-foreground">
@@ -408,7 +446,11 @@ export function TeachingApp() {
           Return to full campaign
         </Link>
         {" · "}
-        <Button variant="link" className="h-auto p-0 text-xs" onClick={() => void loadSession(variant)}>
+        <Button
+          variant="link"
+          className="h-auto p-0 text-xs"
+          onClick={() => void loadSession(lessonId, variant, priorAttemptId)}
+        >
           Restart drill
         </Button>
       </div>

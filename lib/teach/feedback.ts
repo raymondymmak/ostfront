@@ -10,6 +10,10 @@ export type FeedbackKind =
   | "reasonable_single_prong"
   | "missed_convergence"
   | "no_attack"
+  | "supply_sound_fed_column"
+  | "supply_chose_starved_stack"
+  | "supply_no_attack"
+  | "supply_wrong_target"
   | "other"
 
 export type TeachFeedback = {
@@ -26,6 +30,9 @@ export type TeachFeedback = {
   attemptId: string | null
   recordPersistence: RecordPersistenceStatus
   recordPersistenceMessage: string | null
+  predictionParagraphs: string[]
+  beliefSummary: string | null
+  beliefPersistence: RecordPersistenceStatus | null
 }
 
 function parseRoll(summary: string): number | null {
@@ -143,6 +150,9 @@ export function buildTeachFeedback(
     attemptId: null,
     recordPersistence: "unavailable",
     recordPersistenceMessage: null,
+    predictionParagraphs: [],
+    beliefSummary: null,
+    beliefPersistence: null,
   }
 }
 
@@ -174,5 +184,15 @@ export function attachCoachToFeedback(
     attemptId: record.attemptId,
     recordPersistence: record.persistence,
     recordPersistenceMessage: persistenceMessage,
+    predictionParagraphs: mechanical.predictionParagraphs,
+    beliefSummary: mechanical.beliefSummary,
+    beliefPersistence: mechanical.beliefPersistence,
   }
+}
+
+export function attachPredictionToFeedback(
+  mechanical: TeachFeedback,
+  predictionParagraphs: string[],
+): TeachFeedback {
+  return { ...mechanical, predictionParagraphs: [...predictionParagraphs, ...mechanical.predictionParagraphs] }
 }

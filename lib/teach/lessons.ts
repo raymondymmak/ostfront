@@ -4,8 +4,13 @@ import { findProvince } from "@/lib/engine/turn"
 import type { GameState, PlayerOrder, Unit } from "@/lib/types"
 
 export const CONVERGING_LUBLIN_ID = "converging-lublin" as const
+export const SUPPLY_TRADEOFF_ID = "supply-tradeoff" as const
 
-export type TeachLessonId = typeof CONVERGING_LUBLIN_ID
+export type TeachLessonId = typeof CONVERGING_LUBLIN_ID | typeof SUPPLY_TRADEOFF_ID
+
+export type TeachLessonType = "convergence" | "supply"
+
+export const TEACH_LESSON_IDS = [CONVERGING_LUBLIN_ID, SUPPLY_TRADEOFF_ID] as const
 
 export type TeachVariant = "guided" | "silent"
 
@@ -32,6 +37,9 @@ export function authoritativeLessonState(
   lessonId: TeachLessonId,
   variant: TeachVariant,
 ): GameState {
+  if (lessonId === SUPPLY_TRADEOFF_ID) {
+    return authoritativeSupplyLessonState(variant)
+  }
   if (lessonId !== CONVERGING_LUBLIN_ID) {
     throw new Error(`Unknown teaching lesson: ${lessonId}`)
   }
@@ -112,8 +120,67 @@ export function authoritativeLessonState(
   return state
 }
 
+/** Supply lesson: Heavy Corps on Katowice (lower supply) vs lean column from Kraków depot rail. */
+function authoritativeSupplyLessonState(variant: TeachVariant): GameState {
+  const state = createInitialState("easy")
+  state.turn = 0
+  state.date = "2 May 1915"
+  state.seed = variant === "guided" ? 19150510 : 19150511
+
+  for (const province of state.provinces) {
+    if (province.id === "krakow" || province.id === "katowice") continue
+    if (province.depot === "central") {
+      province.units = province.units.filter((u) => u.faction !== "central" || u.kind === "artillery")
+    }
+    if (province.controller === "russia" || province.owner === "russia") {
+      if (province.id !== "kielce") province.units = []
+    }
+  }
+
+  const krakow = findProvince(state, "krakow")!
+  krakow.units = [
+    unit({
+      id: "teach-fed",
+      name: "Fed Corps",
+      faction: "central",
+      kind: "infantry",
+      strength: 34,
+      morale: 78,
+    }),
+  ]
+
+  const katowice = findProvince(state, "katowice")!
+  katowice.supplyModifier = -45
+  katowice.units = [
+    unit({
+      id: "teach-heavy",
+      name: "Heavy Corps",
+      faction: "central",
+      kind: "infantry",
+      strength: 72,
+      morale: 76,
+    }),
+  ]
+
+  const kielce = findProvince(state, "kielce")!
+  kielce.units = [
+    unit({
+      id: "teach-def",
+      name: "Russian IX",
+      faction: "russia",
+      kind: "infantry",
+      strength: variant === "guided" ? 44 : 40,
+      morale: 68,
+    }),
+  ]
+
+  applySupply(state)
+  return state
+}
+
 export type LessonMeta = {
   lessonId: TeachLessonId
+  lessonType: TeachLessonType
   variant: TeachVariant
   targetProvinceId: string
   targetName: string
@@ -123,6 +190,27 @@ export type LessonMeta = {
 }
 
 export function lessonMeta(lessonId: TeachLessonId, variant: TeachVariant): LessonMeta {
+  if (lessonId === SUPPLY_TRADEOFF_ID) {
+    const target = "kielce"
+    const targetName = CATALOG_BY_ID[target]?.name ?? target
+    const heavy = "katowice"
+    const fed = "krakow"
+    const heavyName = CATALOG_BY_ID[heavy]?.name ?? heavy
+    const fedName = CATALOG_BY_ID[fed]?.name ?? fed
+    return {
+      lessonId,
+      lessonType: "supply",
+      variant,
+      targetProvinceId: target,
+      targetName,
+      prongProvinceIds: [heavy, fed],
+      title: "Supply vs headcount",
+      question:
+        variant === "guided"
+          ? `${targetName} is held by Russian IX. You may strike once from ${heavyName} (Heavy Corps) or from ${fedName} (Fed Corps). Toggle Supply on the map. Which launch gives the stronger attack in the engine preview — and why?`
+          : `Same trade-off without coach hints: choose one assault on ${targetName}, predict the outcome, and explain whether headcount or supply drives attack power.`,
+    }
+  }
   if (lessonId !== CONVERGING_LUBLIN_ID) {
     throw new Error(`Unknown teaching lesson: ${lessonId}`)
   }
@@ -130,6 +218,7 @@ export function lessonMeta(lessonId: TeachLessonId, variant: TeachVariant): Less
   const prongs = ["krakow", "kielce"] as const
   return {
     lessonId,
+    lessonType: "convergence",
     variant,
     targetProvinceId: LESSON_TARGET,
     targetName,

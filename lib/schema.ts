@@ -156,22 +156,33 @@ export const AdvisorRequestSchema = z.object({
   queuedOrders: z.array(PlayerOrderSchema).max(40).default([]),
 })
 
-export const TeachLessonIdSchema = z.literal("converging-lublin")
+export const TeachLessonIdSchema = z.enum(["converging-lublin", "supply-tradeoff"])
 
 export const TeachVariantSchema = z.enum(["guided", "silent"])
 
 export const TeachSessionQuerySchema = z.object({
   lessonId: TeachLessonIdSchema,
   variant: TeachVariantSchema.default("guided"),
+  priorAttemptId: z
+    .string()
+    .regex(/^[a-f0-9]{16}$/)
+    .optional(),
 })
 
-export const TeachResolveRequestSchema = z.object({
-  lessonId: TeachLessonIdSchema,
-  variant: TeachVariantSchema,
-  orders: z.array(PlayerOrderSchema).max(12),
-  reasoning: z.string().max(2000).default(""),
-  selectedProvinceIds: z.array(z.string()).max(20).default([]),
-})
+export const TeachResolveRequestSchema = z
+  .object({
+    lessonId: TeachLessonIdSchema,
+    variant: TeachVariantSchema,
+    orders: z.array(PlayerOrderSchema).max(12),
+    reasoning: z.string().max(2000).default(""),
+    prediction: z.string().max(800),
+    selectedProvinceIds: z.array(z.string()).max(20).default([]),
+    priorAttemptId: z
+      .string()
+      .regex(/^[a-f0-9]{16}$/)
+      .optional(),
+  })
+  .strict()
 
 export const TeachHintRequestSchema = z.object({
   lessonId: TeachLessonIdSchema,
@@ -179,12 +190,19 @@ export const TeachHintRequestSchema = z.object({
   level: z.number().int().min(1).max(3),
 })
 
-export const TeachCoachRequestSchema = z.object({
-  lessonId: TeachLessonIdSchema,
-  variant: TeachVariantSchema.default("guided"),
-  orders: z.array(PlayerOrderSchema).max(12),
-  reasoning: z.string().max(2000).default(""),
-})
+export const TeachCoachRequestSchema = z
+  .object({
+    lessonId: TeachLessonIdSchema,
+    variant: TeachVariantSchema.default("guided"),
+    orders: z.array(PlayerOrderSchema).max(12),
+    reasoning: z.string().max(2000).default(""),
+    prediction: z.string().max(800).default(""),
+    priorAttemptId: z
+      .string()
+      .regex(/^[a-f0-9]{16}$/)
+      .optional(),
+  })
+  .strict()
 
 export const GM_JSON_SCHEMA = {
   type: "object",
