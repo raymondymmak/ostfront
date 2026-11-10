@@ -541,6 +541,13 @@ export function GameApp() {
             <Button type="button" data-testid="begin-scenario" onClick={() => begin(difficulty)}>
               Begin the offensive
             </Button>
+            <a
+              href="/teach"
+              className="inline-flex w-full items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+              data-testid="begin-teach"
+            >
+              Try the converging-attacks teaching drill
+            </a>
           </div>
         </div>
       )}

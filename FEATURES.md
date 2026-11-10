@@ -1,5 +1,23 @@
 # Ostfront features
 
+## Teaching drill (Sprint 1 / Phase 2A)
+
+Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach]`. Campaign at **`/`** is unchanged.
+
+| Step | Selector / API | Proof |
+| --- | --- | --- |
+| Open drill | `[data-testid=teach-begin]` on setup | `[data-testid=teach-app]` visible; `[data-testid=teach-mode-badge]` in HUD |
+| Coach question | `[data-testid=teach-question]` | Guided variant only; silent shows `[data-testid=teach-silent-banner]` |
+| Hints | `[data-testid=teach-request-hint]` | Hint text in `[data-testid=teach-hints]`; map `[data-coach-highlights]` lists province ids |
+| Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; pooled line when two attacks share a target |
+| Reasoning | `[data-testid=teach-reasoning]` | Free text; not used to grade numeric outcomes |
+| Resolve | `[data-testid=teach-resolve]` or Orders **Resolve this fortnight** | POST **`/api/teach/resolve`** (server lesson state + orders only). `[data-testid=teach-feedback]` with `data-feedback-kind`; evidence in `[data-testid=teach-evidence]` |
+| Silent follow-up | `[data-testid=teach-start-silent]` after guided feedback | `[data-teach-variant=silent]`; no hint button |
+
+Session snapshot: GET **`/api/teach/session?lessonId=converging-lublin&variant=guided|silent`**.
+
+Trust: teaching resolve does **not** accept client `GameState` for grading (scoped mitigation for #26). Full campaign **`/api/turn`** still trusts browser state.
+
 ## Chief of Staff suggestions
 
 The advisor panel is `[data-testid=advisor-panel]`. Each suggestion is `[data-testid=advisor-suggestion]` and carries `data-advisor-state`, `data-advisor-queue-lines` (display text per order), and `data-advisor-orders` (structured kind/origin/target/units for QA). Queued arrows expose the same structure on each `[data-testid=queued-orders]` row via `data-queued-order`.

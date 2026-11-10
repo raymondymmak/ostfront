@@ -24,6 +24,9 @@ type OrderPanelProps = {
   busy: boolean
   onEndTurn: () => void
   onSelect: (id: string) => void
+  endTurnLabel?: string
+  /** When set, overrides finale-based lock (e.g. teaching feedback phase). */
+  ordersLocked?: boolean
 }
 
 export function OrderPanel({
@@ -38,8 +41,10 @@ export function OrderPanel({
   busy,
   onEndTurn,
   onSelect,
+  endTurnLabel,
+  ordersLocked: ordersLockedProp,
 }: OrderPanelProps) {
-  const closed = ordersLocked(Boolean(state.result))
+  const closed = ordersLockedProp ?? ordersLocked(Boolean(state.result))
   const parsed =
     !closed && directive.trim()
       ? interpretOrders(state, [{ type: "text", text: directive }])
@@ -209,7 +214,11 @@ export function OrderPanel({
           className="w-full"
           size="lg"
         >
-          {state.result ? "The campaign is over" : busy ? "Stavka is deliberating…" : "Close the fortnight"}
+          {state.result
+            ? "The campaign is over"
+            : busy
+              ? "Stavka is deliberating…"
+              : (endTurnLabel ?? "Close the fortnight")}
         </Button>
         <Separator />
         <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Your formations</h3>

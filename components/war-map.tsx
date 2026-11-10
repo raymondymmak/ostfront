@@ -56,6 +56,8 @@ type MapInput = {
 /** Props the game screen passes. Map mode and the rail toggle live on the map. */
 type WarMapProps = MapInput & {
   flashIds: string[]
+  /** Coach / teaching highlights anchored to province ids (not screen pixels). */
+  coachHighlightIds?: string[]
   onOverlay: (overlay: Overlay) => void
 }
 
@@ -69,6 +71,7 @@ export function WarMap({
   overlay,
   orders,
   flashIds,
+  coachHighlightIds = [],
   orderMode,
   onSelect,
   onDraw,
@@ -284,6 +287,13 @@ export function WarMap({
         source: "provinces",
         filter: ["==", ["get", "id"], ""],
         paint: { "fill-color": "#f3e2a8", "fill-opacity": 0 },
+      })
+      map.addLayer({
+        id: "coach-highlight",
+        type: "fill",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
       })
       map.addLayer({
         id: "borders",
@@ -591,8 +601,27 @@ export function WarMap({
     return () => cancelAnimationFrame(frame)
   }, [flashIds])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loadedRef.current || !map.getLayer("coach-highlight")) return
+    map.setFilter("coach-highlight", [
+      "in",
+      ["get", "id"],
+      ["literal", coachHighlightIds.length ? coachHighlightIds : ["__none__"]],
+    ])
+    map.setPaintProperty(
+      "coach-highlight",
+      "fill-opacity",
+      coachHighlightIds.length ? 0.32 : 0,
+    )
+  }, [coachHighlightIds])
+
   return (
-    <div className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]" data-testid="war-map">
+    <div
+      className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]"
+      data-testid="war-map"
+      data-coach-highlights={coachHighlightIds.join(",") || undefined}
+    >
       {failed ? (
         <SvgMap
           provinces={provinces}
