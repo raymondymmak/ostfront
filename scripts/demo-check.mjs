@@ -853,15 +853,17 @@ function buildSteps(cli, targets) {
         await page.locator("[data-testid=map-mode-supply]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 10_000 })
         const katowice = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
-        if (!katowice) throw new Error("Katowice projection unavailable for supply lesson.")
+        const kielcePt = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
+        if (!katowice || !kielcePt) throw new Error("Map projection unavailable for supply lesson.")
         await page.mouse.click(katowice.x, katowice.y)
         await page.waitForTimeout(350)
         await page.locator("[data-testid=tab-province]").click()
-        await page
-          .getByRole("button", { name: /Attack/i })
-          .filter({ hasText: /Kielce/i })
-          .first()
-          .click()
+        const attackKielce = page.getByRole("button", { name: /Attack/i }).filter({ hasText: /Kielce/i })
+        if (await attackKielce.count()) {
+          await attackKielce.first().click()
+        } else {
+          await page.mouse.click(kielcePt.x, kielcePt.y)
+        }
         await page.locator("[data-testid=teach-reasoning]").fill(
           "More troops always means a stronger attack from Katowice.",
         )
