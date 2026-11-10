@@ -805,6 +805,10 @@ function buildSteps(cli, targets) {
           .locator("[data-testid=teach-panel][data-teach-variant=silent]")
           .waitFor({ state: "visible", timeout: 60_000 })
         await page.locator("[data-testid=teach-silent-banner]").waitFor({ state: "visible", timeout: 10_000 })
+        const beliefRecall = page.locator("[data-testid=teach-belief-recall]")
+        if (await beliefRecall.count()) {
+          await beliefRecall.waitFor({ state: "visible", timeout: 5000 })
+        }
         if (await page.locator("[data-testid=teach-request-hint]").count()) {
           throw new Error("Hint control visible in silent mode")
         }
