@@ -1,6 +1,7 @@
 import { combinedEngagementOdds, findProvince } from "@/lib/engine/turn"
 import { garrisonStrengthInProvince, provinceSupplyCapacity } from "@/lib/engine/supply"
 import type { LessonMeta } from "@/lib/teach/lessons"
+import { teachDefaultAttackUnitIds } from "@/lib/teach/preview"
 import type { GameState, PlayerOrder } from "@/lib/types"
 
 export type SupplyPlanAnalysis = {
@@ -31,19 +32,19 @@ export function analyzeSupplyLesson(
 
   const heavyProvince = findProvince(state, heavyFromId)!
   const fedProvince = findProvince(state, fedFromId)!
-  const heavyUnit = heavyProvince.units.find((u) => u.faction === "central")!.id
-  const fedUnit = fedProvince.units.find((u) => u.faction === "central")!.id
+  const heavyUnitIds = teachDefaultAttackUnitIds(state, heavyFromId)
+  const fedUnitIds = teachDefaultAttackUnitIds(state, fedFromId)
 
   const heavyPreview = combinedEngagementOdds(state, meta.targetProvinceId, [
-    { fromId: heavyFromId, unitIds: [heavyUnit] },
+    { fromId: heavyFromId, unitIds: heavyUnitIds },
   ])
   const fedPreview = combinedEngagementOdds(state, meta.targetProvinceId, [
-    { fromId: fedFromId, unitIds: [fedUnit] },
+    { fromId: fedFromId, unitIds: fedUnitIds },
   ])
   const combinedPreview = allInConvergence
     ? combinedEngagementOdds(state, meta.targetProvinceId, [
-        { fromId: heavyFromId, unitIds: [heavyUnit] },
-        { fromId: fedFromId, unitIds: [fedUnit] },
+        { fromId: heavyFromId, unitIds: heavyUnitIds },
+        { fromId: fedFromId, unitIds: fedUnitIds },
       ])
     : null
 

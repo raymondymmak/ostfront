@@ -1,7 +1,10 @@
-import { combinedEngagementOdds } from "@/lib/engine/turn"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import type { GameState } from "@/lib/types"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
+import {
+  lessonEngagementPreview,
+  lessonSingleProngPreviews,
+} from "@/lib/teach/preview"
 
 export type CoachHighlight = {
   provinceId?: string
@@ -26,14 +29,8 @@ export function coachHints(
   }
 
   const target = meta.targetProvinceId
-  const previews = meta.prongProvinceIds.map((fromId) =>
-    combinedEngagementOdds(state, target, [{ fromId, unitIds: teachUnitsFrom(state, fromId) }]),
-  )
-  const combined = combinedEngagementOdds(
-    state,
-    target,
-    meta.prongProvinceIds.map((fromId) => ({ fromId, unitIds: teachUnitsFrom(state, fromId) })),
-  )
+  const previews = lessonSingleProngPreviews(state, target, meta.prongProvinceIds)
+  const combined = lessonEngagementPreview(state, target, meta.prongProvinceIds)
   const targetName = CATALOG_BY_ID[target]?.name ?? target
 
   const hints: CoachHint[] = [
@@ -70,10 +67,8 @@ export function coachHints(
 function coachSupplyHints(meta: LessonMeta, state: GameState): CoachHint[] {
   const [heavyId, fedId] = meta.prongProvinceIds
   const target = meta.targetProvinceId
-  const heavyUnits = teachUnitsFrom(state, heavyId)
-  const fedUnits = teachUnitsFrom(state, fedId)
-  const heavyPreview = combinedEngagementOdds(state, target, [{ fromId: heavyId, unitIds: heavyUnits }])
-  const fedPreview = combinedEngagementOdds(state, target, [{ fromId: fedId, unitIds: fedUnits }])
+  const heavyPreview = lessonEngagementPreview(state, target, [heavyId])
+  const fedPreview = lessonEngagementPreview(state, target, [fedId])
   const heavyProvince = state.provinces.find((p) => p.id === heavyId)!
   const fedProvince = state.provinces.find((p) => p.id === fedId)!
   const targetName = CATALOG_BY_ID[target]?.name ?? target
@@ -107,12 +102,6 @@ function coachSupplyHints(meta: LessonMeta, state: GameState): CoachHint[] {
       ],
     },
   ]
-}
-
-function teachUnitsFrom(state: GameState, provinceId: string): string[] {
-  const province = state.provinces.find((p) => p.id === provinceId)
-  if (!province) return []
-  return province.units.filter((u) => u.faction === "central").map((u) => u.id)
 }
 
 export function coachPrompt(meta: LessonMeta): { question: string; intro: string } {
