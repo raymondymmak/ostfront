@@ -17,6 +17,13 @@ export type TeachFeedback = {
   paragraphs: string[]
   evidence: string[]
   pointers: Array<{ provinceId?: string; uiId?: string }>
+  coachReply: string
+  coachStance: string
+  coachSource: "llm" | "rules" | "fallback"
+  coachFallbackReason?: string
+  followUp: string | null
+  attemptId: string | null
+  recordPersistence: "blob" | "unavailable"
 }
 
 function parseRoll(summary: string): number | null {
@@ -114,10 +121,6 @@ export function buildTeachFeedback(
     paragraphs.push("Weigh the pooled odds line in the Orders tab against attacking from one province alone.")
   }
 
-  if (variant === "silent") {
-    paragraphs.unshift("Silent drill: no hints were shown. Your plan and reasoning are recorded for later review.")
-  }
-
   const pointers: TeachFeedback["pointers"] = [{ provinceId: meta.targetProvinceId, uiId: "tab-orders" }]
   if (plan.convergingOnTarget) {
     for (const prong of plan.attackProngs) {
@@ -125,5 +128,50 @@ export function buildTeachFeedback(
     }
   }
 
-  return { kind, headline, paragraphs, evidence, pointers }
+  return {
+    kind,
+    headline,
+    paragraphs,
+    evidence,
+    pointers,
+    coachReply: "",
+    coachStance: "absent",
+    coachSource: "rules",
+    followUp: null,
+    attemptId: null,
+    recordPersistence: "unavailable",
+  }
+}
+
+export function attachCoachToFeedback(
+  mechanical: TeachFeedback,
+  coach: {
+    reply: string
+    stance: string
+    source: "llm" | "rules" | "fallback"
+    fallbackReason?: string
+    followUp: string | null
+  },
+  record: { attemptId: string; persistence: "blob" | "unavailable" },
+  variant: TeachVariant,
+): TeachFeedback {
+  const paragraphs = [...mechanical.paragraphs]
+  if (variant === "silent") {
+    paragraphs.push(
+      record.persistence === "blob"
+        ? `Attempt ${record.attemptId} stored server-side for review (plan, reasoning, engine outcome).`
+        : `Attempt ${record.attemptId} logged in this response only; blob storage is not configured on the host.`,
+    )
+  }
+  return {
+    ...mechanical,
+    paragraphs,
+    coachReply: coach.reply,
+    coachStance: coach.stance,
+    coachSource: coach.source,
+    coachFallbackReason: coach.fallbackReason,
+    followUp: coach.followUp,
+    attemptId: record.attemptId,
+    recordPersistence: record.persistence,
+  }
 }

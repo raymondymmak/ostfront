@@ -1,5 +1,10 @@
 import { coachHints, coachPrompt } from "@/lib/teach/coach"
-import { authoritativeLessonState, lessonMeta } from "@/lib/teach/lessons"
+import {
+  authoritativeLessonState,
+  lessonMeta,
+  TEACH_GUIDED_COMBAT_ROLL,
+  TEACH_SILENT_COMBAT_ROLL,
+} from "@/lib/teach/lessons"
 import { teachingTrustAssessment } from "@/lib/teach/trust"
 import { TeachSessionQuerySchema } from "@/lib/schema"
 
@@ -26,6 +31,12 @@ export async function GET(request: Request) {
     prompt,
     hints,
     state,
+    pedagogy: {
+      guidedFixedRoll: TEACH_GUIDED_COMBAT_ROLL,
+      silentFixedRoll: TEACH_SILENT_COMBAT_ROLL,
+      disclosure:
+        "Guided resolution uses a fixed die roll for teaching, not campaign randomness. Outcome numbers still come from the resolver.",
+    },
     trust: teachingTrustAssessment(),
     highlights: [
       { provinceId: meta.targetProvinceId, uiId: "tab-province" },

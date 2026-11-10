@@ -761,11 +761,28 @@ function buildSteps(cli, targets) {
       },
     },
     {
-      id: "25-teach-resolve",
+      id: "25-teach-discuss",
+      name: "Discuss reasoning with coach (guided)",
+      async run({ page }) {
+        await page.locator("[data-testid=teach-pedagogy-notice]").waitFor({ state: "visible" })
+        await page.locator("[data-testid=teach-reasoning]").fill(
+          "Two separate battles from Kraków and Kielce.",
+        )
+        await page.locator("[data-testid=teach-discuss-plan]").click()
+        const reply = page.locator("[data-testid=teach-coach-reply]")
+        await reply.waitFor({ state: "visible", timeout: 30_000 })
+        const stance = await reply.getAttribute("data-coach-stance")
+        if (stance !== "misconception" && stance !== "partial" && stance !== "unclear" && stance !== "fallback") {
+          throw new Error(`Expected coach to challenge separate-battle reasoning, got stance=${stance}`)
+        }
+      },
+    },
+    {
+      id: "26-teach-resolve",
       name: "Resolve teaching fortnight with engine feedback",
       async run({ page }) {
         await page.locator("[data-testid=teach-reasoning]").fill(
-          "Strike from Kraków and Kielce together so the rules pool the assault.",
+          "Combine both prongs into one converging assault.",
         )
         await page.locator("[data-testid=teach-resolve]").click()
         await page.locator("[data-testid=teach-feedback]").waitFor({ state: "visible", timeout: 30_000 })
@@ -777,7 +794,7 @@ function buildSteps(cli, targets) {
       },
     },
     {
-      id: "26-teach-silent",
+      id: "27-teach-silent",
       name: "Silent variation shows no coach hints",
       async run({ page }) {
         await page.locator("[data-testid=teach-start-silent]").click()
@@ -809,7 +826,10 @@ function buildSteps(cli, targets) {
           .click()
         await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Kraków and Kielce together.")
         await page.locator("[data-testid=teach-resolve]").click()
-        await page.locator("[data-testid=teach-feedback]").waitFor({ state: "visible", timeout: 30_000 })
+        const feedback = page.locator("[data-testid=teach-feedback]")
+        await feedback.waitFor({ state: "visible", timeout: 30_000 })
+        await page.locator("[data-testid=teach-attempt-id]").waitFor({ state: "visible" })
+        await page.locator("[data-testid=teach-coach-post]").waitFor({ state: "visible" })
       },
     },
   ]

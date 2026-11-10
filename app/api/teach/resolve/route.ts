@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   }
 
   const { lessonId, variant, orders, reasoning, selectedProvinceIds } = parsed.data
-  const result = teachResolveTurn(lessonId, variant, orders, reasoning, selectedProvinceIds)
+  const result = await teachResolveTurn(lessonId, variant, orders, reasoning, selectedProvinceIds)
 
   return Response.json({
     ...result,

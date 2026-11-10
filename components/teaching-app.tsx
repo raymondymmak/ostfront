@@ -23,6 +23,7 @@ type SessionPayload = {
   prompt: { question: string; intro: string }
   hints: CoachHint[]
   state: GameState
+  pedagogy: { disclosure: string }
   highlights: Array<{ provinceId?: string; uiId?: string }>
 }
 
@@ -45,6 +46,11 @@ export function TeachingApp() {
   const [flash, setFlash] = useState<string[]>([])
   const [sideTab, setSideTab] = useState("orders")
   const [setupOpen, setSetupOpen] = useState(true)
+  const [pedagogyDisclosure, setPedagogyDisclosure] = useState("")
+  const [coachReply, setCoachReply] = useState<string | null>(null)
+  const [coachSource, setCoachSource] = useState<string | null>(null)
+  const [coachStance, setCoachStance] = useState<string | null>(null)
+  const [followUp, setFollowUp] = useState<string | null>(null)
 
   const loadSession = useCallback(async (nextVariant: TeachVariant) => {
     setBusy(true)
@@ -55,6 +61,10 @@ export function TeachingApp() {
     setReasoning("")
     setHintLevel(0)
     setFlash([])
+    setCoachReply(null)
+    setCoachSource(null)
+    setCoachStance(null)
+    setFollowUp(null)
     try {
       const response = await fetch(
         `/api/teach/session?lessonId=converging-lublin&variant=${nextVariant}`,
@@ -69,6 +79,7 @@ export function TeachingApp() {
         payload.highlights.map((item) => item.provinceId).filter((id): id is string => Boolean(id)),
       )
       setSetupOpen(false)
+      setPedagogyDisclosure(payload.pedagogy?.disclosure ?? "")
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Session load failed.")
     } finally {
@@ -152,6 +163,46 @@ export function TeachingApp() {
   function recruit(provinceId: string, unitKind: UnitKind) {
     void provinceId
     void unitKind
+  }
+
+  async function discussPlan() {
+    if (!session || variant === "silent" || busy || feedback) return
+    setBusy(true)
+    setError(null)
+    try {
+      const orders = queuedToPlayerOrders(queue)
+      const response = await fetch("/api/teach/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lessonId: "converging-lublin",
+          variant,
+          orders,
+          reasoning,
+        }),
+      })
+      const payload = (await response.json()) as {
+        coach?: { reply: string; source: string; stance: string; followUp: string | null; highlights?: Array<{ provinceId?: string }> }
+        error?: string
+      }
+      if (!response.ok) throw new Error(payload.error ?? "Coach request failed.")
+      setCoachReply(payload.coach!.reply)
+      setCoachSource(payload.coach!.source)
+      setCoachStance(payload.coach!.stance)
+      setFollowUp(payload.coach!.followUp)
+      if (payload.coach!.highlights?.length) {
+        setCoachHighlightIds((current) => [
+          ...new Set([
+            ...current,
+            ...payload.coach!.highlights!.map((h) => h.provinceId).filter((id): id is string => Boolean(id)),
+          ]),
+        ])
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Coach request failed.")
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function requestHint() {
@@ -334,11 +385,17 @@ export function TeachingApp() {
           intro={session.prompt.intro}
           question={session.prompt.question}
           variant={variant}
+          pedagogyDisclosure={pedagogyDisclosure}
           reasoning={reasoning}
           onReasoning={setReasoning}
           hints={session.hints}
           hintLevel={hintLevel}
           onHint={() => void requestHint()}
+          coachReply={coachReply}
+          coachSource={coachSource}
+          coachStance={coachStance}
+          followUp={followUp}
+          onDiscussPlan={() => void discussPlan()}
           busy={busy}
           onResolve={() => void resolveDrill()}
           feedback={feedback}

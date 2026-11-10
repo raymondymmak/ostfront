@@ -10,11 +10,13 @@ Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach
 | Coach question | `[data-testid=teach-question]` | Guided variant only; silent shows `[data-testid=teach-silent-banner]` |
 | Hints | `[data-testid=teach-request-hint]` | Hint text in `[data-testid=teach-hints]`; map `[data-coach-highlights]` lists province ids |
 | Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; pooled line when two attacks share a target |
-| Reasoning | `[data-testid=teach-reasoning]` | Free text; not used to grade numeric outcomes |
-| Resolve | `[data-testid=teach-resolve]` or Orders **Resolve this fortnight** | POST **`/api/teach/resolve`** (server lesson state + orders only). `[data-testid=teach-feedback]` with `data-feedback-kind`; evidence in `[data-testid=teach-evidence]` |
-| Silent follow-up | `[data-testid=teach-start-silent]` after guided feedback | `[data-teach-variant=silent]`; no hint button |
+| Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares it to server-derived plan facts (not used to fabricate odds) |
+| Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** — LLM when configured, else labelled rules/fallback (`data-coach-source` on `[data-testid=teach-coach-reply]`) |
+| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided drill uses fixed die roll 1 (teaching only, not campaign RNG) |
+| Resolve | `[data-testid=teach-resolve]` or Orders **Resolve this fortnight** | POST **`/api/teach/resolve`** (server lesson state + orders only). `[data-testid=teach-feedback]` with `data-feedback-kind`; coach post line `[data-testid=teach-coach-post]`; attempt `[data-testid=teach-attempt-id]` |
+| Silent follow-up | `[data-testid=teach-start-silent]` after guided feedback | `[data-teach-variant=silent]`; no hint or discuss control before resolve; reasoning stored with attempt id after resolve |
 
-Session snapshot: GET **`/api/teach/session?lessonId=converging-lublin&variant=guided|silent`**.
+Session snapshot: GET **`/api/teach/session?lessonId=converging-lublin&variant=guided|silent`** (includes `pedagogy.disclosure`).
 
 Trust: teaching resolve does **not** accept client `GameState` for grading (scoped mitigation for #26). Full campaign **`/api/turn`** still trusts browser state.
 

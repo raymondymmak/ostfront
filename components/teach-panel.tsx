@@ -10,11 +10,17 @@ type TeachPanelProps = {
   intro: string
   question: string
   variant: "guided" | "silent"
+  pedagogyDisclosure: string
   reasoning: string
   onReasoning: (value: string) => void
   hints: CoachHint[]
   hintLevel: number
   onHint: () => void
+  coachReply: string | null
+  coachSource: string | null
+  coachStance: string | null
+  followUp: string | null
+  onDiscussPlan: () => void
   busy: boolean
   onResolve: () => void
   feedback: TeachFeedback | null
@@ -32,6 +38,12 @@ export function TeachPanel({
   hints,
   hintLevel,
   onHint,
+  pedagogyDisclosure,
+  coachReply,
+  coachSource,
+  coachStance,
+  followUp,
+  onDiscussPlan,
   busy,
   onResolve,
   feedback,
@@ -81,7 +93,13 @@ export function TeachPanel({
         )}
         {variant === "silent" && (
           <p className="mt-3 text-xs text-muted-foreground" data-testid="teach-silent-banner">
-            Coach is silent. Plan on the map and state your reasoning.
+            Coach is silent until after you resolve. Plan on the map and state your reasoning; it is stored
+            server-side with your orders.
+          </p>
+        )}
+        {variant === "guided" && (
+          <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs" data-testid="teach-pedagogy-notice">
+            {pedagogyDisclosure}
           </p>
         )}
         <label className="mt-4 block text-xs font-medium text-muted-foreground" htmlFor="teach-reasoning">
@@ -96,6 +114,28 @@ export function TeachPanel({
           placeholder="A sentence on why you chose this plan…"
           disabled={Boolean(feedback) || busy}
         />
+        {variant === "guided" && !feedback && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            data-testid="teach-discuss-plan"
+            disabled={busy || !reasoning.trim()}
+            onClick={onDiscussPlan}
+          >
+            Discuss my reasoning
+          </Button>
+        )}
+        {coachReply && !feedback && (
+          <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-2 text-xs" data-testid="teach-coach-reply" data-coach-source={coachSource ?? undefined} data-coach-stance={coachStance ?? undefined}>
+            <p>{coachReply}</p>
+            {coachSource === "fallback" && (
+              <p className="text-muted-foreground">Deterministic coach fallback (model unavailable or timed out).</p>
+            )}
+            {followUp && <p className="italic text-muted-foreground">{followUp}</p>}
+          </div>
+        )}
         {feedback && <TeachFeedbackBlock feedback={feedback} />}
       </div>
       <div className="border-t border-border p-3">
@@ -127,9 +167,18 @@ function TeachFeedbackBlock({ feedback }: { feedback: TeachFeedback }) {
       <p className="font-display text-lg" data-feedback-kind={feedback.kind}>
         {feedback.headline}
       </p>
+      {feedback.coachReply && (
+        <p data-testid="teach-coach-post">{feedback.coachReply}</p>
+      )}
       {feedback.paragraphs.map((line) => (
         <p key={line.slice(0, 48)}>{line}</p>
       ))}
+      {feedback.attemptId && (
+        <p className="text-xs text-muted-foreground" data-testid="teach-attempt-id">
+          Attempt {feedback.attemptId}
+          {feedback.recordPersistence === "blob" ? " (stored server-side)" : " (persistence unavailable on host)"}
+        </p>
+      )}
       <ul className="list-disc pl-4 text-xs text-muted-foreground" data-testid="teach-evidence">
         {feedback.evidence.map((line) => (
           <li key={line}>{line}</li>

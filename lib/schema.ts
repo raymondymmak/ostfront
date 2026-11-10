@@ -179,6 +179,13 @@ export const TeachHintRequestSchema = z.object({
   level: z.number().int().min(1).max(3),
 })
 
+export const TeachCoachRequestSchema = z.object({
+  lessonId: TeachLessonIdSchema,
+  variant: TeachVariantSchema.default("guided"),
+  orders: z.array(PlayerOrderSchema).max(12),
+  reasoning: z.string().max(2000).default(""),
+})
+
 export const GM_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,

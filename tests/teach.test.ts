@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import { coachHints } from "@/lib/teach/coach"
 import { authoritativeLessonState, lessonMeta } from "@/lib/teach/lessons"
 import { analyzeOrders } from "@/lib/teach/plan"
@@ -8,6 +8,10 @@ import { combinedEngagementOdds } from "@/lib/engine/turn"
 import type { PlayerOrder } from "@/lib/types"
 
 describe("teaching — converging lublin", () => {
+  beforeEach(() => {
+    delete process.env.LLM_API_KEY
+  })
+
   it("builds guided and silent boards on the server", () => {
     const guided = authoritativeLessonState("converging-lublin", "guided")
     const silent = authoritativeLessonState("converging-lublin", "silent")
@@ -28,12 +32,12 @@ describe("teaching — converging lublin", () => {
     expect(preview!.multiplier).toBe(1.12)
   })
 
-  it("classifies a converging guided plan with harsh die as sound but unlucky", () => {
+  it("classifies a converging guided plan with harsh die as sound but unlucky", async () => {
     const orders: PlayerOrder[] = [
       { type: "attack", from: "krakow", target: "lublin", unitIds: ["teach-11"] },
       { type: "attack", from: "kielce", target: "lublin", unitIds: ["teach-kie"] },
     ]
-    const result = teachResolveTurn("converging-lublin", "guided", orders, "Combine directions.", [
+    const result = await teachResolveTurn("converging-lublin", "guided", orders, "Combine directions.", [
       "lublin",
     ])
     expect(result.plan.convergingOnTarget).toBe("lublin")
@@ -43,15 +47,16 @@ describe("teaching — converging lublin", () => {
     )
     expect(result.feedback.kind).toBe("sound_converging_unlucky")
     expect(result.feedback.evidence.some((line) => /roll 1/i.test(line))).toBe(true)
+    expect(result.feedback.coachReply.length).toBeGreaterThan(0)
   })
 
-  it("flags a single-prong plan as a different trade-off", () => {
+  it("flags a single-prong plan as a different trade-off", async () => {
     const orders: PlayerOrder[] = [
       { type: "attack", from: "krakow", target: "lublin", unitIds: ["teach-11"] },
     ]
     const plan = analyzeOrders(authoritativeLessonState("converging-lublin", "guided"), orders)
     expect(plan.singleProngOnTarget).toBe(true)
-    const result = teachResolveTurn("converging-lublin", "guided", orders, "One blow.", [])
+    const result = await teachResolveTurn("converging-lublin", "guided", orders, "One blow.", [])
     expect(result.feedback.kind).toBe("reasonable_single_prong")
   })
 

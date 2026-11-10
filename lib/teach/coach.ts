@@ -2,7 +2,6 @@ import { combinedEngagementOdds } from "@/lib/engine/turn"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import type { GameState } from "@/lib/types"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
-import type { PlanAnalysis } from "@/lib/teach/plan"
 
 export type CoachHighlight = {
   provinceId?: string
@@ -79,19 +78,4 @@ export function coachPrompt(meta: LessonMeta): { question: string; intro: string
         ? "This is a short teaching drill. Answer on the map with queued orders, then add a sentence of reasoning before you resolve."
         : "Silent variation: plan and resolve without coach hints.",
   }
-}
-
-export function coachRespondToReasoning(
-  meta: LessonMeta,
-  plan: PlanAnalysis,
-  variant: TeachVariant,
-): string | null {
-  if (variant === "silent") return null
-  if (!plan.attackProngs.length) {
-    return "When you are ready, queue attacks on the map. Mention whether you intend one battle or two."
-  }
-  if (plan.convergingOnTarget === meta.targetProvinceId) {
-    return "You have two prongs on the same target. Close the fortnight when satisfied; the resolver will show whether they merged."
-  }
-  return "Check whether both provinces point at the same objective this fortnight."
 }
