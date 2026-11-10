@@ -40,7 +40,6 @@ export type SupplyCapacityNote = {
 
 export function provinceSupplyCapacity(
   province: Pick<Province, "terrain" | "depot" | "controller" | "rail">,
-  garrisonStrength = 0,
 ): number {
   let capacity = TERRAIN_SUPPLY_CAPACITY[province.terrain]
   if (province.depot === province.controller) capacity += DEPOT_CAPACITY_BONUS
@@ -94,7 +93,7 @@ export function convergingAttackerSupply(
   const worst = Math.min(...prongs.map((prong) => attackerSupplyFromProvince(prong.from)))
   const incoming = prongs.reduce((sum, prong) => sum + prong.attackerStrength, 0)
   const garrison = garrisonStrengthInProvince(target)
-  const feed = provinceSupplyCapacity(target, 0)
+  const feed = provinceSupplyCapacity(target)
   const choke =
     incoming + garrison > 0 ? Math.min(1, feed / (garrison + incoming)) : 1
   return clamp(Math.round(worst * choke), 0, 100)
@@ -102,7 +101,7 @@ export function convergingAttackerSupply(
 
 export function applyProvinceSupplyCapacity(province: Province, baseSupply: number): SupplyCapacityNote | null {
   const garrisonStrength = garrisonStrengthInProvince(province)
-  const capacity = provinceSupplyCapacity(province, garrisonStrength)
+  const capacity = provinceSupplyCapacity(province)
   const effectiveSupply = effectiveSupplyFromBase(baseSupply, capacity, garrisonStrength)
   province.networkSupply = clamp(Math.round(baseSupply), 0, 100)
   province.supply = effectiveSupply
