@@ -25,7 +25,9 @@ Verified supply/combat (engine): attacker `max(0.15, supply/100)`; defender floo
 
 ### Province supply capacity (Sprint 3)
 
-Each province has a **garrison supply capacity** (terrain base + depot bonus when controlled + 6× rail links). When fighting strength in the province exceeds capacity, **effective supply** scales as `networkSupply × min(1, capacity ÷ garrisonStrength)` — shown on the map Supply overlay and used for **attacks launched from** that province. **Defenders** still use the network line (`networkSupply`) in combat. Depots add extra capacity headroom (at least 62% of garrison strength when the depot is yours). Over-capacity provinces are spelled out in the fortnight **Chronicle** logistics (`capacity`, `garrison strength`, network vs effective supply).
+Each province has a **garrison supply capacity** (terrain base + depot bonus when controlled + 6× rail links). When fighting strength in the province exceeds capacity, **effective supply** scales as `networkSupply × min(1, capacity ÷ garrisonStrength)` — shown on the map Supply overlay and used for **attacks launched from** that province. **Defenders** still use the network line (`networkSupply`) in combat. **Your depot** still issues bulk rations: attacks launched from a depot you control never march below **72% of network supply**, even when the map shows overcrowding. Over-capacity provinces are spelled out in the fortnight **Chronicle** logistics.
+
+**Converging attacks:** when any prong marches below supply **60**, the flank bonus is off and the pooled battle uses the **worst prong’s launch supply**, then scales it by `objective capacity ÷ (garrison + attackers)` when the combined column overfills the target. Well-fed prongs (all ≥ 60) still pool per-prong power with the normal flank multiplier (converging Lublin lesson).
 
 ### Fortify (Sprint 3)
 

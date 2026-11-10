@@ -22,6 +22,7 @@ describe("supply lesson — all-in vs lean", () => {
     const plan = analyzeSupplyLesson(state, meta, orders)
     expect(plan.allInConvergence).toBe(true)
     expect(plan.fedPreview.ratio).toBeGreaterThan(plan.heavyPreview.ratio)
+    expect(plan.combinedPreview!.ratio).toBeLessThan(plan.fedPreview.ratio)
 
     const result = await teachResolveTurn(
       "supply-tradeoff",
@@ -32,6 +33,7 @@ describe("supply lesson — all-in vs lean", () => {
       ["kielce"],
     )
     expect(result.feedback.kind).toBe("supply_all_in_convergence")
+    expect(result.record.resolutions.some((r) => /fails/i.test(r.summary))).toBe(true)
     expect(result.feedback.evidence.some((line) => /capacity|supply \d+/i.test(line))).toBe(true)
   })
 

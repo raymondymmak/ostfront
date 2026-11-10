@@ -11,10 +11,10 @@ import {
   canAfford,
 } from "@/lib/engine/economy"
 import { decideFortnight, gradeLabel, noteCaptures } from "@/lib/engine/victory"
+import { assaultAttackPower, prongsFromIds } from "@/lib/engine/assault"
 import {
   attackerPower,
   defenderPower,
-  flankMultiplier,
   resolveCombat,
 } from "@/lib/engine/combat"
 import {
@@ -917,31 +917,22 @@ export function combinedEngagementOdds(
 ): EngagementPreview | null {
   const target = findProvince(state, targetId)
   if (!target || !prongs.length) return null
-  const origins: string[] = []
-  let attack = 0
-  for (const prong of prongs) {
-    const from = findProvince(state, prong.fromId)
-    if (!from) return null
-    const attackers = fightingUnits(from.units, independentFormations(partyOf(from.units, prong.unitIds)))
-    if (!attackers.length) continue
-    if (!origins.includes(from.id)) origins.push(from.id)
-    attack += attackerPower(attackers, attackerSupplyFromProvince(from), target.terrain, target.fort)
-  }
-  if (!origins.length) return null
-  const multiplier = flankMultiplier(origins.length)
-  attack *= multiplier
+  const prepared = prongsFromIds((id) => findProvince(state, id), prongs)
+  if (!prepared) return null
+  const { attack, multiplier, origins } = assaultAttackPower(target, prepared)
+  const originIds = [...new Set(prepared.map((prong) => prong.from.id))]
   const defenders = fightingUnits(target.units.filter((unit) => unit.faction === target.controller))
   const defense = defenderPower(defenders, defenderSupplyInProvince(target), target.terrain, target.fort)
   const encircled =
-    origins.length > 1 &&
+    origins > 1 &&
     defenders.length > 0 &&
-    retreatDestination(state, target, target.controller, origins) === null
+    retreatDestination(state, target, target.controller, originIds) === null
   return {
     attack,
     defense,
     ratio: defense <= 0 ? Infinity : attack / Math.max(8, defense),
     empty: defenders.length === 0,
-    origins: origins.length,
+    origins,
     encircled,
     multiplier,
   }

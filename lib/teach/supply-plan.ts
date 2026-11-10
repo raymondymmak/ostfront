@@ -63,7 +63,7 @@ export function analyzeSupplyLesson(
   ]
   if (combinedPreview) {
     engineLines.push(
-      `All-in convergence preview: ratio ${combinedPreview.ratio.toFixed(2)} from ${combinedPreview.origins} directions (×${combinedPreview.multiplier.toFixed(2)}) — compare to the lean ${fedName} column above.`,
+      `All-in convergence (starved prong): pooled attack ${combinedPreview.attack.toFixed(1)} vs defence ${combinedPreview.defense.toFixed(1)}, ratio ${combinedPreview.ratio.toFixed(2)} before the die — worst launch supply with objective choke; no flank bonus (×${combinedPreview.multiplier.toFixed(2)}).`,
     )
   }
 

@@ -37,7 +37,6 @@ export function buildSupplyTeachFeedback(
   const { heavyFromId, fedFromId } = supplyPlan
   const choseHeavy =
     supplyPlan.chosenFrom === heavyFromId && !supplyPlan.allInConvergence
-  const choseFed = supplyPlan.chosenFrom === fedFromId && !supplyPlan.allInConvergence
   const engineFavorsFed = supplyPlan.fedPreview.ratio > supplyPlan.heavyPreview.ratio
   const combinedWorseThanLean =
     supplyPlan.combinedPreview !== null &&
@@ -59,9 +58,7 @@ export function buildSupplyTeachFeedback(
     kind = "supply_all_in_convergence"
   } else if (choseHeavy) {
     kind = "supply_chose_starved_stack"
-  } else if (choseFed && engineFavorsFed) {
-    kind = "supply_sound_fed_column"
-  } else if (choseFed) {
+  } else if (engineFavorsFed) {
     kind = "supply_sound_fed_column"
   }
 
@@ -79,23 +76,17 @@ export function buildSupplyTeachFeedback(
       "Queue exactly one assault on the objective from either launch province. Compare the engine preview lines — supply scales attack power at max(0.15, supply÷100).",
     )
   } else if (kind === "supply_all_in_convergence") {
-    headline = "All-in does not fix supply"
+    headline = battle?.won ? "Engine mismatch" : "All-in starved the assault"
     paragraphs.push(
-      "Sending both columns converges into one battle and pools the overstacked Katowice garrison with the lean Kraków column. Convergence multiplies headcount; it does not erase the low supply factor on the heavy stack.",
+      "Converging columns share the worst launch supply; a starved prong also forfeits the flank bonus and chokes the objective. Headcount did not buy a better pooled ratio than the lean column.",
     )
-    if (combinedWorseThanLean) {
+    if (combinedWorseThanLean && supplyPlan.combinedPreview) {
       paragraphs.push(
-        `Engine previews before the die: lean Kraków column ratio ${supplyPlan.fedPreview.ratio.toFixed(2)} vs all-in convergence ${supplyPlan.combinedPreview!.ratio.toFixed(2)}. More arrows is not always more attack power when a prong is over capacity.`,
-      )
-    } else if (supplyPlan.combinedPreview) {
-      paragraphs.push(
-        `Even when convergence looks potent on paper (ratio ${supplyPlan.combinedPreview.ratio.toFixed(2)}), the starved prong dragged the pooled attack below what a single well-supplied column would deliver — read the per-province supply and capacity lines above.`,
+        `Engine preview before the die: lean column ratio ${supplyPlan.fedPreview.ratio.toFixed(2)} vs all-in ${supplyPlan.combinedPreview.ratio.toFixed(2)} (pooled attack ${supplyPlan.combinedPreview.attack.toFixed(1)}).`,
       )
     }
-    if (battle?.won) {
-      paragraphs.push(
-        "The resolver may still succeed on variance — that does not validate piling an overstacked column into the same battle.",
-      )
+    if (battle && !battle.won) {
+      paragraphs.push("The resolver summary matches the weaker pooled odds — the lean Fed-only plan is the engine-stronger choice.")
     }
   } else if (kind === "supply_chose_starved_stack") {
     headline = "Headcount is not attack power"
@@ -113,10 +104,10 @@ export function buildSupplyTeachFeedback(
       "You struck from the better-supplied province. The preview attack/defence numbers come from the resolver inputs, not coach prose.",
     )
     if (battle?.won) {
-      paragraphs.push("The lean column carried the assault in the resolver summary.")
+      paragraphs.push("The resolver summary agrees: the lean column carried the assault.")
     } else if (battle) {
       paragraphs.push(
-        "The plan matched the engine preview; if the battle failed, compare the fixed teaching die to the pooled odds line.",
+        "The plan matched the engine preview; if the battle failed, compare the fixed teaching die to the odds line.",
       )
     }
   } else if (kind === "supply_wrong_target") {

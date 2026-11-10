@@ -143,11 +143,14 @@ describe("Sprint 2 — predictions and beliefs", () => {
 describe("Sprint 2 — supply lesson engine numbers", () => {
   it("matches verified combat and supply constants from code", () => {
     const constants = verifiedSupplyCombatConstants()
-    expect(constants.attackerSupplyFactor).toBe("max(0.15, supply / 100)")
+    expect(constants.attackerSupplyFactor).toContain("max(0.15, attackerSupply / 100)")
+    expect(constants.attackerSupplyFactor).toContain("72%")
     expect(constants.defenderSupplyFactor).toBe("max(0.3, supply / 100)")
     expect(constants.minMarchSupply).toBe(30)
     expect(constants.railEdgeCost).toBe(RAIL_EDGE_COST)
     expect(constants.supplyFalloffPerCost).toBe(SUPPLY_FALLOFF)
+    expect(constants.depotAttackFloor).toContain("72%")
+    expect(constants.convergingStarved).toContain("60")
 
     const unit = {
       id: "t",

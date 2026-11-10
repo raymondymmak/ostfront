@@ -24,6 +24,10 @@ export const TERRAIN_SUPPLY_CAPACITY: Record<Terrain, number> = {
 
 export const DEPOT_CAPACITY_BONUS = 34
 export const RAIL_CAPACITY_BONUS = 6
+/** Converging attacks only earn the flank bonus when every prong marches at this attack supply or higher. */
+export const CONVERGING_FLANK_MIN_SUPPLY = 60
+/** Attacks from an overcrowded depot still draw at least this fraction of network supply. */
+export const DEPOT_ATTACK_SUPPLY_FLOOR = 0.72
 
 export type SupplyCapacityNote = {
   provinceId: string
@@ -41,9 +45,6 @@ export function provinceSupplyCapacity(
   let capacity = TERRAIN_SUPPLY_CAPACITY[province.terrain]
   if (province.depot === province.controller) capacity += DEPOT_CAPACITY_BONUS
   capacity += province.rail.length * RAIL_CAPACITY_BONUS
-  if (province.depot === province.controller && garrisonStrength > 0) {
-    capacity = Math.max(capacity, Math.round(garrisonStrength * 0.62))
-  }
   return capacity
 }
 
@@ -65,13 +66,38 @@ export function defenderSupplyInProvince(province: Pick<Province, "supply" | "ne
   return province.networkSupply ?? province.supply
 }
 
-/** Attack power uses capacity-scaled supply; friendly depots keep at least 72% of network supply for marching out. */
+/**
+ * Attack power uses capacity-scaled effective supply on the map.
+ * Your own depot still issues bulk rations: attacks launched from a depot never
+ * march below 72% of that province's network supply, even when the map shows overcrowding.
+ */
 export function attackerSupplyFromProvince(province: Province): number {
   const network = province.networkSupply ?? province.supply
   if (province.depot === province.controller) {
-    return Math.max(province.supply, Math.round(network * 0.72))
+    return Math.max(province.supply, Math.round(network * DEPOT_ATTACK_SUPPLY_FLOOR))
   }
   return province.supply
+}
+
+/**
+ * When several provinces strike together, a starved prong drags the whole assault:
+ * pooled attack supply is the worst launch supply among prongs, then scaled down if
+ * the combined column exceeds what the objective province can feed (capacity ÷ garrison+attackers).
+ */
+export function convergingAttackerSupply(
+  target: Province,
+  prongs: { from: Province; attackerStrength: number }[],
+): number {
+  if (prongs.length <= 1) {
+    return attackerSupplyFromProvince(prongs[0]?.from ?? target)
+  }
+  const worst = Math.min(...prongs.map((prong) => attackerSupplyFromProvince(prong.from)))
+  const incoming = prongs.reduce((sum, prong) => sum + prong.attackerStrength, 0)
+  const garrison = garrisonStrengthInProvince(target)
+  const feed = provinceSupplyCapacity(target, 0)
+  const choke =
+    incoming + garrison > 0 ? Math.min(1, feed / (garrison + incoming)) : 1
+  return clamp(Math.round(worst * choke), 0, 100)
 }
 
 export function applyProvinceSupplyCapacity(province: Province, baseSupply: number): SupplyCapacityNote | null {

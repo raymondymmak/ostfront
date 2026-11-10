@@ -250,6 +250,9 @@ export function verifiedSupplyCombatConstants() {
       heavySupplyModifier: -45,
     },
     provinceCapacity:
-      "capacity = terrain base + depot bonus (when controlled) + 6×rail links; effective supply = network supply × min(1, capacity÷garrison strength) when over capacity",
+      "capacity = terrain base + depot bonus (when controlled) + 6×rail links; effective supply = network × min(1, capacity÷garrison) for attacks from province",
+    convergingStarved:
+      "any prong below supply 60: no flank; pooled supply = worst prong launch supply × choke (target capacity ÷ (garrison + attackers))",
+    depotAttackFloor: "attacks from your depot use at least 72% of network supply",
   } as const
 }

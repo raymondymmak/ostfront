@@ -1,8 +1,8 @@
+import { assaultAttackPower } from "@/lib/engine/assault"
 import {
   attackerPower,
   defenderPower,
   ENCIRCLEMENT_DEFENDER_LOSS,
-  flankMultiplier,
   resolveCombat,
   type CombatOutcome,
 } from "@/lib/engine/combat"
@@ -13,7 +13,7 @@ import {
   partyOf,
 } from "@/lib/engine/echelon"
 import { clamp, FACTION_LABEL } from "@/lib/format"
-import { attackerSupplyFromProvince, defenderSupplyInProvince } from "@/lib/engine/supply"
+import { defenderSupplyInProvince } from "@/lib/engine/supply"
 import { rollD6 } from "@/lib/rng"
 import type {
   AttackProposal,
@@ -248,19 +248,15 @@ export function resolveManeuvers(
   for (const assault of assaults) {
     const roll = rolls.get(assault.key) ?? 1
     const origins = [...new Set(assault.prongs.map((prong) => prong.from.id))].sort()
-    let attack = 0
     const attackerBodyList: Unit[] = []
     for (const prong of [...assault.prongs].sort((a, b) => a.key.localeCompare(b.key))) {
-      const bodies = attackBodies(prong)
-      attackerBodyList.push(...bodies)
-      attack += attackerPower(
-        bodies,
-        attackerSupplyFromProvince(prong.from),
-        assault.target.terrain,
-        assault.target.fort,
-      )
+      attackerBodyList.push(...attackBodies(prong))
     }
-    attack *= flankMultiplier(origins.length)
+    const prepared = assault.prongs.map((prong) => ({
+      from: prong.from,
+      bodies: attackBodies(prong),
+    }))
+    const { attack } = assaultAttackPower(assault.target, prepared)
     const defenderPool = assault.target.units.filter((unit) => unit.faction === assault.target.controller)
     const fullBodies = fightingUnits(defenderPool)
     const virtual = defenseBodies(assault.target, moverIds, attackerIds)
