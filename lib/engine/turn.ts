@@ -103,7 +103,7 @@ export function resolveTurn(
     )
   }
 
-  const rng = options.rng ?? makeRng(state.seed + state.turn * 9973)
+  const rng = options.rng ?? makeRng((state.seed ?? 19150502) + state.turn * 9973)
   const usedUnits = new Set<string>()
   const fortified = new Set<string>()
   const spent = {

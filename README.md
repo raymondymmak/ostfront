@@ -157,8 +157,9 @@ Campaign state and the combat seed live on the server in private Vercel Blob (`c
 - `POST /api/new-game` — `{ difficulty }` → `{ gameId, state, log }`. The server picks the seed.
 - `GET /api/game?gameId=…` — reload authoritative state after a refresh.
 - `POST /api/turn` — `{ gameId, expectedTurn, orders }` only. The client cannot send map state or dice.
+- Turn commits use immutable snapshots `campaigns/<gameId>/turn-<n>.json` (`allowOverwrite: false`) plus a `head.json` pointer updated with Blob `ifMatch` (ETag). Losers of a race get **409**. Combat seeds are stored in `head.json` and never returned to the browser.
 
-Local dev and Vitest fall back to an in-memory store when the Blob token is missing (not for multi-instance production).
+Local dev and Vitest fall back to an in-memory store when the Blob token is missing. Preview and production return **503** without `BLOB_READ_WRITE_TOKEN`.
 
 ## Project structure
 

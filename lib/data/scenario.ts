@@ -179,7 +179,7 @@ export function rebindState(state: GameState): GameState {
   const rebound = createInitialState(state.difficulty ?? "normal")
   rebound.turn = state.turn
   rebound.date = scenarioDate("gorlice", state.turn)
-  rebound.seed = state.seed || START_SEED
+  rebound.seed = state.seed ?? START_SEED
   rebound.treasury = {
     central: { ...(state.treasury?.central ?? rebound.treasury.central) },
     russia: { ...(state.treasury?.russia ?? rebound.treasury.russia) },

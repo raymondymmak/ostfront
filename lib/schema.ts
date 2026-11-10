@@ -59,7 +59,7 @@ export const GameStateSchema = z.object({
   version: z.literal(1),
   turn: z.number().int().min(0),
   date: z.string(),
-  seed: z.number(),
+  seed: z.number().optional(),
   provinces: z.array(ProvinceSchema).min(1),
   scenario: z.enum(["gorlice"]).default("gorlice"),
   difficulty: z.enum(["easy", "normal", "hard"]).default("normal"),

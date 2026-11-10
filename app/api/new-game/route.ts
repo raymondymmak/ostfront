@@ -3,12 +3,21 @@ import {
   readBodyWithLimit,
   turnGuardConfig,
 } from "@/lib/api/turn-guard"
+import { campaignStorageStatus } from "@/lib/campaign/availability"
+import { publicSavePayload } from "@/lib/campaign/public-state"
 import { createStoredCampaign } from "@/lib/campaign/store"
 import { NewGameRequestSchema } from "@/lib/schema"
 
 export const maxDuration = 30
 
+const GENERIC_NEW_GAME_ERROR = "The server could not open a new campaign. Try again in a moment."
+
 export async function POST(request: Request) {
+  const storage = campaignStorageStatus()
+  if (!storage.ok) {
+    return Response.json({ error: storage.error, code: storage.code }, { status: storage.status })
+  }
+
   const { maxBody } = turnGuardConfig()
   const raw = await readBodyWithLimit(request, maxBody)
   if (!raw.ok) {
@@ -40,13 +49,9 @@ export async function POST(request: Request) {
 
   try {
     const created = await createStoredCampaign(parsed.data.difficulty)
-    return Response.json({
-      gameId: created.gameId,
-      state: created.save.state,
-      log: created.save.log,
-    })
+    return Response.json(publicSavePayload(created.gameId, created.save))
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not start a new campaign."
-    return Response.json({ error: message }, { status: 500 })
+    console.error("[ostfront] /api/new-game failed", error)
+    return Response.json({ error: GENERIC_NEW_GAME_ERROR }, { status: 500 })
   }
 }

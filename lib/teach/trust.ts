@@ -1,8 +1,5 @@
 /**
- * Issue #26: POST /api/turn accepts full GameState from the browser with no signature.
- * Campaign play remains client-trusted for all map numbers.
- *
- * Teaching drills scope a mitigation, not a global fix:
+ * Teaching drills scope a mitigation for graded lessons:
  * - Lesson boards are built only in authoritativeLessonState() on the server.
  * - GET /api/teach/session returns that snapshot for display.
  * - POST /api/teach/resolve accepts lessonId, variant, orders, reasoning, and
@@ -15,9 +12,8 @@
  *   cannot be injected on POST bodies.
  * - Numeric feedback strings are taken from engine previews and resolver summaries.
  *
- * Residual risk: a client could lie in reasoning text or mis-render the map before
- * resolve; graded outcomes still use server orders against server state. Tampering
- * with unit strengths in localStorage does not affect teachResolveTurn.
+ * Full Gorlice campaigns (#26): state and combat seed live in private Blob; /api/turn
+ * accepts only gameId, expectedTurn, and orders. Dice seeds are not exposed to the client.
  */
 
 export type TrustAssessment = {
@@ -33,10 +29,10 @@ export function teachingTrustAssessment(): TrustAssessment {
     scope: "teaching-lesson",
     serverAuthoritativeState: true,
     clientStateTrustedOnResolve: false,
-    pilotBlocked: true,
+    pilotBlocked: false,
     notes: [
-      "Teaching resolve ignores client GameState; campaign /api/turn still trusts client state (#26).",
-      "External pilot requires campaign-level trust work or server session store.",
+      "Teaching resolve ignores client GameState; campaign play uses server Blob + gameId.",
+      "Combat seeds for campaigns are server-held and omitted from API responses.",
     ],
   }
 }
@@ -44,12 +40,12 @@ export function teachingTrustAssessment(): TrustAssessment {
 export function campaignTrustAssessment(): TrustAssessment {
   return {
     scope: "full-campaign",
-    serverAuthoritativeState: false,
-    clientStateTrustedOnResolve: true,
-    pilotBlocked: true,
+    serverAuthoritativeState: true,
+    clientStateTrustedOnResolve: false,
+    pilotBlocked: false,
     notes: [
-      "Browser holds authoritative campaign state and resubmits it each turn.",
-      "Guards are rate limit, size, and optional origin/token only (lib/api/turn-guard.ts).",
+      "Campaign state and dice seed live in private Blob; /api/turn rejects client state.",
+      "Guards add rate limit, size, and optional origin/token (lib/api/turn-guard.ts).",
     ],
   }
 }

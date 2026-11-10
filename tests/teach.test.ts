@@ -81,7 +81,7 @@ describe("teaching — converging lublin", () => {
 
   it("records trust posture for teaching vs campaign", () => {
     expect(teachingTrustAssessment().clientStateTrustedOnResolve).toBe(false)
-    expect(campaignTrustAssessment().clientStateTrustedOnResolve).toBe(true)
-    expect(teachingTrustAssessment().pilotBlocked).toBe(true)
+    expect(campaignTrustAssessment().clientStateTrustedOnResolve).toBe(false)
+    expect(teachingTrustAssessment().pilotBlocked).toBe(false)
   })
 })
