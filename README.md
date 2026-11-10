@@ -141,7 +141,7 @@ When a key is present, the server still asks Stavka for the Russian orders. The 
 
 OpenRouter calls ask for low reasoning effort and leave that trace out of the message, with a 4000-token completion cap. Invalid JSON, a schema miss, or an empty message (the budget was spent reasoning and `content` came back blank) is tried once more when about eight seconds of `GM_BUDGET_MS` remain. The player-facing debug line adds `finish length` when the reply was cut off, and token counts, including reasoning tokens, when the provider sent them.
 
-Set `BLOB_READ_WRITE_TOKEN` to keep every game-master and chief-of-staff response in a private Blob, one file per attempt at `llm-log/YYYY-MM-DD/<timestamp>-<turn|advisor>-<id>.json`. The upload does not block the turn. With no token, nothing is stored. List the files with `npm run llm-logs`.
+Optional: set `LLM_LOG_BLOB=1` and `BLOB_READ_WRITE_TOKEN` to keep model responses in private Blob (`llm-log/…`). Default is off (console logs only) to preserve Blob quota. List stored logs with `npm run llm-logs`.
 
 The turn route can be guarded when a deployment has a key:
 
@@ -152,14 +152,14 @@ The turn route can be guarded when a deployment has a key:
 
 `POST /api/advisor` takes `{ state, messages, queuedOrders }` and returns the chief of staff's reply and any suggestions. It uses the same body size, rate limit, origin, and token checks. It does not write a save, and it does not resolve the turn.
 
-Campaign state and the combat seed live on the server in private Vercel Blob (`campaigns/<gameId>.json`) when `BLOB_READ_WRITE_TOKEN` is set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
+Campaign state and the combat seed live on the server in Upstash Redis when `KV_REST_API_URL` and `KV_REST_API_TOKEN` are set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
 
 - `POST /api/new-game` — `{ difficulty }` → `{ gameId, state, log }`. The server picks the seed.
 - `GET /api/game?gameId=…` — reload authoritative state after a refresh.
 - `POST /api/turn` — `{ gameId, expectedTurn, orders }` only. The client cannot send map state or dice.
 - Turn commits use immutable snapshots `campaigns/<gameId>/turn-<n>.json` (`allowOverwrite: false`) plus a `head.json` pointer updated with Blob `ifMatch` (ETag). Losers of a race get **409**. Combat seeds are stored in `head.json` and never returned to the browser.
 
-Local dev and Vitest fall back to an in-memory store when the Blob token is missing. Preview and production return **503** without `BLOB_READ_WRITE_TOKEN`.
+Local dev and Vitest fall back to an in-memory store when Redis env is missing. Preview and production return **503** without KV REST credentials.
 
 ## Project structure
 

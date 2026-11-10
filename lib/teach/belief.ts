@@ -1,6 +1,9 @@
-import { get, head, put } from "@vercel/blob"
 import type { RecordPersistenceStatus } from "@/lib/teach/record"
 import type { TeachLessonId } from "@/lib/teach/lessons"
+import { teachBeliefKey, TEACH_TTL_SECONDS } from "@/lib/teach/redis-keys"
+import { redisPayloadMatches } from "@/lib/teach/redis-verify"
+import { redisConfigured } from "@/lib/redis/env"
+import { getRedisClient } from "@/lib/redis/client"
 
 export type LearnerBeliefKey =
   | "separate_battles"
@@ -115,8 +118,11 @@ export async function persistLearnerBelief(input: {
   belief: ExtractedBelief
 }): Promise<BeliefPersistResult> {
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16)
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
-  if (!token) {
+  if (!redisConfigured()) {
+    return { beliefId: id, persistence: "unavailable" }
+  }
+  const redis = getRedisClient()
+  if (!redis) {
     return { beliefId: id, persistence: "unavailable" }
   }
 
@@ -131,21 +137,15 @@ export async function persistLearnerBelief(input: {
     extractedAt,
     persistence: "confirmed",
   }
-  const pathname = `teach-beliefs/${input.attemptId}.json`
+  const key = teachBeliefKey(input.attemptId)
   const payload = JSON.stringify(body)
 
   try {
     await withTimeout(async () => {
-      const uploaded = await put(pathname, payload, {
-        access: "private",
-        addRandomSuffix: false,
-        contentType: "application/json",
-        token,
-      })
-      const verified = await head(uploaded.url, { token })
-      if (!verified?.url || verified.pathname !== uploaded.pathname) {
-        throw new Error("Belief blob verify mismatch")
-      }
+      const ok = await redis.set(key, payload, { ex: TEACH_TTL_SECONDS, nx: true })
+      if (ok !== "OK") throw new Error("Belief key exists")
+      const verified = await redis.get(key)
+      if (!redisPayloadMatches(verified, payload)) throw new Error("Belief redis verify mismatch")
     }, beliefWriteTimeoutMs())
     return { beliefId: id, persistence: "confirmed" }
   } catch {
@@ -160,17 +160,14 @@ export type BeliefRecall = {
 
 export async function loadBeliefForAttempt(attemptId: string): Promise<BeliefRecall | null> {
   if (!/^[a-f0-9]{16}$/.test(attemptId)) return null
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
-  if (!token) return null
+  if (!redisConfigured()) return null
+  const redis = getRedisClient()
+  if (!redis) return null
 
-  const pathname = `teach-beliefs/${attemptId}.json`
   try {
-    const meta = await head(pathname, { token })
-    if (!meta?.url) return null
-    const blob = await get(meta.url, { access: "private", token })
-    if (!blob || blob.statusCode !== 200 || !blob.stream) return null
-    const text = await new Response(blob.stream).text()
-    const parsed = JSON.parse(text) as LearnerBeliefRecord
+    const raw = await redis.get<string>(teachBeliefKey(attemptId))
+    if (!raw) return null
+    const parsed = (typeof raw === "string" ? JSON.parse(raw) : raw) as LearnerBeliefRecord
     if (parsed.attemptId !== attemptId) return null
     return { belief: parsed, persistence: "confirmed" }
   } catch {

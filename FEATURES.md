@@ -33,7 +33,7 @@ Each province has a **garrison supply capacity** (terrain base + depot bonus whe
 
 **Fortify** costs **2 industry**, binds the province garrison for that fortnight (no move/attack), and raises fort **one level on the next fortnight** (max 3). Capturing a fortified province reduces its fort by **one level** when control changes. Queue text still uses `[data-testid=fortify]`; the resolution log names IP spent and when entrenchments complete.
 
-Trust: teaching resolve does **not** accept client `GameState` for grading. Full campaign **`/api/turn`** loads state from private Blob by `gameId` and accepts only `expectedTurn` and `orders` (server seed, #26).
+Trust: teaching resolve does **not** accept client `GameState` for grading. Full campaign **`/api/turn`** loads state from server Redis by `gameId` and accepts only `expectedTurn` and `orders` (server seed, #26).
 
 ## Chief of Staff suggestions
 
