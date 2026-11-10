@@ -126,7 +126,7 @@ export function checkAccess(
     return { ok: true }
   }
 
-  // The only 401 this app returns. There is no signature over the turn state.
+  // The only 401 this app returns. Campaign state lives on the server, not in the client body.
   // If TURN_API_TOKEN is set on the host, the page still does not send it, so
   // every Close the fortnight fails here. Vercel Authentication is a separate
   // 401 in front of this function and does not use this error string.

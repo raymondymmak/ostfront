@@ -147,6 +147,24 @@ export const TurnRequestSchema = z.object({
   orders: z.array(PlayerOrderSchema).max(40),
 })
 
+export const NewGameRequestSchema = z
+  .object({
+    difficulty: z.enum(["easy", "normal", "hard"]).default("normal"),
+  })
+  .strict()
+
+export const ServerTurnRequestSchema = z
+  .object({
+    gameId: z.string().regex(/^[a-f0-9]{32}$/),
+    expectedTurn: z.number().int().min(0),
+    orders: z.array(PlayerOrderSchema).max(40),
+  })
+  .strict()
+
+export const CampaignQuerySchema = z.object({
+  gameId: z.string().regex(/^[a-f0-9]{32}$/),
+})
+
 export const AdvisorMessageSchema = z.object({
   role: z.enum(["user", "advisor"]),
   content: z.string().max(2000),

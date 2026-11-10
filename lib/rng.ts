@@ -1,4 +1,4 @@
-/** Mulberry32. Returns floats in [0, 1). */
+/** Mulberry32. Returns floats in [0, 1). Combat dice use turn scope `seed + turn * 9973` on the server only. */
 export function makeRng(seed: number): () => number {
   let a = seed >>> 0
   return () => {

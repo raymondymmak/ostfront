@@ -39,7 +39,9 @@ export function GameApp() {
   const [directive, setDirective] = useState("")
   const [queue, setQueue] = useState<QueuedOrder[]>([])
   const [busy, setBusy] = useState(false)
+  const [beginBusy, setBeginBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [staleCampaign, setStaleCampaign] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const [flash, setFlash] = useState<string[]>([])
   const [logIndex, setLogIndex] = useState<number | null>(null)
@@ -50,8 +52,35 @@ export function GameApp() {
   const [chatEpoch, setChatEpoch] = useState(0)
 
   useEffect(() => {
-    if (!setupOpen) saveGame(game)
+    if (!setupOpen && game.gameId) saveGame(game)
   }, [game, setupOpen])
+
+  useEffect(() => {
+    const saved = loadGame()
+    const gameId = saved?.gameId
+    if (!gameId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await fetch(`/api/game?gameId=${encodeURIComponent(gameId)}`)
+        if (!response.ok || cancelled) return
+        const payload = (await response.json()) as SaveGame & { gameId: string }
+        if (!payload.state || cancelled) return
+        setGame({
+          version: 2,
+          gameId: payload.gameId,
+          state: payload.state,
+          log: payload.log ?? [],
+        })
+        setSetupOpen(false)
+      } catch {
+        /* keep local render until the next successful turn */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!hint) return
@@ -169,22 +198,56 @@ export function GameApp() {
     })
   }
 
-  function begin(nextDifficulty: Difficulty) {
-    clearGame()
-    setGame(freshGame("gorlice", nextDifficulty))
-    setQueue([])
-    setDirective("")
-    setFlash([])
+  async function begin(nextDifficulty: Difficulty) {
+    setBeginBusy(true)
     setError(null)
-    setLogIndex(null)
-    setSelectedId("krakow")
-    setOrderMode(false)
-    setArmReset(false)
-    setResultOpen(false)
-    setAdvisorOpen(false)
-    setSideTab("orders")
-    setChatEpoch((value) => value + 1)
-    setSetupOpen(false)
+    setStaleCampaign(false)
+    try {
+      const response = await fetch("/api/new-game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ difficulty: nextDifficulty }),
+      })
+      const raw = await response.text()
+      let payload: { gameId?: string; state?: GameState; log?: TurnRecord[]; error?: string } = {}
+      if (raw) {
+        try {
+          payload = JSON.parse(raw) as typeof payload
+        } catch {
+          payload = {}
+        }
+      }
+      if (!response.ok || !payload.gameId || !payload.state) {
+        throw new Error(
+          response.ok
+            ? "The server could not open a new campaign."
+            : payload.error ?? "The server could not open a new campaign.",
+        )
+      }
+      clearGame()
+      setGame({
+        version: 2,
+        gameId: payload.gameId,
+        state: payload.state,
+        log: payload.log ?? [],
+      })
+      setQueue([])
+      setDirective("")
+      setFlash([])
+      setLogIndex(null)
+      setSelectedId("krakow")
+      setOrderMode(false)
+      setArmReset(false)
+      setResultOpen(false)
+      setAdvisorOpen(false)
+      setSideTab("orders")
+      setChatEpoch((value) => value + 1)
+      setSetupOpen(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The server could not open a new campaign.")
+    } finally {
+      setBeginBusy(false)
+    }
   }
 
   function fortify(provinceId: string) {
@@ -210,15 +273,26 @@ export function GameApp() {
     const orders: PlayerOrder[] = queuedToPlayerOrders(queue)
     if (directive.trim()) orders.push({ type: "text", text: directive.trim() })
 
+    if (!game.gameId) {
+      setError("Start a new campaign before you close a fortnight.")
+      setStaleCampaign(true)
+      setBusy(false)
+      return
+    }
+
     try {
       const response = await fetch("/api/turn", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: game.state, orders }),
+        body: JSON.stringify({
+          gameId: game.gameId,
+          expectedTurn: game.state.turn,
+          orders,
+        }),
         signal: AbortSignal.timeout(CLIENT_TURN_TIMEOUT_MS),
       })
       const raw = await response.text()
-      let payload: { state?: GameState; record?: TurnRecord } = {}
+      let payload: { state?: GameState; record?: TurnRecord; error?: string; code?: string } = {}
       if (raw) {
         try {
           payload = JSON.parse(raw) as { state?: GameState; record?: TurnRecord }
@@ -228,13 +302,19 @@ export function GameApp() {
       }
       // A non-2xx leaves the map and the queue untouched so the player can retry.
       if (!response.ok || !payload.state || !payload.record) {
+        if (payload.code === "stale_turn" || payload.code === "unknown_game") {
+          setStaleCampaign(true)
+        }
         throw new Error(
-          response.ok ? "The staff could not close the fortnight." : formatTurnFailure(response.status, raw),
+          payload.error ??
+            (response.ok ? "The staff could not close the fortnight." : formatTurnFailure(response.status, raw)),
         )
       }
       const record = payload.record
+      setStaleCampaign(false)
       setGame((current) => ({
         version: 2,
+        gameId: current.gameId,
         state: payload.state!,
         log: [...current.log, record],
       }))
@@ -248,7 +328,7 @@ export function GameApp() {
     } finally {
       setBusy(false)
     }
-  }, [busy, directive, game.state, queue])
+  }, [busy, directive, game.gameId, game.state, queue])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -327,13 +407,29 @@ export function GameApp() {
         </p>
       )}
       {error && (
-        <p
+        <div
           className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
           role="alert"
           data-testid="turn-error"
         >
-          {error}
-        </p>
+          <p>{error}</p>
+          {staleCampaign && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              data-testid="start-new-campaign"
+              onClick={() => {
+                setError(null)
+                setStaleCampaign(false)
+                reset()
+              }}
+            >
+              Start a new campaign
+            </Button>
+          )}
+        </div>
       )}
       {!busy && fallback && (
         <div
@@ -538,8 +634,13 @@ export function GameApp() {
                 </button>
               ))}
             </div>
-            <Button type="button" data-testid="begin-scenario" onClick={() => begin(difficulty)}>
-              Begin the offensive
+            <Button
+              type="button"
+              data-testid="begin-scenario"
+              disabled={beginBusy}
+              onClick={() => void begin(difficulty)}
+            >
+              {beginBusy ? "Opening campaign…" : "Begin the offensive"}
             </Button>
             <a
               href="/teach"

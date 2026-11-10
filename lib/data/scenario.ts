@@ -105,9 +105,14 @@ export function createInitialState(difficulty: Difficulty = "normal"): GameState
   return assemble(difficulty)
 }
 
-export function createScenario(id: ScenarioId = "gorlice", difficulty: Difficulty = "normal"): GameState {
+export function createScenario(
+  id: ScenarioId = "gorlice",
+  difficulty: Difficulty = "normal",
+  seed?: number,
+): GameState {
   const state = createInitialState(difficulty)
   state.scenario = id
+  if (seed !== undefined) state.seed = seed >>> 0
   return state
 }
 

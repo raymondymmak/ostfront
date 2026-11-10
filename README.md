@@ -152,13 +152,21 @@ The turn route can be guarded when a deployment has a key:
 
 `POST /api/advisor` takes `{ state, messages, queuedOrders }` and returns the chief of staff's reply and any suggestions. It uses the same body size, rate limit, origin, and token checks. It does not write a save, and it does not resolve the turn.
 
-Campaign state stays in the browser. The turn API does not write a save on the server.
+Campaign state and the combat seed live on the server in private Vercel Blob (`campaigns/<gameId>.json`) when `BLOB_READ_WRITE_TOKEN` is set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
+
+- `POST /api/new-game` — `{ difficulty }` → `{ gameId, state, log }`. The server picks the seed.
+- `GET /api/game?gameId=…` — reload authoritative state after a refresh.
+- `POST /api/turn` — `{ gameId, expectedTurn, orders }` only. The client cannot send map state or dice.
+
+Local dev and Vitest fall back to an in-memory store when the Blob token is missing (not for multi-instance production).
 
 ## Project structure
 
 ```
 app/page.tsx              the game
-app/api/turn/route.ts     POST { state, orders } → { state, record }
+app/api/new-game/route.ts POST { difficulty } → { gameId, state, log }
+app/api/game/route.ts     GET ?gameId= → { gameId, state, log }
+app/api/turn/route.ts     POST { gameId, expectedTurn, orders } → { state, record }
 app/api/advisor/route.ts  POST { state, messages, queuedOrders } → advice
 components/               map, orders, province, chronicle, HUD
 lib/data/                 catalog, 2 May order of battle, objectives, rails, geometry

@@ -104,7 +104,10 @@ describe("finale", () => {
       },
     })
 
-    const game = freshGame()
+    const game = {
+      ...freshGame(),
+      gameId: "dddddddddddddddddddddddddddddddd",
+    }
     game.state.turn = 5
     game.state.date = "11 July 1915"
     hold(game.state, "krakow", "russia")

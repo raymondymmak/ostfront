@@ -41,7 +41,11 @@ function withCampaign(state: GameState): GameState {
   }
 }
 
-function migrateSave(parsed: { state: GameState; log?: SaveGame["log"] }): SaveGame | null {
+function migrateSave(parsed: {
+  state: GameState
+  gameId?: string
+  log?: SaveGame["log"]
+}): SaveGame | null {
   const fresh = createInitialState()
   const savedById = new Map(parsed.state.provinces.map((province) => [province.id, province]))
   const provinces: Province[] = fresh.provinces.map((template) => {
@@ -55,8 +59,10 @@ function migrateSave(parsed: { state: GameState; log?: SaveGame["log"] }): SaveG
     }
   })
   if (provinces.length !== PROVINCE_COUNT) return null
+  const gameId = parsed.gameId
   return {
     version: 2,
+    gameId,
     log: parsed.log ?? [],
     state: rebindTopology(withCampaign({ ...parsed.state, provinces })),
   }
@@ -67,16 +73,26 @@ export function loadGame(): SaveGame | null {
   try {
     const raw = window.localStorage.getItem(KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { version?: number; state?: GameState; log?: SaveGame["log"] }
+    const parsed = JSON.parse(raw) as {
+      version?: number
+      gameId?: string
+      state?: GameState
+      log?: SaveGame["log"]
+    }
     if ((parsed?.version !== 1 && parsed?.version !== 2) || !parsed.state?.provinces) return null
     const state = parsed.state
     // The June campaign is gone. Only a Gorlice save still matches this ruleset.
     if (state.scenario !== "gorlice") return null
-    const save = state.provinces.length !== PROVINCE_COUNT ? migrateSave({ state, log: parsed.log }) : {
-      version: 2 as const,
-      log: parsed.log ?? [],
-      state: rebindTopology(withCampaign(state)),
-    }
+    const save =
+      state.provinces.length !== PROVINCE_COUNT
+        ? migrateSave({ state, gameId: parsed.gameId, log: parsed.log })
+        : {
+            version: 2 as const,
+            gameId: parsed.gameId,
+            log: parsed.log ?? [],
+            state: rebindTopology(withCampaign(state)),
+          }
+    if (!save || !save.gameId) return null
     return save
   } catch {
     return null

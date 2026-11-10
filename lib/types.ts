@@ -193,6 +193,8 @@ export type TurnRecord = {
 
 export type SaveGame = {
   version: 2
+  /** Set when the campaign is owned by the server store. */
+  gameId?: string
   state: GameState
   log: TurnRecord[]
 }
