@@ -127,8 +127,7 @@ export function lessonMeta(lessonId: TeachLessonId, variant: TeachVariant): Less
     throw new Error(`Unknown teaching lesson: ${lessonId}`)
   }
   const targetName = CATALOG_BY_ID[LESSON_TARGET]?.name ?? LESSON_TARGET
-  const prongs =
-    variant === "guided" ? (["krakow", "kielce"] as const) : (["katowice", "kielce"] as const)
+  const prongs = ["krakow", "kielce"] as const
   return {
     lessonId,
     variant,
@@ -139,7 +138,7 @@ export function lessonMeta(lessonId: TeachLessonId, variant: TeachVariant): Less
     question:
       variant === "guided"
         ? `${targetName} holds XXIV Corps. You have usable strength at Kraków and at Kielce (recently taken). How would you strike ${targetName} this fortnight, and what rule makes a two-direction attack different from two separate blows?`
-        : `The situation resembles your last drill, but the map is not identical: use Katowice and Kielce against ${targetName}. State your plan and reasoning; no coach will interrupt.`,
+        : `The board is similar to your last drill, but the defender strength differs. Plan an assault on ${targetName} from Kraków and Kielce without coach help, and state why.`,
   }
 }
 

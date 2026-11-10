@@ -788,10 +788,10 @@ function buildSteps(cli, targets) {
         if (await page.locator("[data-testid=teach-request-hint]").count()) {
           throw new Error("Hint control visible in silent mode")
         }
-        const katowice = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
+        const krakow = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
         const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
-        if (!katowice || !kielce) throw new Error("Map projection unavailable for silent drill.")
-        await page.mouse.click(katowice.x, katowice.y)
+        if (!krakow || !kielce) throw new Error("Map projection unavailable for silent drill.")
+        await page.mouse.click(krakow.x, krakow.y)
         await page.waitForTimeout(350)
         await page.locator("[data-testid=tab-province]").click()
         await page
@@ -807,7 +807,7 @@ function buildSteps(cli, targets) {
           .filter({ hasText: /Lublin/i })
           .first()
           .click()
-        await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Katowice and Kielce together.")
+        await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Kraków and Kielce together.")
         await page.locator("[data-testid=teach-resolve]").click()
         await page.locator("[data-testid=teach-feedback]").waitFor({ state: "visible", timeout: 30_000 })
       },

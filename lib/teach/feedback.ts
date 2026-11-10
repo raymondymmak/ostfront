@@ -49,12 +49,10 @@ export function buildTeachFeedback(
   const roll = battle ? parseRoll(battle.summary) : null
   const ratio = battle ? parseRatio(battle.summary) : null
   const convergedExpected =
-    variant === "guided"
-      ? plan.convergingOnTarget === meta.targetProvinceId &&
-        meta.prongProvinceIds.every((id) =>
-          plan.attackProngs.some((p) => p.fromId === id && p.targetId === meta.targetProvinceId),
-        )
-      : plan.convergingOnTarget === meta.targetProvinceId
+    plan.convergingOnTarget === meta.targetProvinceId &&
+    meta.prongProvinceIds.every((id) =>
+      plan.attackProngs.some((p) => p.fromId === id && p.targetId === meta.targetProvinceId),
+    )
 
   let kind: FeedbackKind = "other"
   if (!plan.attackProngs.length) {
