@@ -163,6 +163,8 @@ Local dev and Vitest fall back to an in-memory store when the Blob token is miss
 
 ## Project structure
 
+For a maintainer codemap (HTTP flows, storage, trust boundaries), see **[ARCHITECTURE.md](./ARCHITECTURE.md)**.
+
 ```
 app/page.tsx              the game
 app/api/new-game/route.ts POST { difficulty } → { gameId, state, log }
