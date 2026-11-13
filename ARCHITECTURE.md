@@ -139,11 +139,11 @@ Advisor does **not** persist chat on the server in the campaign store.
 
 ```mermaid
 flowchart LR
-  A[advisor-panel] -->|POST state + messages| B[/api/advisor]
-  B --> C[advise]
-  C --> D[engine previews]
-  C --> E[optional LLM]
-  C --> F[AdvisorResponse JSON]
+  A["advisor-panel"] -->|"POST state + messages"| B["/api/advisor"]
+  B --> C["advise"]
+  C --> D["engine previews"]
+  C --> E["optional LLM"]
+  C --> F["AdvisorResponse JSON"]
   F --> A
 ```
 
