@@ -18,7 +18,7 @@ General Erich von Falkenhayn, chief of the German General Staff, can be asked fo
 
 Both sides lock their orders from the same start-of-turn map. The order of the proposal list does not matter, and neither does which side wrote the order. The same state, orders, and seed always produce the same result. Dice are drawn in battle-key order.
 
-1. **Digging, shocks, events, and the yards.** Fortify orders and supply or unrest shocks are applied first, so a fort dug this fortnight stands for this fortnight's battles. Game-master events share that ±20 unrest and supply budget and land before the battles. They never target Central Powers home soil. Both sides may dig. Recruiting is decided now but paid later, from the purse collected at the close, and the new formation still arrives when the fortnight closes.
+1. **Digging, shocks, events, and the yards.** Entrenchments begun last fortnight finish first and raise fort level before this fortnight's battles. New fortify orders spend industry and tie up the garrison, but the level rises at the **start of the next fortnight**, not in the same battles. Game-master events share that ±20 unrest and supply budget and land before the battles. They never target Central Powers home soil. Both sides may dig. Recruiting is decided now but paid later, from the purse collected at the close, and the new formation still arrives when the fortnight closes.
 2. **Marches and attacks, together.** Every move and attack is checked against the map from step 1. A formation has one order. Then the battles are fought.
 3. **Supply, refit, victory.** Supply is traced again from the map after the marches. Income, refit, recruiting, and the grade of the fortnight come last. A depot or rail taken this fortnight does not feed or starve a battle that was already locked. It can drop a province under supply 30 for the next march. The chronicle says when a province was cut off this fortnight.
 
@@ -152,16 +152,18 @@ The turn route can be guarded when a deployment has a key:
 
 `POST /api/advisor` takes `{ state, messages, queuedOrders }` and returns the chief of staff's reply and any suggestions. It uses the same body size, rate limit, origin, and token checks. It does not write a save, and it does not resolve the turn.
 
-Campaign state and the combat seed live on the server in private Vercel Blob (`campaigns/<gameId>.json`) when `BLOB_READ_WRITE_TOKEN` is set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
+Campaign state and the combat seed live on the server in private Vercel Blob under `campaigns/{gameId}/` when `BLOB_READ_WRITE_TOKEN` is set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
 
 - `POST /api/new-game` — `{ difficulty }` → `{ gameId, state, log }`. The server picks the seed.
 - `GET /api/game?gameId=…` — reload authoritative state after a refresh.
 - `POST /api/turn` — `{ gameId, expectedTurn, orders }` only. The client cannot send map state or dice.
-- Turn commits use immutable snapshots `campaigns/<gameId>/turn-<n>.json` (`allowOverwrite: false`) plus a `head.json` pointer updated with Blob `ifMatch` (ETag). Losers of a race get **409**. Combat seeds are stored in `head.json` and never returned to the browser.
+- Turn commits use `campaigns/{gameId}/head.json` (current turn and authoritative seed) and immutable `campaigns/{gameId}/turn-N.json` snapshots (`allowOverwrite: false`). The head pointer updates with Blob `ifMatch` (ETag). Losers of a race get **409**. API responses strip the seed; see `ARCHITECTURE.md` for snapshot storage details.
 
 Local dev and Vitest fall back to an in-memory store when the Blob token is missing. Preview and production return **503** without `BLOB_READ_WRITE_TOKEN`.
 
 ## Project structure
+
+For a maintainer codemap (HTTP flows, storage, trust boundaries), see **[ARCHITECTURE.md](./ARCHITECTURE.md)**.
 
 ```
 app/page.tsx              the game
