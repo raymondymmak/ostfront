@@ -4,7 +4,7 @@ Turn-based browser wargame (Next.js, TypeScript, MapLibre) for the Gorlice–Tar
 
 Raymond’s learning question — *where is the POST, turn guard, and server→client send-back?* — is answered in **Turn flow** below.
 
-**Related:** `README.md` (player rules), `FEATURES.md` (QA-visible behaviour), `docs/decisions/` (ADRs). **In progress:** campaign storage may move from Vercel Blob to Upstash Redis (draft PR #45); this doc describes **current `main`**.
+**Related:** `README.md` (introduction), `docs/RULES.md` (full player rules), `docs/DEVELOPMENT.md` (local run and env), `FEATURES.md` (QA-visible behaviour), `docs/decisions/` (ADRs). **In progress:** campaign storage may move from Vercel Blob to Upstash Redis (draft PR #45); this doc describes **current `main`**.
 
 ---
 
