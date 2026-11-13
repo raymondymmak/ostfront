@@ -9,7 +9,9 @@ Clients could post fabricated state or guess dice if the seed lived in the brows
 
 ## Decision
 
-New campaigns are created via `POST /api/new-game` and stored under `lib/campaign/store.ts`. The dice seed lives only in `head.json` on the server; snapshots in turn files omit it from what the browser needs, and `stripSeedFromState` in `lib/campaign/public-state.ts` removes `seed` from every API response. Turns are submitted with `{ gameId, expectedTurn, orders }` — not full state.
+New campaigns are created via `POST /api/new-game` and stored under `lib/campaign/store.ts`. The combat seed is **authoritative in `head.json`**; before resolution the server merges it with `withServerSeed`. **Today `turn-N.json` snapshots may still include `save.state.seed`** (copied from in-memory state at commit time) — only `head.seed` is relied on at load time. Every browser-visible JSON passes through `stripSeedFromState` in `lib/campaign/public-state.ts`, so API responses never expose the seed. Turns are submitted with `{ gameId, expectedTurn, orders }` — not full state.
+
+**Follow-up:** stop persisting the seed inside turn snapshots so Blob copies cannot leak it even if someone reads private storage.
 
 The browser still mirrors `gameId` and public state in `localStorage` via `lib/storage.ts` for convenience, but `/api/game` and `/api/turn` are authoritative.
 

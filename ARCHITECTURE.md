@@ -75,7 +75,7 @@ Gate order (first failure wins):
 | 10 | `commitCampaignTurn` | 409 `storage_conflict` or `stale_turn` |
 | 11 | Response | 200 `{ gameId, state: stripSeedFromState(...), record }` |
 
-Turn guard defaults (`lib/api/turn-guard.ts`): body ≤ 512_000 bytes; 24 requests per IP per 60s per warm instance; optional `TURN_API_TOKEN` and `TURN_ALLOWED_ORIGINS`. If a token is set but the page does not send it, every turn gets **401** (documented in code comments).
+Turn guard defaults (`lib/api/turn-guard.ts`): body ≤ 512_000 bytes; 24 requests per IP per 60s per warm instance; optional `TURN_API_TOKEN` and `TURN_ALLOWED_ORIGINS`. Access (`checkAccess`): a matching `X-Ostfront-Turn-Token` or `Authorization: Bearer` value always passes; else, if `TURN_ALLOWED_ORIGINS` is non-empty, the request must carry a matching `Origin`/`Referer` (**403** if missing or not listed) and **does not need the token**; else, if only a token is configured, missing credentials yield **401**; with neither token nor allow-list, the route is open (typical local dev).
 
 ### Resolution chain
 
@@ -227,14 +227,18 @@ Grade thresholds (eastern VP captured, Kraków not Russian): Decisive ≥ **7**,
 
 ### LLM cascade (`lib/gm/cascade.ts`)
 
-When `LLM_API_KEY` is set, `fetchGmWithCascade` calls `llmAiTurn` with:
+When `LLM_API_KEY` is set, `planCascade` (`lib/gm/cascade.ts`) picks the **first** model from `lib/gm/tier.ts`:
 
-- Primary model: `LLM_MODEL` or default `gpt-4o-mini`
-- Escalation: `LLM_MODEL_STRONG` if set and distinct, on important/critical tiers (`lib/gm/tier.ts`) or high proposal rejection rate (> **0.3**) or invalid JSON on first attempt
+- **Important / critical** tier → `LLM_MODEL_STRONG` when set and distinct from cheap; otherwise the cheap model.
+- **Routine** tier → `LLM_MODEL` (default `gpt-4o-mini`).
 
-**Surprising fact (verify in `lib/gm/index.ts`):** even when the cascade succeeds, **only up to two diplomacy lines** are taken from the LLM. Russian unit orders, events, and narration still come from Stavka. Failed cascade → staff simulation with a player-facing warning; `buildStaffTurn` still merges `interpreted` Central Powers proposals with Stavka’s Russian proposals.
+A **second** call to the strong model runs only when the first call used the cheap model **and** `mayEscalate` is true: proposal rejection rate above **0.3** after a successful JSON parse (`measureRejectionRate`), or the first call failed validation (`zod`) / returned empty. If the first call already used the strong model (tier routing), there is no strong retry for rejections.
 
-Escalation never runs if `LLM_MODEL_STRONG` is unset or equal to `LLM_MODEL` (`resolveLlmModels`).
+`fetchGmWithCascade` failure (timeouts, HTTP errors, exhausted retries) makes `playTurn` fall back to **staff simulation** (Stavka only) with a player warning.
+
+**Surprising fact (verify in `lib/gm/index.ts`):** even when the cascade succeeds, **only up to two diplomacy lines** are taken from the LLM. Russian unit orders, events, and narration still come from Stavka. `buildStaffTurn` merges player proposals from `interpreted` with Stavka’s Russian proposals.
+
+`LLM_MODEL_STRONG` must be set and different from the cheap model, or tier routing and cheap→strong retries never use a strong model (`resolveLlmModels`).
 
 ### Advisor
 
@@ -246,7 +250,7 @@ Separate prompt in `lib/gm/advisor.ts`; uses `llmChat`, not the turn cascade.
 
 | Asset | Owner | Notes |
 | --- | --- | --- |
-| Dice seed | Server `head.json` | Never in API responses (`stripSeedFromState`) |
+| Dice seed | Server `head.json` (authoritative; may also appear in Blob snapshots today) | Never in API responses (`stripSeedFromState`) |
 | Campaign snapshots | Server Blob / memory | Client sends only `gameId` + turn index + orders |
 | Turn outcome | `lib/engine` | Deterministic given seed + orders + Stavka |
 | Advisor map view | **Client POSTed state** | Trusts browser for briefing; does not change saved campaign |
@@ -264,7 +268,7 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 3. **`lib/storage.ts` is not dead code** — `game-app.tsx` still mirrors saves locally; server campaigns are authoritative for adjudication.
 4. **Turn guard rate limit** is per serverless instance, not global.
 5. **Blob two-step commit** can orphan a snapshot if head CAS fails (see ADR 004; Redis migration in PR #45).
-6. **README** still describes pre–round-2 local-only persistence in places; live play expects `gameId` from `/api/new-game`.
+6. **Turn snapshots may still store `state.seed`** even though `head.json` is authoritative; follow-up is to omit it at commit time (ADR 003).
 
 ---
 
