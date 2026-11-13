@@ -1,6 +1,6 @@
 # Ostfront
 
-**Ostfront** is a turn-based strategy game you play in the browser. You command Germany and Austria-Hungary in the spring and summer of 1915, during the Gorlice–Tarnów breakthrough on the Eastern Front. Each turn is two weeks (a *fortnight*): 2 May, 16 May, 30 May, 13 June, 27 June, and 11 July. You do not need prior wargame experience—if you have played chess, Civilization, or a mobile strategy game, the ideas will feel familiar.
+**Ostfront** is a turn-based strategy game you play in the browser. You command Germany and Austria-Hungary in the spring and summer of 1915, during the Gorlice–Tarnów breakthrough on the Eastern Front. Each turn is two weeks (a *fortnight*): 2 May, 16 May, 30 May, 13 June, 27 June, and 11 July. The feel is closer to a light war board game like *Call of War*—no real-time clock, you plan at your own pace—with map depth inspired by *Hearts of Iron IV*, but scoped to one campaign on the Eastern Front. You do not need prior wargame experience; if you have played chess, Civilization, or a mobile strategy game, the ideas will feel familiar.
 
 **[Play Ostfront](https://raymondymmak-ostfront.vercel.app)**
 
@@ -17,7 +17,7 @@ In early 1915 the Eastern Front had bogged down. Germany and Austria-Hungary con
 3. **Give orders.** Each formation gets **one** order this fortnight. You can draw an arrow on the map, use **Move** / **Attack** on a neighbor, type a short directive, or ask the Chief of Staff for suggestions (see glossary).
 4. **Queue and review.** Queued orders appear in the Orders panel. Attack lines can show estimated odds—they are a **forecast**, not a promise (see below).
 5. **End turn.** When you are ready, close the fortnight. Russia’s Stavka issues its orders at the same time, from the same starting map. The engine resolves marches and battles together, then updates supply, income, and victory points.
-6. **Read the chronicle.** The Chronicle tab tells you what happened: battles, retreats, supply cuts, and the grade so far.
+6. **Read the chronicle.** On a wide screen the Chronicle sits in its own panel; on a phone-width layout, open the **Chronicle** tab. It tells you what happened: battles, retreats, supply cuts, and the grade so far.
 
 ### The four orders
 
