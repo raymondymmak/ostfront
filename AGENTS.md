@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Architecture docs
 
-Before changing routes, storage, trust boundaries, or game rules, read **`ARCHITECTURE.md`** at the repo root. In the **same pull request** as any such change:
+Before changing routes, storage, trust boundaries, or game rules, read **`ARCHITECTURE.md`** at the repo root and **`docs/RULES.md`** for player-facing mechanics. In the **same pull request** as any such change:
 
 1. Update `ARCHITECTURE.md` so the codemap and flows stay accurate.
 2. Add or revise an ADR under `docs/decisions/` (see `docs/decisions/README.md`).

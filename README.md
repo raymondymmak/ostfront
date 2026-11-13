@@ -1,199 +1,83 @@
 # Ostfront
 
-Ostfront is a turn-based strategy game of the First World War’s Eastern Front, set only in the historical Gorlice–Tarnów offensive. You command the Central Powers from 2 May to 11 July 1915. Each turn is a fortnight: 2 May, 16 May, 30 May, 13 June, 27 June, and 11 July.
+**Ostfront** is a turn-based strategy game you play in the browser. You command Germany and Austria-Hungary in the spring and summer of 1915, during the Gorlice–Tarnów breakthrough on the Eastern Front. Each turn is two weeks (a *fortnight*): 2 May, 16 May, 30 May, 13 June, 27 June, and 11 July. You do not need prior wargame experience—if you have played chess, Civilization, or a mobile strategy game, the ideas will feel familiar.
 
-The design aim is a game in the manner of Call of War, with no real-time clock, and with the depth of Hearts of Iron IV in the browser.
+**[Play Ostfront](https://raymondymmak-ostfront.vercel.app)**
 
-Play it at [https://raymondymmak-ostfront.vercel.app](https://raymondymmak-ostfront.vercel.app).
+### The history in 30 seconds
 
-## What you do
+In early 1915 the Eastern Front had bogged down. Germany and Austria-Hungary concentrated fresh forces near Gorlice and broke through Russian lines in May. Mackensen’s offensive pushed east: Lemberg (today Lviv) was the big prize Russia had taken in 1914. The game starts on **2 May 1915**, with Russian troops still holding Lemberg while your armies gather around Kraków. Your job is to drive the breakthrough—without losing your own base.
 
-You give orders for your own formations: move along a friendly border, attack into an enemy province, fortify, or recruit. A typed directive, a map arrow, or a neighbor button all become the same orders. A unit may receive one order per turn, and a unit in a province with supply below 30 cannot advance or attack. Entering an enemy province is always an attack.
+---
 
-Russia is played by Stavka, a rule-based staff. The rules engine is the source of truth. It accepts or rejects every proposal, then resolves the fortnight as one simultaneous turn. Stavka writes the Russian orders and the chronicle of the fortnight from the map as it stands when the fortnight opens. It does not see the Central Powers' orders. If a model key is set, the model may replace up to two diplomacy sentences. It does not order units, and it does not decide battles. With no key, the game plays the same way.
+## How to play
 
-General Erich von Falkenhayn, chief of the German General Staff, can be asked for advice from the Chief of Staff panel. He sees only the map the engine has already computed: ownership, supply, strengths, morale, rails, odds, and victory points. Attacks that converge on one province in the same fortnight are one battle, and he quotes that pooled figure. Those odds are against the garrison and the forts as they stand at the start of the fortnight. A simultaneous Russian march can leave a rear guard, empty the province, or meet the columns, and he says so. A suggestion may be the whole set. Accept puts a suggestion in the queue; Dismiss throws it away. He never changes the state, and he does not see the Russian orders for the fortnight. With no key, the panel says the chief of staff is unavailable offline and reads a short summary off the map.
+1. **Start.** Pick a difficulty and begin the offensive. The map shows provinces, your formations, and Russian-held ground.
+2. **Select a province.** Click the map or pick a formation from the Orders list. The Province panel shows supply, neighbors, and who holds the ground.
+3. **Give orders.** Each formation gets **one** order this fortnight. You can draw an arrow on the map, use **Move** / **Attack** on a neighbor, type a short directive, or ask the Chief of Staff for suggestions (see glossary).
+4. **Queue and review.** Queued orders appear in the Orders panel. Attack lines can show estimated odds—they are a **forecast**, not a promise (see below).
+5. **End turn.** When you are ready, close the fortnight. Russia’s Stavka issues its orders at the same time, from the same starting map. The engine resolves marches and battles together, then updates supply, income, and victory points.
+6. **Read the chronicle.** The Chronicle tab tells you what happened: battles, retreats, supply cuts, and the grade so far.
 
-## How a turn works
+### The four orders
 
-Both sides lock their orders from the same start-of-turn map. The order of the proposal list does not matter, and neither does which side wrote the order. The same state, orders, and seed always produce the same result. Dice are drawn in battle-key order.
+| Order | What it does |
+| --- | --- |
+| **Move** | March into a **friendly** neighboring province you already control. |
+| **Attack** | Strike a **neighboring enemy** province. There is no separate “invade” command—**entering enemy ground is always an attack.** |
+| **Fortify** | Dig in where you have troops. Costs industry and keeps the garrison busy this fortnight. Entrenchments **finish next fortnight** and raise fort level (up to 3). |
+| **Recruit** | Raise a new formation at a **yard**—a depot or your own city with good supply. Payment comes from income at the end of the fortnight; the unit arrives when the turn closes (heavy artillery takes two fortnights). |
 
-1. **Digging, shocks, events, and the yards.** Entrenchments begun last fortnight finish first and raise fort level before this fortnight's battles. New fortify orders spend industry and tie up the garrison, but the level rises at the **start of the next fortnight**, not in the same battles. Game-master events share that ±20 unrest and supply budget and land before the battles. They never target Central Powers home soil. Both sides may dig. Recruiting is decided now but paid later, from the purse collected at the close, and the new formation still arrives when the fortnight closes.
-2. **Marches and attacks, together.** Every move and attack is checked against the map from step 1. A formation has one order. Then the battles are fought.
-3. **Supply, refit, victory.** Supply is traced again from the map after the marches. Income, refit, recruiting, and the grade of the fortnight come last. A depot or rail taken this fortnight does not feed or starve a battle that was already locked. It can drop a province under supply 30 for the next march. The chronicle says when a province was cut off this fortnight.
+A formation in a province with **supply below 30** cannot move or attack. One formation, one order.
 
-Conflict rules:
+### Your goal
 
-- **One battle.** Every attack by one side against the same province is one battle and one die, including columns that were not next to each other in the order list. Two directions multiply strength by 1.12, three by 1.22, and four or more by 1.30. If the defender has no friendly neighbor at the start of the turn, the attack is an encirclement: the defender loses an extra 18 percent, and the remnants cannot retreat. A neighbor that falls to a different battle this same fortnight is not an encirclement by itself. The remnants simply cannot go there.
-- **Rear guard.** A formation ordered to attack still leaves a rear guard at half defensive strength. The column attacks at full strength. Losses from both are taken off the same formation. A formation ordered to move has left, and does not defend.
-- **Meeting engagement.** Attacks that cross the same border in both directions are one clash in the open. Forts and terrain do not apply. The side whose province id comes first is the nominal attacker, so the die can swing an even fight. Neither column enters the other's province. Both fall back. The chronicle calls it a meeting engagement.
-- **Empty provinces and bounces.** An attack into a province with no garrison, and nobody else marching in, occupies it without a fight. If the other side is also marching into that empty province, both columns bounce and the controller does not change.
-- **Vacating.** If the garrison moves away and nobody of that side marches in, the attack finds the province empty and takes it. The garrison arrives at its own destination.
-- **Late reinforcements.** A move into a friendly province does not join a battle there. If the province holds, the column enters. If it falls, the column falls back.
-- **Swaps.** Two friendly columns that exchange provinces pass on the road. Opposing columns that try to exchange provinces fight a meeting engagement instead, and both fall back.
+Push east and take the Russian objectives **Lemberg**, **Lublin**, and **Rovno**, while **never losing Kraków**—your only home city. Hold all three objectives together and you can end the offensive early. Detailed scoring and schedules are in **[docs/RULES.md](./docs/RULES.md#victory)**.
 
-The orders panel and Falkenhayn quote odds against the garrison as it stands. They do not know whether that garrison will march, dig, or meet the attack. The chronicle is the result.
+---
 
-The situation is saved in the browser under `ostfront-1915-v1`. Restarting clears it. A save from another scenario is discarded. Neighbors and rails are rebound from the catalog, so a save cannot invent borders.
+## Glossary
 
-## Economy, recruiting, and reinforcement
+| Term | Meaning |
+| --- | --- |
+| **Province** | One region on the map. Ownership (`owner`) is who held it in 1914; **controller** is who holds it now. |
+| **Formation / corps** | A fighting counter on the map (infantry corps, cavalry, heavy artillery). Large corps names on the map may stand for several historical units. |
+| **Supply** | How well a province is fed from depots and rails. Low supply weakens attacks and can block movement. |
+| **Depot** | A rail hub that anchors supply for one side (e.g. Kraków for you, Warsaw and Rovno for Russia). |
+| **Rail** | Links between provinces; friendly-controlled rails help trace supply. Shown on the map legend. |
+| **Fort level** | 0–3 entrenchments. Each level makes the province harder to storm. New digging pays off **next** fortnight. |
+| **Morale** | Unit fighting spirit; it rises and falls with combat and refit. |
+| **Victory points (VP)** | Eastern objectives are worth points only while you hold them (Lemberg 4, Lublin 2, Rovno 3). |
+| **Stavka** | Russian high command—**played by the computer** with fixed rules. It does not see your orders when it plans. |
+| **Falkenhayn / Chief of Staff** | Optional advisor (General Erich von Falkenhayn). He reads the map and may suggest orders; **Accept** only queues them. He never changes the game by himself. |
+| **Chronicle** | The story of each fortnight after the engine resolves it—the source of truth for results. |
+| **Central Powers** | Germany and Austria-Hungary—the side you play. |
+| **Fortnight** | One game turn = two weeks of campaign time. |
 
-Each province yields manpower and industry at the end of the fortnight when its supply is at least 30. Unrest reduces the yield, and a province held by someone other than its 1914 owner yields half. Central Powers industry is then multiplied by 1.3. Russian manpower is multiplied by 1.12 and Russian industry by 0.55, and Russian income is scaled again by difficulty: 0.62 on Easy, 0.82 on Normal, and 1.18 on Hard.
+---
 
-Recruiting spends that purse. A yard is a province you control, with supply of at least 60, that is either your depot or one of your own urban cities.
+## Key ideas that win games
 
-| Kind | Manpower | Industry | Arrives | Strength | Morale |
-| --- | ---: | ---: | --- | ---: | ---: |
-| Infantry corps | 6 | 3 | when this fortnight closes | 40 | 72 |
-| Cavalry division | 4 | 2 | when this fortnight closes | 25 | 76 |
-| Heavy artillery | 2 | 7 | in two fortnights | 25 | 74 |
+- **Hit one province from several sides.** Two or more of your provinces attacking the same target in the same fortnight fight **one battle** and combine strength, with a bonus multiplier (1.12 / 1.22 / 1.30 by number of directions). You need healthy supply on the attacking provinces for that bonus to apply.
+- **Encirclement.** When **two or more** prongs attack and the defender has **no friendly neighbor left at the start of the turn**, the defender suffers extra losses and cannot retreat. Surrounding alone from one direction is not enough—the converging attack matters.
+- **Keep troops in supply.** Trace rails back to your depots. Starved provinces cannot march; weak supply dulls attacks. Taking an enemy depot this fortnight may not help battles already locked in—it helps **next** time.
+- **Odds are a forecast.** You and Russia both submit orders from the **same** opening map. The defender might march away, dig, or meet you in the field. The numbers on an attack line assume the garrison stays put; the **chronicle** shows what really happened.
 
-Formations that did not attack, and that sit in supply of at least 50, refit automatically: up to 8 strength, at 1 manpower per 4 points. Morale recovers by 5 toward 80 even if the formation attacked.
+More mechanics (turn order, combat, economy, Stavka difficulty) are in **[docs/RULES.md](./docs/RULES.md)**.
 
-## Victory
+---
 
-Eastern victory points are counted only while you hold the province.
+## Documentation
 
-| Objective | Points | On time for a Brilliant |
-| --- | ---: | --- |
-| Lemberg | 4 | by the fortnight of 13 June |
-| Lublin | 2 | by the fortnight of 11 July |
-| Rovno (Volhynia) | 3 | held by the fortnight of 27 June |
+| Document | Contents |
+| --- | --- |
+| **[docs/RULES.md](./docs/RULES.md)** | Full rules: turn resolution, combat, economy, victory, Stavka, May 1915 setup. |
+| **[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)** | Run locally, scripts, environment variables, APIs, map build, project layout. |
+| **[ARCHITECTURE.md](./ARCHITECTURE.md)** | Codemap for maintainers: HTTP flows, storage, trust boundaries. |
+| **[FEATURES.md](./FEATURES.md)** | QA-facing behaviour and test selectors. |
 
-Nine points are available. A Brilliant outranks the point totals: it needs all three objectives on that schedule, and Kraków still yours. Otherwise, with Kraków held, 7 or more is a Decisive, 4 or more is a Victory, and 2 or more is a Marginal. Fewer than 2 is a draw. Kraków is the only home city. If it is Russian at the end of any fortnight, a Brilliant is no longer possible, even if you take it back. If Russia still holds it on 11 July, the campaign is a defeat.
+---
 
-Holding Lemberg, Lublin, and Rovno together ends the offensive early. On schedule, with Kraków held throughout, that is a Brilliant. Later, it is a Decisive.
+## Map data
 
-Lemberg fell on 22 June 1915, inside the fortnight of 13 June. Rovno did not fall in 1915. Kielce is the Russian shoulder and is not an objective. Teschen, where the Austro-Hungarian high command sat, is not a second home: it can be reached from Kielce through Katowice.
-
-## Concentric attacks
-
-Two or more of your provinces attacking the same target in the same fortnight are one battle and one die. Their strength is added, then multiplied by 1.12 for two directions, 1.22 for three, and 1.30 for four or more. Every prong loses the same fraction of its strength. On a win, the survivors of every prong enter. If the defender has no friendly neighbor left, the attack is an encirclement: the defender loses an extra 18 percent, and the remnants cannot retreat.
-
-A single attack uses the same combat, without the flank multiplier. Strength, morale, arm, terrain, forts, and supply all count, and a seeded die between 0.82 and 1.17 decides the margin. The attacker wins when attack times that die, divided by defense, is at least 1. Defense is counted as at least 8. An empty province is occupied without a fight, unless the other side is marching in too, in which case both bounce. Defenders who are not encircled retreat to the friendly neighbor with the most supply that is still friendly after this fortnight's other battles. Supply and forts used in the battle are the values after digging and before the marches.
-
-Terrain defense is plains 1, forest 1.2, urban 1.18, marsh 1.35, and mountain 1.48. Each fort level adds 14 percent. Artillery is stronger on the attack and against forts, and slightly weaker in defense. Cavalry is better on the plains and worse in forest, marsh, and mountain. A defender cut off from its depots still fights, at 30 percent supply. An attacker in the same position fights at 15 percent.
-
-## Stavka
-
-Stavka is deterministic. Difficulty changes the Russian army, Russian income, and how boldly the staff attacks. The map and the opening controllers do not change.
-
-| | Easy | Normal | Hard |
-| --- | --- | --- | --- |
-| Russian strength | ×0.84, morale −4 | as written | ×1.28, morale +3 |
-| Odds to attack Central Powers soil | 1.55 | 1.28 | 1.08 |
-| Attacks in a fortnight | 1 | 2 | 3 |
-| Concentric prongs | never | up to 2 | up to 3 |
-
-On Easy and Hard those strength and morale adjustments stay inside a floor of 10 strength, a ceiling of 100, and a morale band of 42 to 94. Retaking a Russian province is 0.12 easier than the row above, and never below 1.
-
-On the first fortnight, Easy and Normal dig and raise troops. They do not attack or redeploy. Hard is already in motion. After that, Easy shifts reserves only on even turns. A second prong is added only when one province is short of the odds. On Normal that pair must clear 1.45, and only to retake Russian soil. Hard may pinch a Central Powers province at its ordinary odds. Once you hold Russian soil, attacks into a Central Powers province use a higher bar: Easy will not make them, Normal needs 2.35, and Hard needs 2.15. Depots, objectives, and provinces on your border keep a garrison. On Hard a Russian depot keeps two formations, so Warsaw is not uncovered. A one-corps reserve depot may still march when some other province is already in contact. Rovno's corps can reach Lublin in that same fortnight.
-
-On Hard, a province the enemy can already hurt (their best neighbor is at least four-fifths of the defense) stands. Its garrison does not march off, and it may strike only the neighbor that threatens it. The dig goes to the in-contact objective worth the most victory points, so Lemberg is entrenched before a weaker city. Stavka still reads only the opening map.
-
-## The map on 2 May 1915
-
-`owner` is the 1914 sovereign, used for occupation unrest. `controller` is who holds the ground when the offensive opens. Controllers live in `lib/data/definitions.ts`. The 1914 owners are forced in `OWNER_OVERRIDES` in `scripts/build-hoi4-theater.py`.
-
-Mackensen’s German 11th Army and Archduke Joseph Ferdinand’s Austro-Hungarian 4th Army start in Kraków, with the Guard Corps and Mackensen’s heavy artillery. The 11th Army counter also stands for X Corps, XLI Reserve Corps, the Combined Corps, and Arz’s VI Corps. Radko Dimitriev’s Russian 3rd Army holds Lemberg, with XXI Corps and the army artillery. X Corps is on Kielce, XXIV Corps is at Lublin, and the III Caucasian Corps is the reserve at Rovno. Brusilov’s 8th Army is on Podolia. Borojević’s 3rd Army is in Carpathian Ruthenia. Cavalry Corps Hauer screens Stanislav, and Group Pflanzer-Baltin holds Bukovina. The German 8th and 9th Armies, Woyrsch, Thorn, and Danzig are a holding front opposite the Russian 1st, 2nd, and 10th Armies, the Grenadier Corps at Warsaw, and the Kovno garrison.
-
-Kraków, Königsberg, and Lemberg are Central Powers depots. Warsaw and Rovno are Russian depots. A depot feeds only its own faction, and only while that faction controls it. Lemberg’s depot stays Austro-Hungarian, so it does not feed Russia; recapture turns that railhead back on. Because Lemberg starts Russian, the Carpathian flank is railed Kraków–Stanislav–Bukovina.
-
-Lemberg’s owner is Austro-Hungarian and its controller is Russian. Russia held the city from 3 September 1914 until 22 June 1915, and unrest there has already risen. Katowice stays German. Bukovina stays Austro-Hungarian: Austrian troops had retaken it on 17 February 1915 and held it into 1916.
-
-Two places are drawn off the historical front, on purpose. Przemyśl was Russian from 22 March until 3 June 1915, but it is an alias inside Kraków, with Gorlice, Tarnów, and Rzeszów. The polygon cannot be split, and Kraków stays the Central Powers base. Stanislav starts Austro-Hungarian and Central Powers-held. Historically the Russians held it from 4 March until 8 June 1915.
-
-## Run it locally
-
-Requires Node.js 22 or newer (`engines` in `package.json`, and `.nvmrc`).
-
-```bash
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-- `npm test` — Vitest for the rules, Stavka, victory, and the turn API.
-- `npm run typecheck` — generate Next types, then `tsc --noEmit`.
-- `npm run lint` — ESLint.
-- `npm run build` — production build.
-
-CI runs typecheck, lint (0 warnings), test and build on every PR.
-- `npm run llm-logs` — list stored LLM responses (`BLOB_READ_WRITE_TOKEN`). `vercel blob ls llm-log/` does the same.
-- `npm run map` — neighbor graph, and rail pairs that do not share a border.
-- `npx tsx scripts/balance-sim.ts` — scripted Central Powers opponents (greedy, frontier, sensible) through six seeds on Easy, Normal, and Hard. It clears any model key and plays against Stavka.
-
-## Environment
-
-Copy `.env.example` to `.env.local` only if you want a live narrator. The game is fully playable with none of these set.
-
-```
-LLM_API_KEY=
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-LLM_MODEL_STRONG=
-```
-
-`LLM_BASE_URL` is any OpenAI-compatible chat-completions endpoint. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent when set. The chief of staff uses `LLM_MODEL`, the fast model. `LLM_MODEL_STRONG` stays on important Russian diplomacy turns.
-
-When a key is present, the server still asks Stavka for the Russian orders. The model is called only for diplomacy. Turns are classed routine, important, or critical (`lib/gm/tier.ts`). With `LLM_MODEL_STRONG` set, important and critical turns try the strong model first. A cheap reply may be retried once on the strong model if validation fails or more than 30 percent of that draft’s proposals would be rejected. The wall clock for both calls is about 90 seconds (`GM_BUDGET_MS`), and each call is capped at about 45 seconds (`LLM_TIMEOUT_MS`). The turn function allows 120 seconds, and the browser waits longer than that. One JSON line is logged per call (`ostfront.gm.call`), without the key or the prompt. If the model fails, Stavka’s own diplomacy is kept.
-
-OpenRouter calls ask for low reasoning effort and leave that trace out of the message, with a 4000-token completion cap. Invalid JSON, a schema miss, or an empty message (the budget was spent reasoning and `content` came back blank) is tried once more when about eight seconds of `GM_BUDGET_MS` remain. The player-facing debug line adds `finish length` when the reply was cut off, and token counts, including reasoning tokens, when the provider sent them.
-
-Set `BLOB_READ_WRITE_TOKEN` to keep every game-master and chief-of-staff response in a private Blob, one file per attempt at `llm-log/YYYY-MM-DD/<timestamp>-<turn|advisor>-<id>.json`. The upload does not block the turn. With no token, nothing is stored. List the files with `npm run llm-logs`.
-
-The turn route can be guarded when a deployment has a key:
-
-- `TURN_MAX_BODY_BYTES` — default `512000`.
-- `TURN_RATE_LIMIT_MAX` / `TURN_RATE_LIMIT_WINDOW_MS` — per-IP limit on a warm instance, default 24 requests / 60 seconds.
-- `TURN_ALLOWED_ORIGINS` — comma-separated origins, for example `https://raymondymmak-ostfront.vercel.app,http://localhost:3000`.
-- `TURN_API_TOKEN` — send `X-Ostfront-Turn-Token` or `Authorization: Bearer …`.
-
-`POST /api/advisor` takes `{ state, messages, queuedOrders }` and returns the chief of staff's reply and any suggestions. It uses the same body size, rate limit, origin, and token checks. It does not write a save, and it does not resolve the turn.
-
-Campaign state and the combat seed live on the server in private Vercel Blob under `campaigns/{gameId}/` when `BLOB_READ_WRITE_TOKEN` is set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
-
-- `POST /api/new-game` — `{ difficulty }` → `{ gameId, state, log }`. The server picks the seed.
-- `GET /api/game?gameId=…` — reload authoritative state after a refresh.
-- `POST /api/turn` — `{ gameId, expectedTurn, orders }` only. The client cannot send map state or dice.
-- Turn commits use `campaigns/{gameId}/head.json` (current turn and authoritative seed) and immutable `campaigns/{gameId}/turn-N.json` snapshots (`allowOverwrite: false`). The head pointer updates with Blob `ifMatch` (ETag). Losers of a race get **409**. API responses strip the seed; see `ARCHITECTURE.md` for snapshot storage details.
-
-Local dev and Vitest fall back to an in-memory store when the Blob token is missing. Preview and production return **503** without `BLOB_READ_WRITE_TOKEN`.
-
-## Project structure
-
-For a maintainer codemap (HTTP flows, storage, trust boundaries), see **[ARCHITECTURE.md](./ARCHITECTURE.md)**.
-
-```
-app/page.tsx              the game
-app/api/new-game/route.ts POST { difficulty } → { gameId, state, log }
-app/api/game/route.ts     GET ?gameId= → { gameId, state, log }
-app/api/turn/route.ts     POST { gameId, expectedTurn, orders } → { state, record }
-app/api/advisor/route.ts  POST { state, messages, queuedOrders } → advice
-components/               map, orders, province, chronicle, HUD
-lib/data/                 catalog, 2 May order of battle, objectives, rails, geometry
-lib/engine/               supply, combat, economy, victory, resolveTurn
-lib/ai/stavka.ts          Russian staff
-lib/gm/                   order text, staff turn, optional diplomacy model
-lib/api/turn-guard.ts     body size, rate limit, origin, token
-scripts/balance-sim.ts    scripted playthroughs
-scripts/build-hoi4-theater.py
-public/maplibre-gl-worker.mjs
-```
-
-`Province`, `Unit`, `Proposal`, and `GameState` live in `lib/types.ts`. Geometry is not stored in the save.
-
-The map is MapLibre with a blank style and no remote tiles. Rail edges are the same links the supply rules use, drawn between the province anchors. A link held at both ends by one side is drawn in full, tinted for that side. A link whose ends differ is dimmed and broken. The legend toggles them, on by default, and they fade out with the province labels when the map is zoomed out. Selecting a province highlights its rails. If WebGL cannot paint, the same polygons are drawn as SVG. Province shapes and adjacency are in `lib/data/theater-geometry.json`: Hearts of Iron IV states in MapChart’s pixel space, drawn flat. There is no real-world basemap.
-
-Map geometry: MapChart.net (CC BY-SA 4.0), based on Hearts of Iron IV by Paradox Interactive.
-
-1914 owners are sampled from a local GeoJSON (`owner_1914`) that is not committed. Regenerate only when those sources are on the machine:
-
-```bash
-HOI4_DIR=/path/to/mapchart-hoi4 OWNER_1914_GEOJSON=/path/to/1914-regions.geojson npm run build:theater
-```
-
-Do not commit the raw Hearts of Iron IV files, the MapChart SVG, or the full state GeoJSON. The script writes only the theater file.
-
-To add a province: add a `ProvinceDef` in `lib/data/definitions.ts`, regenerate the theater file, add rail pairs in `lib/data/rails.ts`, place units in `PLACEMENTS` in `lib/data/scenario.ts`, then run `npm test` and `npm run map`.
+Province shapes and adjacency come from [MapChart.net](https://mapchart.net) (**[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)**), based on map data from **Hearts of Iron IV** by Paradox Interactive. There is no real-world satellite basemap—only the game theater.
