@@ -1,6 +1,6 @@
 # Ostfront
 
-**Ostfront** is a turn-based strategy game you play in the browser. You command Germany and Austria-Hungary in the spring and summer of 1915, during the Gorlice–Tarnów breakthrough on the Eastern Front. Each turn is two weeks (a *fortnight*): 2 May, 16 May, 30 May, 13 June, 27 June, and 11 July. The feel is closer to a light war board game like *Call of War*—no real-time clock, you plan at your own pace—with map depth inspired by *Hearts of Iron IV*, but scoped to one campaign on the Eastern Front. You do not need prior wargame experience; if you have played chess, Civilization, or a mobile strategy game, the ideas will feel familiar.
+**Ostfront** is a turn-based strategy game you play in the browser. You command Germany and Austria-Hungary in the spring and summer of 1915, during the Gorlice–Tarnów breakthrough on the Eastern Front. Each turn is two weeks (a *fortnight*): 2 May, 16 May, 30 May, 13 June, 27 June, and 11 July. The feel is closer to a light war board game like *Call of War* but at your own pace, with map depth inspired by *Hearts of Iron IV*, but scoped to one campaign on the Eastern Front. You do not need prior wargame experience; if you have played chess, Civilization, or a mobile strategy game, the ideas will feel familiar.
 
 **[Play Ostfront](https://raymondymmak-ostfront.vercel.app)**
 
@@ -59,7 +59,7 @@ Push east and take the Russian objectives **Lemberg**, **Lublin**, and **Rovno**
 ## Key ideas that win games
 
 - **Hit one province from several sides.** Two or more of your provinces attacking the same target in the same fortnight fight **one battle** and combine strength, with a bonus multiplier (1.12 / 1.22 / 1.30 by number of directions). You need healthy supply on the attacking provinces for that bonus to apply.
-- **Encirclement.** When **two or more** prongs attack and the defender has **no friendly neighbor left at the start of the turn**, the defender suffers extra losses and cannot retreat. Surrounding alone from one direction is not enough—the converging attack matters.
+- **Encirclement.** When **two or more** prongs attack and the defender has **no friendly neighbor left at the start of the turn**, the defender suffers extra losses and cannot retreat.
 - **Keep troops in supply.** Trace rails back to your depots. Starved provinces cannot march; weak supply dulls attacks. Taking an enemy depot this fortnight may not help battles already locked in—it helps **next** time.
 - **Odds are a forecast.** You and Russia both submit orders from the **same** opening map. The defender might march away, dig, or meet you in the field. The numbers on an attack line assume the garrison stays put; the **chronicle** shows what really happened.
 
@@ -80,4 +80,4 @@ More mechanics (turn order, combat, economy, Stavka difficulty) are in **[docs/R
 
 ## Map data
 
-Province shapes and adjacency come from [MapChart.net](https://mapchart.net) (**[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)**), based on map data from **Hearts of Iron IV** by Paradox Interactive. There is no real-world satellite basemap—only the game theater.
+Province shapes and adjacency come from [MapChart.net](https://mapchart.net) (**[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)**), based on map data from **Hearts of Iron IV** by Paradox Interactive.
