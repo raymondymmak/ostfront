@@ -1,3 +1,4 @@
+import { stripSeedFromState } from "@/lib/campaign/public-state"
 import { createScenario } from "@/lib/data/scenario"
 import { runCampaignSerialized } from "@/lib/campaign/serialize"
 import { campaignHeadKey, campaignTurnKey } from "@/lib/campaign/redis-keys"
@@ -37,6 +38,14 @@ type MemoryCampaign = {
 }
 
 const memoryStore = new Map<string, MemoryCampaign>()
+
+/** Persisted snapshots omit combat seed; authoritative copy lives on `CampaignHead` only. */
+function snapshotSave(save: SaveGame): SaveGame {
+  return {
+    ...save,
+    state: { ...stripSeedFromState(save.state) } as GameState,
+  }
+}
 
 export function resetCampaignStoreForTests(): void {
   memoryStore.clear()
@@ -103,13 +112,18 @@ export async function createStoredCampaign(
     difficulty,
     createdAt,
   }
-  const snapshot: TurnSnapshot = { version: SNAPSHOT_VERSION, gameId, turn: 0, save }
+  const snapshot: TurnSnapshot = {
+    version: SNAPSHOT_VERSION,
+    gameId,
+    turn: 0,
+    save: snapshotSave(save),
+  }
 
   if (memoryStoreBackend()) {
     memoryStore.set(gameId, {
       head,
       headEtag: crypto.randomUUID(),
-      snapshots: new Map([[0, save]]),
+      snapshots: new Map([[0, snapshot.save]]),
     })
     return { gameId, save }
   }
@@ -179,7 +193,7 @@ async function commitCampaignTurnInner(
     version: SNAPSHOT_VERSION,
     gameId,
     turn: nextTurn,
-    save: { ...nextSave, version: 2, gameId },
+    save: snapshotSave({ ...nextSave, version: 2, gameId }),
   }
   const loaded = await loadHead(gameId)
   if (!loaded || loaded.head.turn !== expectedTurn) {

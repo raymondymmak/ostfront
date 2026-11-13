@@ -8,6 +8,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+## Architecture docs
+
+Before changing routes, storage, trust boundaries, or game rules, read **`ARCHITECTURE.md`** at the repo root and **`docs/RULES.md`** for player-facing mechanics. In the **same pull request** as any such change:
+
+1. Update `ARCHITECTURE.md` so the codemap and flows stay accurate.
+2. Add or revise an ADR under `docs/decisions/` (see `docs/decisions/README.md`).
+
+Docs-only PRs that only clarify architecture should still touch `ARCHITECTURE.md` when they correct facts.
+
 ## QA before merge
 
 **Pass your preview URL via the environment** (do not put share tokens on the npm command line):

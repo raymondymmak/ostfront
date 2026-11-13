@@ -52,6 +52,16 @@ describe("campaign redis store (in-memory fake)", () => {
     expect(reloaded?.head.turn).toBe(1)
   })
 
+  it("does not persist seed inside turn snapshots", async () => {
+    enableFakeRedisEnv()
+    const seed = 11223344
+    const { gameId } = await createStoredCampaign("normal", seed)
+    const loaded = await loadStoredCampaign(gameId)
+    expect(loaded?.head.seed).toBe(seed)
+    expect("seed" in loaded!.save.state).toBe(false)
+    expect(JSON.stringify(loaded!.save)).not.toContain(String(seed))
+  })
+
   it("never exposes seed in public save payload", async () => {
     enableFakeRedisEnv()
     const seed = 77665544
