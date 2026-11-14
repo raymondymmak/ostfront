@@ -42,7 +42,10 @@ describe("server-owned campaign", () => {
     resetTurnGuardStateForTests()
     resetCampaignStoreForTests()
     resetCampaignSerializeForTests()
-    delete process.env.BLOB_READ_WRITE_TOKEN
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
     delete process.env.VERCEL_ENV
     delete process.env.LLM_API_KEY
     vi.unstubAllEnvs()
@@ -118,9 +121,10 @@ describe("server-owned campaign", () => {
     expect(storedHeadSeedNotInText(JSON.stringify(loadBody), 99887766)).toBe(true)
   })
 
-  it("returns 503 on preview without Blob configured", async () => {
+  it("returns 503 on preview without Redis configured", async () => {
     process.env.VERCEL_ENV = "preview"
-    delete process.env.BLOB_READ_WRITE_TOKEN
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
     const response = await postNewGame({ difficulty: "normal" })
     expect(response.status).toBe(503)
     const payload = (await response.json()) as { code?: string }

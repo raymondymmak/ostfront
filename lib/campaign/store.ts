@@ -1,11 +1,18 @@
-import { BlobError, BlobPreconditionFailedError, get, head, put } from "@vercel/blob"
+import { stripSeedFromState } from "@/lib/campaign/public-state"
 import { createScenario } from "@/lib/data/scenario"
 import { runCampaignSerialized } from "@/lib/campaign/serialize"
+import { campaignHeadKey, campaignTurnKey } from "@/lib/campaign/redis-keys"
+import {
+  COMMIT_TURN_LUA,
+  CREATE_CAMPAIGN_LUA,
+  parseCommitTurnLuaReply,
+} from "@/lib/campaign/redis-scripts"
+import { CAMPAIGN_TTL_SECONDS, redisConfigured } from "@/lib/redis/env"
+import { getRedisClient } from "@/lib/redis/client"
 import type { Difficulty, GameState, SaveGame } from "@/lib/types"
 
 const HEAD_VERSION = 1
 const SNAPSHOT_VERSION = 1
-const BLOB_PREFIX = "campaigns"
 
 export type CampaignHead = {
   version: typeof HEAD_VERSION
@@ -32,6 +39,14 @@ type MemoryCampaign = {
 
 const memoryStore = new Map<string, MemoryCampaign>()
 
+/** Persisted snapshots omit combat seed; authoritative copy lives on `CampaignHead` only. */
+function snapshotSave(save: SaveGame): SaveGame {
+  return {
+    ...save,
+    state: { ...stripSeedFromState(save.state) } as GameState,
+  }
+}
+
 export function resetCampaignStoreForTests(): void {
   memoryStore.clear()
 }
@@ -48,39 +63,13 @@ export function newCampaignGameId(): string {
   return crypto.randomUUID().replace(/-/g, "")
 }
 
-function headPath(gameId: string): string {
-  return `${BLOB_PREFIX}/${gameId}/head.json`
-}
-
+/** Legacy path helper (LLM scripts / docs). */
 export function turnSnapshotPath(gameId: string, turn: number): string {
-  return `${BLOB_PREFIX}/${gameId}/turn-${turn}.json`
+  return `campaigns/${gameId}/turn-${turn}.json`
 }
 
 function memoryStoreBackend(): boolean {
-  return !process.env.BLOB_READ_WRITE_TOKEN?.trim()
-}
-
-function isConflictError(error: unknown): boolean {
-  if (error instanceof BlobPreconditionFailedError) return true
-  if (error instanceof BlobError && /already exists|precondition/i.test(error.message)) {
-    return true
-  }
-  return false
-}
-
-async function readBlobJson<T>(pathname: string): Promise<{ data: T; etag?: string } | null> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
-  if (!token) return null
-  try {
-    const meta = await head(pathname, { token })
-    if (!meta?.url) return null
-    const blob = await get(meta.url, { access: "private", token })
-    if (!blob || blob.statusCode !== 200 || !blob.stream) return null
-    const text = await new Response(blob.stream).text()
-    return { data: JSON.parse(text) as T, etag: meta.etag }
-  } catch {
-    return null
-  }
+  return !redisConfigured()
 }
 
 async function loadHead(gameId: string): Promise<{ head: CampaignHead; etag?: string } | null> {
@@ -89,18 +78,22 @@ async function loadHead(gameId: string): Promise<{ head: CampaignHead; etag?: st
     if (!row) return null
     return { head: row.head, etag: row.headEtag }
   }
-  const blob = await readBlobJson<CampaignHead>(headPath(gameId))
-  if (!blob?.data || blob.data.gameId !== gameId) return null
-  return { head: blob.data, etag: blob.etag }
+  const redis = getRedisClient()
+  if (!redis) return null
+  const head = await redis.get<CampaignHead>(campaignHeadKey(gameId))
+  if (!head || head.gameId !== gameId) return null
+  return { head }
 }
 
 async function loadSnapshot(gameId: string, turn: number): Promise<SaveGame | null> {
   if (memoryStoreBackend()) {
     return memoryStore.get(gameId)?.snapshots.get(turn) ?? null
   }
-  const blob = await readBlobJson<TurnSnapshot>(turnSnapshotPath(gameId, turn))
-  if (!blob?.data || blob.data.turn !== turn) return null
-  return blob.data.save
+  const redis = getRedisClient()
+  if (!redis) return null
+  const snap = await redis.get<TurnSnapshot>(campaignTurnKey(gameId, turn))
+  if (!snap || snap.turn !== turn) return null
+  return snap.save
 }
 
 export async function createStoredCampaign(
@@ -119,34 +112,32 @@ export async function createStoredCampaign(
     difficulty,
     createdAt,
   }
-  const snapshot: TurnSnapshot = { version: SNAPSHOT_VERSION, gameId, turn: 0, save }
+  const snapshot: TurnSnapshot = {
+    version: SNAPSHOT_VERSION,
+    gameId,
+    turn: 0,
+    save: snapshotSave(save),
+  }
 
   if (memoryStoreBackend()) {
     memoryStore.set(gameId, {
       head,
       headEtag: crypto.randomUUID(),
-      snapshots: new Map([[0, save]]),
+      snapshots: new Map([[0, snapshot.save]]),
     })
     return { gameId, save }
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
-  if (!token) throw new Error("Blob token missing")
+  const redis = getRedisClient()
+  if (!redis) throw new Error("Redis client missing")
 
-  await put(headPath(gameId), JSON.stringify(head), {
-    access: "private",
-    addRandomSuffix: false,
-    allowOverwrite: false,
-    contentType: "application/json",
-    token,
-  })
-  await put(turnSnapshotPath(gameId, 0), JSON.stringify(snapshot), {
-    access: "private",
-    addRandomSuffix: false,
-    allowOverwrite: false,
-    contentType: "application/json",
-    token,
-  })
+  const reply = await redis.eval(
+    CREATE_CAMPAIGN_LUA,
+    [campaignHeadKey(gameId), campaignTurnKey(gameId, 0)],
+    [JSON.stringify(head), JSON.stringify(snapshot), String(CAMPAIGN_TTL_SECONDS)],
+  )
+  const tag = Array.isArray(reply) ? String(reply[0]) : ""
+  if (tag !== "ok") throw new Error("Campaign create failed")
   return { gameId, save }
 }
 
@@ -167,7 +158,7 @@ export type CommitTurnResult =
   | { ok: false; status: number; code: "stale_turn" | "storage_conflict"; error: string }
 
 /**
- * Immutable turn snapshot (allowOverwrite: false) plus head CAS (ifMatch).
+ * Immutable turn snapshot (SET NX) plus atomic head advance (Lua).
  * Losers of a race get storage_conflict (409).
  */
 export async function commitCampaignTurn(
@@ -198,6 +189,12 @@ async function commitCampaignTurnInner(
     }
   }
 
+  const snapshot: TurnSnapshot = {
+    version: SNAPSHOT_VERSION,
+    gameId,
+    turn: nextTurn,
+    save: snapshotSave({ ...nextSave, version: 2, gameId }),
+  }
   const loaded = await loadHead(gameId)
   if (!loaded || loaded.head.turn !== expectedTurn) {
     return {
@@ -206,13 +203,6 @@ async function commitCampaignTurnInner(
       code: "stale_turn",
       error: `Expected fortnight ${expectedTurn}, but the server holds fortnight ${loaded?.head.turn ?? "?"}. Reload or start a new campaign.`,
     }
-  }
-
-  const snapshot: TurnSnapshot = {
-    version: SNAPSHOT_VERSION,
-    gameId,
-    turn: nextTurn,
-    save: { ...nextSave, version: 2, gameId },
   }
   const nextHead: CampaignHead = { ...loaded.head, turn: nextTurn }
 
@@ -241,57 +231,41 @@ async function commitCampaignTurnInner(
     return { ok: true }
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
-  if (!token) throw new Error("Blob token missing")
+  const redis = getRedisClient()
+  if (!redis) throw new Error("Redis client missing")
 
-  try {
-    await put(turnSnapshotPath(gameId, nextTurn), JSON.stringify(snapshot), {
-      access: "private",
-      addRandomSuffix: false,
-      allowOverwrite: false,
-      contentType: "application/json",
-      token,
-    })
-  } catch (error) {
-    if (isConflictError(error)) {
-      return {
-        ok: false,
-        status: 409,
-        code: "storage_conflict",
-        error:
-          "Another request already closed this fortnight. Reload the campaign and continue from the chronicle.",
-      }
+  const reply = await redis.eval(
+    COMMIT_TURN_LUA,
+    [campaignHeadKey(gameId), campaignTurnKey(gameId, nextTurn)],
+    [
+      String(expectedTurn),
+      JSON.stringify(nextHead),
+      JSON.stringify(snapshot),
+      String(CAMPAIGN_TTL_SECONDS),
+    ],
+  )
+  const parsed = parseCommitTurnLuaReply(reply)
+  if (parsed.result === "ok") return { ok: true }
+  if (parsed.result === "stale" || parsed.result === "missing") {
+    return {
+      ok: false,
+      status: 409,
+      code: "stale_turn",
+      error: `Expected fortnight ${expectedTurn}, but the server holds fortnight ${parsed.currentTurn ?? "?"}. Reload or start a new campaign.`,
     }
-    throw error
   }
-
-  try {
-    await put(headPath(gameId), JSON.stringify(nextHead), {
-      access: "private",
-      addRandomSuffix: false,
-      contentType: "application/json",
-      ifMatch: loaded.etag,
-      token,
-    })
-  } catch (error) {
-    if (isConflictError(error)) {
-      return {
-        ok: false,
-        status: 409,
-        code: "storage_conflict",
-        error:
-          "Another request already closed this fortnight. Reload the campaign and continue from the chronicle.",
-      }
-    }
-    throw error
+  return {
+    ok: false,
+    status: 409,
+    code: "storage_conflict",
+    error:
+      "Another request already closed this fortnight. Reload the campaign and continue from the chronicle.",
   }
-
-  return { ok: true }
 }
 
-/** Local and CI tests without Blob use an in-memory store; prod needs BLOB_READ_WRITE_TOKEN. */
-export function campaignStorageMode(): "blob" | "memory" {
-  return memoryStoreBackend() ? "memory" : "blob"
+/** Local and CI tests without Redis use an in-memory store; prod needs KV REST env. */
+export function campaignStorageMode(): "redis" | "memory" {
+  return memoryStoreBackend() ? "memory" : "redis"
 }
 
 /** Restore engine state with the server-held seed. */

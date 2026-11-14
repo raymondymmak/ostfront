@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { LLM_LOG_CONTENT_LIMIT, buildLlmLogRecord, llmLogPath, scheduleLlmResponseLog } from "@/lib/gm/llm-log"
+import {
+  LLM_LOG_CONTENT_LIMIT,
+  buildLlmLogRecord,
+  isLlmBlobLoggingEnabledForTests,
+  llmLogPath,
+  scheduleLlmResponseLog,
+} from "@/lib/gm/llm-log"
 
 const { pending, putMock, waitUntilMock } = vi.hoisted(() => ({
   pending: [] as Promise<unknown>[],
@@ -46,7 +52,11 @@ describe("LLM response log", () => {
     waitUntilMock.mockClear()
     delete process.env.BLOB_READ_WRITE_TOKEN
     delete process.env.LLM_API_KEY
+    delete process.env.LLM_LOG_BLOB
+    delete process.env.LLM_LOG_BLOB_PREVIEW
     process.env.VERCEL_ENV = "preview"
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.spyOn(console, "info").mockImplementation(() => {})
   })
 
   it("builds a private-log record without keys, headers, or an oversized body", () => {
@@ -84,14 +94,26 @@ describe("LLM response log", () => {
     expect(record).not.toHaveProperty("apiKey")
   })
 
-  it("does nothing when BLOB_READ_WRITE_TOKEN is missing", () => {
+  it("does not upload when LLM_LOG_BLOB is unset", () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "blob-test-token-value"
+    expect(isLlmBlobLoggingEnabledForTests()).toBe(false)
     expect(() => scheduleLlmResponseLog(baseInput)).not.toThrow()
     expect(putMock).not.toHaveBeenCalled()
     expect(waitUntilMock).not.toHaveBeenCalled()
   })
 
-  it("uploads a private object and does not block on the put", async () => {
+  it("does not upload on preview without LLM_LOG_BLOB_PREVIEW", () => {
     process.env.BLOB_READ_WRITE_TOKEN = "blob-test-token-value"
+    process.env.LLM_LOG_BLOB = "1"
+    expect(isLlmBlobLoggingEnabledForTests()).toBe(false)
+    scheduleLlmResponseLog(baseInput)
+    expect(putMock).not.toHaveBeenCalled()
+  })
+
+  it("uploads a private object when explicitly enabled on preview", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "blob-test-token-value"
+    process.env.LLM_LOG_BLOB = "1"
+    process.env.LLM_LOG_BLOB_PREVIEW = "1"
     expect(() =>
       scheduleLlmResponseLog({
         ...baseInput,
@@ -126,6 +148,8 @@ describe("LLM response log", () => {
 
   it("swallows an upload failure", async () => {
     process.env.BLOB_READ_WRITE_TOKEN = "blob-test-token-value"
+    process.env.LLM_LOG_BLOB = "1"
+    process.env.LLM_LOG_BLOB_PREVIEW = "1"
     putMock.mockRejectedValueOnce(new Error("blob down"))
     const error = vi.spyOn(console, "error").mockImplementation(() => {})
     expect(() => scheduleLlmResponseLog(baseInput)).not.toThrow()

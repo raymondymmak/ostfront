@@ -4,7 +4,7 @@ Turn-based browser wargame (Next.js, TypeScript, MapLibre) for the Gorlice–Tar
 
 Raymond’s learning question — *where is the POST, turn guard, and server→client send-back?* — is answered in **Turn flow** below.
 
-**Related:** `README.md` (introduction), `docs/RULES.md` (full player rules), `docs/DEVELOPMENT.md` (local run and env), `FEATURES.md` (QA-visible behaviour), `docs/decisions/` (ADRs). **In progress:** campaign storage may move from Vercel Blob to Upstash Redis (draft PR #45); this doc describes **current `main`**.
+**Related:** `README.md` (introduction), `docs/RULES.md` (full player rules), `docs/DEVELOPMENT.md` (local run and env), `FEATURES.md` (QA-visible behaviour), `docs/decisions/` (ADRs).
 
 ---
 
@@ -16,7 +16,7 @@ Browser (components/game-app.tsx)
     ▼
 app/api/turn/route.ts          ← turn guard, load store, resolve, commit
     ├─ lib/api/turn-guard.ts
-    ├─ lib/campaign/store.ts   ← Blob or in-memory
+    ├─ lib/campaign/store.ts   ← Upstash Redis or in-memory
     ├─ lib/campaign/resolve-turn.ts → lib/gm/index.ts playTurn
     │       └─ lib/engine/turn.ts resolveTurn
     └─ lib/campaign/public-state.ts stripSeedFromState
@@ -33,6 +33,7 @@ Browser updates map, chronicle, clears order queue
 | `lib/gm/` | Orders → proposals, LLM cascade, advisor | `index.ts`, `interpret.ts`, `cascade.ts`, `advisor.ts` |
 | `lib/ai/` | Rule-based Stavka | `stavka.ts` |
 | `lib/campaign/` | Server saves, public JSON | `store.ts`, `resolve-turn.ts`, `public-state.ts` |
+| `lib/redis/` | Upstash REST client, env, test fake | `env.ts`, `client.ts`, `fake-client.ts` |
 | `lib/data/` | Scenario, map, objectives | `scenario.ts`, `objectives.ts`, `theater-geometry.json` |
 | `lib/teach/` | Lesson drills (no full campaign) | `lessons.ts`, `resolve.ts`, `record.ts` |
 | `tests/` | Vitest specs per mechanic | `npm test` |
@@ -63,16 +64,16 @@ Gate order (first failure wins):
 
 | Step | Check | Typical HTTP |
 | --- | --- | --- |
-| 1 | `campaignStorageStatus()` — Blob token required on Vercel | 503 `storage_unavailable` |
+| 1 | `campaignStorageStatus()` — Redis REST creds required on Vercel | 503 `storage_unavailable` |
 | 2 | `readBodyWithLimit` | 413 payload too large |
 | 3 | `enforceTurnGuards` — size again, rate limit, origin/token | 429 / 403 / 401 |
 | 4 | `JSON.parse` | 400 invalid JSON |
-| 5 | `ServerTurnRequestSchema` (Zod) | 400 schema |
+| 5 | `ServerTurnRequestSchema` (Zod) — **only** `gameId`, `expectedTurn`, `orders` | 400 schema |
 | 6 | `loadStoredCampaign` | 404 `unknown_game` |
 | 7 | `head.turn === expectedTurn` | 409 `stale_turn` |
 | 8 | `withServerSeed(state, head.seed)` | — |
 | 9 | `resolveCampaignTurn` → `playTurn` | 409 `stale_turn` / `campaign_closed` / 400 `missing_game` |
-| 10 | `commitCampaignTurn` | 409 `storage_conflict` or `stale_turn` |
+| 10 | `commitCampaignTurn` — atomic Redis Lua or in-memory serialize | 409 `storage_conflict` or `stale_turn` |
 | 11 | Response | 200 `{ gameId, state: stripSeedFromState(...), record }` |
 
 Turn guard defaults (`lib/api/turn-guard.ts`): body ≤ 512_000 bytes; 24 requests per IP per 60s per warm instance; optional `TURN_API_TOKEN` and `TURN_ALLOWED_ORIGINS`. Access (`checkAccess`): a matching `X-Ostfront-Turn-Token` or `Authorization: Bearer` value always passes; else, if `TURN_ALLOWED_ORIGINS` is non-empty, the request must carry a matching `Origin`/`Referer` (**403** if missing or not listed) and **does not need the token**; else, if only a token is configured, missing credentials yield **401**; with neither token nor allow-list, the route is open (typical local dev).
@@ -100,7 +101,7 @@ sequenceDiagram
   GM->>Eng: resolveTurn
   Eng-->>GM: next state + TurnRecord
   GM-->>API: SaveGame + record
-  API->>Store: commitCampaignTurn (snapshot then head CAS)
+  API->>Store: commitCampaignTurn (Lua: NX snapshot + head)
   Store-->>API: ok or 409
   API-->>UI: state (no seed), record
 ```
@@ -112,14 +113,23 @@ sequenceDiagram
 - `mockAiTurn` → `stavkaTurn` — `lib/gm/mock.ts`, `lib/ai/stavka.ts`
 - `resolveTurn` — `lib/engine/turn.ts`
 
-### Storage layout (current main)
+### Storage layout (Upstash Redis)
 
-`lib/campaign/store.ts`, prefix `campaigns/{gameId}/`:
+`lib/campaign/store.ts` with keys from `lib/campaign/redis-keys.ts`:
 
-- `head.json` — `turn`, `seed`, `difficulty`, `createdAt`
-- `turn-N.json` — immutable `SaveGame` after fortnight N
+| Key | Payload |
+| --- | --- |
+| `campaign:{gameId}:head` | `CampaignHead` — `turn`, **authoritative `seed`**, `difficulty`, `createdAt` |
+| `campaign:{gameId}:turn:{n}` | `TurnSnapshot` — `SaveGame` **without** `state.seed` |
 
-Commit: write `turn-(N+1).json` with `allowOverwrite: false`, then update `head` with `ifMatch: etag`. No token → in-memory `Map` (local/CI). Vercel without token → 503 (fail closed).
+- **Create:** `CREATE_CAMPAIGN_LUA` — dual `SET NX` with 30-day TTL (`CAMPAIGN_TTL_SECONDS`).
+- **Commit:** `COMMIT_TURN_LUA` — one atomic step: verify expected turn, `SET NX` on turn `N+1`, write new head. Losers → **409** (`storage_conflict` or `stale_turn`). Fixes the old Blob orphan-snapshot failure mode (ADR 004, superseded).
+- **No Redis creds:** in-memory `Map` for local dev and Vitest (`campaignStorageMode(): "memory"`).
+- **Vercel without creds:** `lib/campaign/availability.ts` → **503** fail closed.
+
+Teach persistence: `teach:attempt:{day}:{id}`, `teach:belief:{attemptId}` in `lib/teach/record.ts` and `lib/teach/belief.ts`.
+
+Legacy Blob campaigns are not migrated.
 
 ---
 
@@ -158,7 +168,7 @@ Isolated lessons (e.g. converging attacks) without a `gameId`. State is **built 
 | `GET /api/teach/session` | Lesson meta, authoritative `state`, hints, trust copy |
 | `POST /api/teach/hint` | Levelled hint from `coachHints` |
 | `POST /api/teach/coach` | Reasoning coach (LLM optional) |
-| `POST /api/teach/resolve` | Validates orders; `teachResolveTurn`; may persist attempt to Blob |
+| `POST /api/teach/resolve` | Validates orders; `teachResolveTurn`; may persist attempt to Redis |
 
 `lib/teach/resolve.ts` uses fixed combat rolls in guided/silent variants (stated in session JSON). Belief fields are server-owned; hostile client fields → 400.
 
@@ -171,13 +181,13 @@ UI: `components/teaching-app.tsx`, `teach-panel.tsx`.
 | Route | Purpose |
 | --- | --- |
 | `POST /api/new-game` | `createStoredCampaign` → `publicSavePayload` |
-| `GET /api/game?gameId=` | Load latest snapshot + seed applied server-side, seed stripped in response |
+| `GET /api/game?gameId=` | Load latest snapshot; `withServerSeed` then strip seed in JSON |
 
 ---
 
 ## Game rules (code pointers)
 
-Numbers below are from source on `main`, not paraphrase.
+Numbers below are from source, not paraphrase.
 
 ### Combat and concentric attacks (`lib/engine/combat.ts`)
 
@@ -227,22 +237,17 @@ Grade thresholds (eastern VP captured, Kraków not Russian): Decisive ≥ **7**,
 
 ### LLM cascade (`lib/gm/cascade.ts`)
 
-When `LLM_API_KEY` is set, `planCascade` (`lib/gm/cascade.ts`) picks the **first** model from `lib/gm/tier.ts`:
+When `LLM_API_KEY` is set, `planCascade` (`lib/gm/tier.ts`) picks models by tier. `fetchGmWithCascade` failure falls back to **staff simulation** (Stavka only).
 
-- **Important / critical** tier → `LLM_MODEL_STRONG` when set and distinct from cheap; otherwise the cheap model.
-- **Routine** tier → `LLM_MODEL` (default `gpt-4o-mini`).
-
-A **second** call to the strong model runs only when the first call used the cheap model **and** `mayEscalate` is true: proposal rejection rate above **0.3** after a successful JSON parse (`measureRejectionRate`), or the first call failed validation (`zod`) / returned empty. If the first call already used the strong model (tier routing), there is no strong retry for rejections.
-
-`fetchGmWithCascade` failure (timeouts, HTTP errors, exhausted retries) makes `playTurn` fall back to **staff simulation** (Stavka only) with a player warning.
-
-**Surprising fact (verify in `lib/gm/index.ts`):** even when the cascade succeeds, **only up to two diplomacy lines** are taken from the LLM. Russian unit orders, events, and narration still come from Stavka. `buildStaffTurn` merges player proposals from `interpreted` with Stavka’s Russian proposals.
-
-`LLM_MODEL_STRONG` must be set and different from the cheap model, or tier routing and cheap→strong retries never use a strong model (`resolveLlmModels`).
+**Surprising fact (verify in `lib/gm/index.ts`):** even when the cascade succeeds, **only up to two diplomacy lines** are taken from the LLM. Russian unit orders, events, and narration still come from Stavka.
 
 ### Advisor
 
 Separate prompt in `lib/gm/advisor.ts`; uses `llmChat`, not the turn cascade.
+
+### LLM Blob logging (`lib/gm/llm-log.ts`)
+
+Opt-in only (`LLM_LOG_BLOB`, plus `LLM_LOG_BLOB_PREVIEW` on preview). Default: console JSON only — no Blob advanced ops on the request path.
 
 ---
 
@@ -250,8 +255,8 @@ Separate prompt in `lib/gm/advisor.ts`; uses `llmChat`, not the turn cascade.
 
 | Asset | Owner | Notes |
 | --- | --- | --- |
-| Dice seed | Server `head.json` (authoritative; may also appear in Blob snapshots today) | Never in API responses (`stripSeedFromState`) |
-| Campaign snapshots | Server Blob / memory | Client sends only `gameId` + turn index + orders |
+| Dice seed | Server `CampaignHead` only | Never in API JSON or turn snapshots (`stripSeedFromState` on responses) |
+| Campaign snapshots | Server Redis / memory | Client sends only `gameId` + turn index + orders |
 | Turn outcome | `lib/engine` | Deterministic given seed + orders + Stavka |
 | Advisor map view | **Client POSTed state** | Trusts browser for briefing; does not change saved campaign |
 | Teach lesson state | Server `authoritativeLessonState` | Client cannot substitute another scenario |
@@ -267,8 +272,7 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 2. **`measureRejectionRate` in cascade** dry-runs LLM proposals to choose escalation, but those proposals are not used in the live turn.
 3. **`lib/storage.ts` is not dead code** — `game-app.tsx` still mirrors saves locally; server campaigns are authoritative for adjudication.
 4. **Turn guard rate limit** is per serverless instance, not global.
-5. **Blob two-step commit** can orphan a snapshot if head CAS fails (see ADR 004; Redis migration in PR #45).
-6. **Turn snapshots may still store `state.seed`** even though `head.json` is authoritative; follow-up is to omit it at commit time (ADR 003).
+5. **In-memory dev store** serializes commits per `gameId` via `runCampaignSerialized`; Redis relies on Lua for parallel safety.
 
 ---
 
@@ -283,7 +287,7 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Tier** | Turn importance score for model routing (`lib/gm/tier.ts`) |
 | **Dispatch** | Advisor briefing blob built from engine previews |
 | **Echelon** | Unit grouping / corps structure (`lib/engine/echelon.ts`) |
-| **CAS** | Compare-and-swap on Blob ETag when updating `head.json` |
+| **Lua CAS** | Atomic turn commit script in `lib/campaign/redis-scripts.ts` |
 | **Proposal** | Typed order (move, attack, fortify, …) before resolution |
 | **Chronicle** | `TurnRecord` log shown in `timeline-panel.tsx` |
 
@@ -291,6 +295,6 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 
 ## CI and agents
 
-- Local gate: `npm run typecheck`, `npm run lint -- --max-warnings=0`, `npm test`.
+- Local gate: `npm run typecheck`, `npm run lint -- --max-warnings=0`, `npm test`, `npm run build`.
 - Preview QA: `DEMO_URL=… npm run demo-check` (see `AGENTS.md`).
 - Coding agents: read this file first; update it and add an ADR when changing architecture, routes, storage, trust boundaries, or coded game rules.

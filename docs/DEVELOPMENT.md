@@ -26,7 +26,7 @@ CI runs typecheck, lint (0 warnings), test, and build on every PR.
 
 | Command | Purpose |
 | --- | --- |
-| `npm run llm-logs` | List stored LLM responses (`BLOB_READ_WRITE_TOKEN`). `vercel blob ls llm-log/` does the same. |
+| `npm run llm-logs` | List Blob LLM logs when `LLM_LOG_BLOB` was enabled (`BLOB_READ_WRITE_TOKEN`) |
 | `npm run map` | Neighbor graph, and rail pairs that do not share a border. |
 | `npx tsx scripts/balance-sim.ts` | Scripted Central Powers opponents (greedy, frontier, sensible) through six seeds on Easy, Normal, and Hard. Clears any model key and plays against Stavka. |
 
@@ -47,7 +47,27 @@ When a key is present, the server still asks Stavka for the Russian orders. The 
 
 OpenRouter calls ask for low reasoning effort and leave that trace out of the message, with a 4000-token completion cap. Invalid JSON, a schema miss, or an empty message (the budget was spent reasoning and `content` came back blank) is tried once more when about eight seconds of `GM_BUDGET_MS` remain. The player-facing debug line adds `finish length` when the reply was cut off, and token counts, including reasoning tokens, when the provider sent them.
 
-Set `BLOB_READ_WRITE_TOKEN` to keep every game-master and chief-of-staff response in a private Blob, one file per attempt at `llm-log/YYYY-MM-DD/<timestamp>-<turn|advisor>-<id>.json`. The upload does not block the turn. With no token, nothing is stored. List the files with `npm run llm-logs`.
+### Campaign storage (Upstash Redis)
+
+| Variable | Role |
+| --- | --- |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (primary on Vercel Marketplace) |
+| `UPSTASH_REDIS_REST_TOKEN` | REST token |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Accepted aliases when provisioning under KV names |
+
+Campaign keys TTL to 30 days. Without these variables, **local dev and Vitest** use an in-memory store. **Preview and production** return **503** when `VERCEL_ENV` is set and creds are missing (`lib/campaign/availability.ts`).
+
+### Optional LLM Blob archive
+
+Blob logging is **off by default** (saves Hobby advanced-operation quota).
+
+| Variable | Role |
+| --- | --- |
+| `LLM_LOG_BLOB` | Set to `1` / `true` to upload LLM responses to private Blob |
+| `LLM_LOG_BLOB_PREVIEW` | Required on preview deployments in addition to the above |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob token when logging is enabled |
+
+Console logs (`ostfront.llm.log`) always record outcomes without a Blob put.
 
 ### Turn route guard
 
@@ -64,7 +84,7 @@ The turn route can be guarded when a deployment has a key:
 
 ## Campaign storage and APIs
 
-Campaign state and the combat seed live on the server in private Vercel Blob under `campaigns/{gameId}/` when `BLOB_READ_WRITE_TOKEN` is set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
+Campaign state and the combat seed live on the server in **Upstash Redis** when REST credentials are set. The browser keeps only `gameId`, a render copy, and the chronicle for convenience.
 
 | Endpoint | Body | Response |
 | --- | --- | --- |
@@ -72,9 +92,9 @@ Campaign state and the combat seed live on the server in private Vercel Blob und
 | `GET /api/game?gameId=…` | — | Reload authoritative state after a refresh |
 | `POST /api/turn` | `{ gameId, expectedTurn, orders }` only | Client cannot send map state or dice |
 
-Turn commits use `campaigns/{gameId}/head.json` (current turn and authoritative seed) and immutable `campaigns/{gameId}/turn-N.json` snapshots (`allowOverwrite: false`). The head pointer updates with Blob `ifMatch` (ETag). Losers of a race get **409**. API responses strip the seed; see **ARCHITECTURE.md** for snapshot storage details.
+Turn commits use atomic Lua: immutable `campaign:{gameId}:turn:{n}` (`SET NX`) plus head advance in one step. Parallel close-turn requests → exactly one **200**, others **409** (`storage_conflict` or `stale_turn`). API responses strip the seed; the authoritative seed is only on `campaign:{gameId}:head`. See **ARCHITECTURE.md**.
 
-Local dev and Vitest fall back to an in-memory store when the Blob token is missing. Preview and production return **503** without `BLOB_READ_WRITE_TOKEN`.
+Local dev and Vitest fall back to an in-memory store when Redis env is missing. Preview and production return **503** without Redis REST credentials on Vercel.
 
 ## Project structure
 
@@ -89,6 +109,8 @@ lib/data/                 catalog, 2 May order of battle, objectives, rails, geo
 lib/engine/               supply, combat, economy, victory, resolveTurn
 lib/ai/stavka.ts          Russian staff
 lib/gm/                   order text, staff turn, optional diplomacy model
+lib/campaign/             store, Redis keys/scripts, public state
+lib/redis/                Upstash client, env, Vitest fake
 lib/api/turn-guard.ts     body size, rate limit, origin, token
 scripts/balance-sim.ts    scripted playthroughs
 scripts/build-hoi4-theater.py

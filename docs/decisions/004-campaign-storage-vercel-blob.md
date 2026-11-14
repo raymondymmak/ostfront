@@ -1,6 +1,6 @@
 # Campaign snapshots in Vercel Blob
 
-**Status:** accepted (to be superseded by Redis in open draft PR #45)  
+**Status:** superseded by [006-campaign-storage-upstash-redis.md](./006-campaign-storage-upstash-redis.md)  
 **Date:** 2026-11-10 (merge commit `af10cfd`, PR #43)
 
 ## Context
@@ -19,5 +19,5 @@ Store under `campaigns/{gameId}/`:
 ## Consequences
 
 - Two Blob advanced operations per turn (put snapshot + put head) counts against Vercel Hobby advanced-op limits at scale.
-- The two-step commit is not one atomic transaction: a failed head update after a successful snapshot could orphan a turn file until cleanup (motivation for PR #45).
-- Teach attempt records and LLM debug logs also use Blob when configured (`lib/teach/record.ts`, `lib/gm/llm-log.ts`).
+- The two-step commit is not one atomic transaction: a failed head update after a successful snapshot could orphan a turn file until cleanup.
+- Superseded when campaign persistence moved to Upstash Redis (PR #45).

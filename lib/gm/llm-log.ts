@@ -65,6 +65,19 @@ export function llmLogPath(now: Date, kind: LlmLogKind, id: string): string {
   return `llm-log/${day}/${stamp}-${kind}-${id}.json`
 }
 
+function llmBlobLoggingEnabled(): boolean {
+  const flag = process.env.LLM_LOG_BLOB?.trim().toLowerCase()
+  if (flag !== "1" && flag !== "true" && flag !== "yes") return false
+  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
+  if (!token) return false
+  const vercelEnv = process.env.VERCEL_ENV?.trim()
+  if (vercelEnv === "preview") {
+    const preview = process.env.LLM_LOG_BLOB_PREVIEW?.trim().toLowerCase()
+    if (preview !== "1" && preview !== "true" && preview !== "yes") return false
+  }
+  return true
+}
+
 export function buildLlmLogRecord(input: LlmLogInput): { pathname: string; record: LlmLogRecord } {
   const now = input.now ?? new Date()
   const id = input.id ?? crypto.randomUUID().replace(/-/g, "").slice(0, 12)
@@ -101,12 +114,29 @@ export function buildLlmLogRecord(input: LlmLogInput): { pathname: string; recor
 
 /**
  * Store one model response. Returns immediately.
- * No token: do nothing. Upload failures are swallowed so a turn never waits or throws.
+ * Blob upload is off unless LLM_LOG_BLOB=1 (preview also needs LLM_LOG_BLOB_PREVIEW=1).
+ * Upload failures are swallowed so a turn never waits or throws.
  */
 export function scheduleLlmResponseLog(input: LlmLogInput): void {
+  const logLine = {
+    tag: "ostfront.llm.log",
+    kind: input.kind,
+    attempt: input.attempt,
+    outcome: input.outcome,
+    model: input.model,
+    latencyMs: Number.isFinite(input.latencyMs) ? Math.round(input.latencyMs) : 0,
+    fellBack: input.fellBack,
+    error: redactSecrets(input.error ?? null)?.slice(0, 200) ?? null,
+  }
+  if (input.outcome !== "ok" || input.fellBack) {
+    console.error(JSON.stringify(logLine))
+  } else {
+    console.info(JSON.stringify(logLine))
+  }
+
   try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
-    if (!token) return
+    if (!llmBlobLoggingEnabled()) return
+    const token = process.env.BLOB_READ_WRITE_TOKEN!.trim()
     const built = buildLlmLogRecord(input)
     const task = uploadLlmLog(built.pathname, built.record, token).catch((error) => {
       console.error(
@@ -154,4 +184,9 @@ function redactSecrets(text: string | null): string | null {
   if (token && token.length >= 8) out = out.split(token).join("[redacted]")
   if (apiKey && apiKey.length >= 8) out = out.split(apiKey).join("[redacted]")
   return out
+}
+
+/** @internal Vitest */
+export function isLlmBlobLoggingEnabledForTests(): boolean {
+  return llmBlobLoggingEnabled()
 }

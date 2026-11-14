@@ -1,3 +1,5 @@
+import { redisConfigured } from "@/lib/redis/env"
+
 export type CampaignStorageRefusal = {
   ok: false
   status: 503
@@ -10,7 +12,7 @@ export type CampaignStorageReady = { ok: true }
 export type CampaignStorageStatus = CampaignStorageReady | CampaignStorageRefusal
 
 export function campaignStorageStatus(): CampaignStorageStatus {
-  if (process.env.BLOB_READ_WRITE_TOKEN?.trim()) return { ok: true }
+  if (redisConfigured()) return { ok: true }
   const vercelEnv = process.env.VERCEL_ENV?.trim()
   if (vercelEnv) {
     return {

@@ -1,10 +1,13 @@
-import { head, put } from "@vercel/blob"
 import { MAX_PREDICTION_LENGTH } from "@/lib/teach/prediction"
 import type { ReasoningCoachResult } from "@/lib/teach/reasoning-coach"
 import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
 import type { PlanAnalysis } from "@/lib/teach/plan"
 import type { PlayerOrder, TurnRecord } from "@/lib/types"
+import { teachAttemptKey, TEACH_TTL_SECONDS } from "@/lib/teach/redis-keys"
+import { redisPayloadMatches } from "@/lib/teach/redis-verify"
+import { redisConfigured } from "@/lib/redis/env"
+import { getRedisClient } from "@/lib/redis/client"
 
 /** End state of a teach attempt write — never "stored" until `confirmed`. */
 export type RecordPersistenceStatus = "unavailable" | "confirmed" | "failed"
@@ -82,9 +85,12 @@ export async function persistTeachRecord(input: {
   attemptId?: string
 }): Promise<TeachRecordResult> {
   const id = input.attemptId ?? crypto.randomUUID().replace(/-/g, "").slice(0, 16)
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
 
-  if (!token) {
+  if (!redisConfigured()) {
+    return { attemptId: id, persistence: "unavailable" }
+  }
+  const redis = getRedisClient()
+  if (!redis) {
     return { attemptId: id, persistence: "unavailable" }
   }
 
@@ -115,25 +121,16 @@ export async function persistTeachRecord(input: {
   }
 
   const day = timestamp.slice(0, 10)
-  const pathname = `teach-attempts/${day}/${id}.json`
+  const key = teachAttemptKey(day, id)
   const payload = JSON.stringify(body)
 
   try {
-    await withTimeout(
-      async () => {
-        const uploaded = await put(pathname, payload, {
-          access: "private",
-          addRandomSuffix: false,
-          contentType: "application/json",
-          token,
-        })
-        const verified = await head(uploaded.url, { token })
-        if (!verified?.url || verified.pathname !== uploaded.pathname) {
-          throw new Error("Private blob verify mismatch")
-        }
-      },
-      writeTimeoutMs(),
-    )
+    await withTimeout(async () => {
+      const ok = await redis.set(key, payload, { ex: TEACH_TTL_SECONDS, nx: true })
+      if (ok !== "OK") throw new Error("Teach attempt key exists")
+      const verified = await redis.get(key)
+      if (!redisPayloadMatches(verified, payload)) throw new Error("Private redis verify mismatch")
+    }, writeTimeoutMs())
     return { attemptId: id, persistence: "confirmed" }
   } catch {
     return { attemptId: id, persistence: "failed" }
