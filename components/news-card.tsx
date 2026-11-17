@@ -1,11 +1,15 @@
 "use client"
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import Image from "next/image"
 import { NewsMapVignette } from "@/components/news-map-vignette"
 import { Button } from "@/components/ui/button"
 import { photoSrc } from "@/lib/news/images"
+import {
+  handleNewsFocusTrapKeydown,
+  refocusIntoContainer,
+} from "@/lib/news/modal-focus"
 import { newsEscapeDismissesQueue } from "@/lib/news/overlay-stack"
 import type { NewsEvent } from "@/lib/news/types"
 import { FACTION_LABEL } from "@/lib/format"
@@ -17,6 +21,7 @@ type NewsCardQueueProps = {
 
 export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
   const [index, setIndex] = useState(0)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -43,6 +48,8 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const overlay = overlayRef.current
+      if (overlay && handleNewsFocusTrapKeydown(event, overlay)) return
       if (event.key === "Enter") {
         event.preventDefault()
         advance()
@@ -57,6 +64,17 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
     return () => window.removeEventListener("keydown", onKey, { capture: true })
   }, [advance, skipAll])
 
+  useEffect(() => {
+    if (!events.length) return
+    const onFocusIn = (event: FocusEvent) => {
+      const overlay = overlayRef.current
+      if (!overlay) return
+      refocusIntoContainer(overlay, event.target)
+    }
+    document.addEventListener("focusin", onFocusIn, true)
+    return () => document.removeEventListener("focusin", onFocusIn, true)
+  }, [events.length, index])
+
   if (!events.length || !mounted) return null
   const event = events[index]!
   const ordinal = index + 1
@@ -64,6 +82,7 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
 
   const overlay = (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-[250] flex items-center justify-center bg-[#0a0806]/78 p-3 backdrop-blur-sm sm:p-4"
       role="dialog"
       aria-modal="true"
