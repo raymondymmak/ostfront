@@ -14,11 +14,13 @@ describe("chronicle scroll", () => {
 
   it("keeps the chronicle in a bounded scrollport", () => {
     const panel = readFileSync("components/timeline-panel.tsx", "utf8")
+    const drawer = readFileSync("components/chronicle-drawer.tsx", "utf8")
     const app = readFileSync("components/game-app.tsx", "utf8")
     expect(panel).toContain("min-h-0")
     expect(panel).toContain("overscroll-contain")
     expect(panel).toContain("chronicleFollowsLatest")
-    expect(app).toContain("absolute inset-0")
+    expect(drawer).toContain("chronicle-drawer")
+    expect(app).toContain("ChronicleDrawer")
     expect(app).toContain("overflow-hidden")
   })
 })

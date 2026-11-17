@@ -22,7 +22,7 @@ app/api/turn/route.ts          ← turn guard, load store, resolve, commit
     └─ lib/campaign/public-state.ts stripSeedFromState
     │  JSON { gameId, state, record }
     ▼
-Browser updates map, chronicle, clears order queue
+Browser updates map, optional Log drawer chronicle, clears order queue
 ```
 
 | Layer | Role | Search here |
@@ -291,7 +291,7 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Echelon** | Unit grouping / corps structure (`lib/engine/echelon.ts`) |
 | **Lua CAS** | Atomic turn commit script in `lib/campaign/redis-scripts.ts` |
 | **Proposal** | Typed order (move, attack, fortify, …) before resolution |
-| **Chronicle** | `TurnRecord` log in `timeline-panel.tsx`; routine one-liners via `routineLog`, full text behind **Details** |
+| **Chronicle** | `TurnRecord` in Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog`, full text behind **Details** |
 | **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`) |
 
 ---

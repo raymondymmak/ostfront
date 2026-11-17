@@ -5,7 +5,7 @@ import { AdvisorPanel } from "@/components/advisor-panel"
 import { Hud } from "@/components/hud"
 import { OrderPanel } from "@/components/order-panel"
 import { ProvincePanel } from "@/components/province-panel"
-import { TimelinePanel } from "@/components/timeline-panel"
+import { ChronicleDrawer } from "@/components/chronicle-drawer"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
@@ -55,13 +55,15 @@ export function GameApp() {
   const [sideTab, setSideTab] = useState("orders")
   const [chatEpoch, setChatEpoch] = useState(0)
   const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
+  const [logOpen, setLogOpen] = useState(false)
 
   useEffect(() => {
     if (!setupOpen && game.gameId) saveGame(game)
   }, [game, setupOpen])
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== "development") return
+    const params = new URLSearchParams(window.location.search)
+    if (process.env.NODE_ENV !== "development" && !params.has("newsDemo")) return
     const win = window as Window & { __ostfrontSetNewsQueue?: (events: NewsEvent[]) => void }
     win.__ostfrontSetNewsQueue = setNewsQueue
     return () => {
@@ -367,6 +369,7 @@ export function GameApp() {
     setSideTab("orders")
     setChatEpoch((value) => value + 1)
     setNewsQueue([])
+    setLogOpen(false)
   }
 
   function acceptAdvisorOrders(
@@ -465,8 +468,8 @@ export function GameApp() {
           )}
         </div>
       )}
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem] lg:grid-rows-[minmax(0,1fr)_16.5rem]">
-        <div className="relative isolate z-0 h-[58vh] min-h-[320px] overflow-hidden lg:h-full lg:min-h-0">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem]">
+        <div className="relative min-h-0 flex-1 overflow-hidden min-h-[min(58dvh,100%)]">
           <WarMap
             provinces={provinces}
             selectedId={selectedId}
@@ -500,13 +503,14 @@ export function GameApp() {
             onClose={() => setAdvisorOpen(false)}
             onAccept={acceptAdvisorOrders}
           />
-          {newsQueue.length > 0 && (
-            <NewsCardQueue
-              key={newsQueue.map((event) => event.id).join(":")}
-              events={newsQueue}
-              onDone={() => setNewsQueue([])}
-            />
-          )}
+          <ChronicleDrawer
+            open={logOpen}
+            onOpen={setLogOpen}
+            log={game.log}
+            active={game.log.length ? activeLog : 0}
+            onActive={setLogIndex}
+            phase={phase}
+          />
           {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
@@ -526,7 +530,7 @@ export function GameApp() {
             </div>
           )}
         </div>
-        <aside className="flex min-h-[28rem] flex-col border-t border-border lg:row-span-2 lg:min-h-0 lg:border-t-0 lg:border-l">
+        <aside className="flex min-h-[28rem] flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l">
           <Tabs
             value={sideTab}
             onValueChange={(value) => {
@@ -540,9 +544,6 @@ export function GameApp() {
               </TabsTrigger>
               <TabsTrigger value="front" data-testid="tab-province">
                 Province
-              </TabsTrigger>
-              <TabsTrigger value="chronicle" className="lg:hidden" data-testid="tab-chronicle">
-                Chronicle
               </TabsTrigger>
             </TabsList>
             <TabsContent value="orders" className="min-h-0 flex-1">
@@ -576,26 +577,8 @@ export function GameApp() {
                 queue={queue}
               />
             </TabsContent>
-            <TabsContent value="chronicle" className="min-h-0 flex-1 lg:hidden" data-testid="mobile-chronicle-panel">
-            <TimelinePanel
-              log={game.log}
-              active={game.log.length ? activeLog : 0}
-              onActive={setLogIndex}
-              phase={phase}
-            />
-          </TabsContent>
           </Tabs>
         </aside>
-        <section className="relative z-10 hidden min-h-0 overflow-hidden border-t border-border bg-background lg:block">
-          <div className="absolute inset-0 flex min-h-0 flex-col">
-            <TimelinePanel
-              log={game.log}
-              active={game.log.length ? activeLog : 0}
-              onActive={setLogIndex}
-              phase={phase}
-            />
-          </div>
-        </section>
       </div>
       {phase === "result" && game.state.result && (
         <div
@@ -635,6 +618,13 @@ export function GameApp() {
             </div>
           </div>
         </div>
+      )}
+      {newsQueue.length > 0 && (
+        <NewsCardQueue
+          key={newsQueue.map((event) => event.id).join(":")}
+          events={newsQueue}
+          onDone={() => setNewsQueue([])}
+        />
       )}
     </div>
   )
