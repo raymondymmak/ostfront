@@ -56,6 +56,7 @@ export function newsImage(
   tone: "victory" | "defeat",
 ): NewsImage {
   const useMap =
+    kind === "encirclement" ||
     kind === "cityTaken" ||
     kind === "cityLost" ||
     (kind === "objectiveTaken" && imageSeed(turn, provinceId, kind) % 3 === 0)

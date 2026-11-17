@@ -111,6 +111,54 @@ export const GMTurnSchema = z.object({
   diplomacy: z.array(z.string()),
 })
 
+export const BattleFactsSchema = z.object({
+  targetId: z.string().min(1),
+  attacker: z.enum(["central", "russia"]),
+  defender: z.enum(["central", "russia"]),
+  kind: z.enum(["assault", "meeting"]),
+  prongs: z.number().int().min(1),
+  origins: z.array(z.string().min(1)),
+  attackerLoss: z.number().min(0),
+  defenderLoss: z.number().min(0),
+  encircled: z.boolean(),
+  attackerWon: z.boolean(),
+})
+
+export const ResolutionSchema = z.object({
+  proposal: ProposalSchema,
+  status: z.enum(["applied", "rejected"]),
+  summary: z.string(),
+  battle: BattleFactsSchema.optional(),
+})
+
+export const TurnRecordSchema = z.object({
+  turn: z.number().int().min(0),
+  date: z.string(),
+  narration: z.string(),
+  diplomacy: z.array(z.string()),
+  resolutions: z.array(ResolutionSchema),
+  events: z.array(
+    z.object({
+      event: GameEventSchema,
+      status: z.enum(["applied", "rejected"]),
+      summary: z.string(),
+    }),
+  ),
+  controlChanges: z.array(
+    z.object({
+      provinceId: z.string(),
+      name: z.string(),
+      from: z.enum(["central", "russia"]),
+      to: z.enum(["central", "russia"]),
+    }),
+  ),
+  logistics: z.array(z.string()),
+  notes: z.array(z.string()),
+  gmSource: z.enum(["mock", "llm"]),
+  warning: z.string().optional(),
+  gmDebug: z.string().optional(),
+})
+
 export const PlayerOrderSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("move"),

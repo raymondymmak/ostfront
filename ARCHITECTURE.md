@@ -36,7 +36,7 @@ Browser updates map, optional Log drawer chronicle, clears order queue
 | `lib/campaign/` | Server saves, public JSON | `store.ts`, `resolve-turn.ts`, `public-state.ts` |
 | `lib/redis/` | Upstash REST client, env, test fake | `env.ts`, `client.ts`, `fake-client.ts` |
 | `lib/data/` | Scenario, map, objectives | `scenario.ts`, `objectives.ts`, `theater-geometry.json` |
-| `lib/news/` | Post-turn headline cards (client-only) | `select.ts`, `lore.ts`, `images.ts`, `types.ts` |
+| `lib/news/` | Post-turn headline cards (client-only) | `select.ts`, `lore.ts`, `images.ts`, `battle.ts`, `types.ts` |
 | `lib/teach/` | Lesson drills (no full campaign) | `lessons.ts`, `resolve.ts`, `record.ts` |
 | `tests/` | Vitest specs per mechanic | `npm test` |
 | `scripts/` | Map build, balance sim, `demo-check` | `scripts/demo-check.mjs` |
@@ -101,7 +101,7 @@ sequenceDiagram
     GM->>GM: fetchGmWithCascade (diplomacy flavour only)
   end
   GM->>Eng: resolveTurn
-  Eng-->>GM: next state + TurnRecord
+  Eng-->>GM: next state + TurnRecord (resolutions may include optional `battle` facts)
   GM-->>API: SaveGame + record
   API->>Store: commitCampaignTurn (Lua: NX snapshot + head)
   Store-->>API: ok or 409
@@ -291,8 +291,9 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Echelon** | Unit grouping / corps structure (`lib/engine/echelon.ts`) |
 | **Lua CAS** | Atomic turn commit script in `lib/campaign/redis-scripts.ts` |
 | **Proposal** | Typed order (move, attack, fortify, …) before resolution |
-| **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog`, full text behind **Details** |
-| **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); wins over Log for Escape; city beats trump depot on urban captures |
+| **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog` (battle rows show compact loss lines from `Resolution.battle`), full summaries behind **Details** |
+| **BattleFacts** | Optional `Resolution.battle` set in `resolveManeuvers` for assaults and meeting engagements that already log losses; includes sorted `origins` for news map arrows |
+| **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); priority objective → encirclement → city → depot; wins over Log for Escape |
 
 ---
 

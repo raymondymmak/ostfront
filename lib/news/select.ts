@@ -1,6 +1,7 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { easternObjectives } from "@/lib/engine/victory"
+import { battleForProvince, lossesLine } from "@/lib/news/battle"
 import { newsImage } from "@/lib/news/images"
 import { headlineFor, loreLine } from "@/lib/news/lore"
 import type { NewsEvent, NewsKind } from "@/lib/news/types"
@@ -11,6 +12,7 @@ const MAX_NEWS = 4
 const PRIORITY: Record<NewsKind, number> = {
   objectiveTaken: 400,
   objectiveMissed: 380,
+  encirclement: 350,
   cityTaken: 300,
   cityLost: 290,
   depotLost: 200,
@@ -47,7 +49,15 @@ function attackArrows(
 function buildEvent(draft: Draft, prev: GameState, next: GameState, record: TurnRecord): NewsEvent {
   const name = provinceName(draft.provinceId)
   const tone = draft.faction === "central" ? "victory" : "defeat"
-  const arrows = attackArrows(next, draft.provinceId, draft.faction)
+  const battle = battleForProvince(record, draft.provinceId)
+  const arrows =
+    battle?.origins?.length
+      ? battle.origins
+      : attackArrows(next, draft.provinceId, draft.faction)
+  const losses =
+    battle && (draft.kind === "cityTaken" || draft.kind === "cityLost" || draft.kind === "encirclement")
+      ? lossesLine(battle)
+      : undefined
   return {
     id: `${record.turn}-${draft.kind}-${draft.provinceId}`,
     kind: draft.kind,
@@ -58,6 +68,7 @@ function buildEvent(draft: Draft, prev: GameState, next: GameState, record: Turn
     lore: loreLine(draft.kind, draft.provinceId, name, draft.faction, record.turn),
     image: newsImage(draft.kind, draft.provinceId, record.turn, arrows.length ? arrows : undefined, tone),
     turn: record.turn,
+    lossesLine: losses,
   }
 }
 
@@ -97,6 +108,18 @@ export function selectNewsEvents(prev: GameState, next: GameState, record: TurnR
 
   for (const change of record.controlChanges) {
     if (claimed.has(change.provinceId)) continue
+    const battle = battleForProvince(record, change.provinceId)
+    if (battle?.encircled && battle.attackerWon && battle.attacker === change.to) {
+      drafts.push({
+        kind: "encirclement",
+        provinceId: change.provinceId,
+        faction: battle.attacker,
+        priority: PRIORITY.encirclement,
+      })
+      claimed.add(change.provinceId)
+      continue
+    }
+
     const meta = CATALOG_BY_ID[change.provinceId]
     const terrain = meta?.terrain ?? "plains"
     const prevProvince = prev.provinces.find((p) => p.id === change.provinceId)

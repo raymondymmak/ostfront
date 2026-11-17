@@ -37,9 +37,9 @@ Trust: teaching resolve does **not** accept client `GameState` for grading. Full
 
 ## News cards (HOI4-style)
 
-After each fortnight resolves, up to four headline cards (`[data-testid=news-card]`) appear in a viewport-level overlay (`[data-testid=news-card-overlay]`, `z-index` above sidebar and map). **Onward** (`[data-testid=news-onward]`) or Enter advances; **Skip all** (`[data-testid=news-skip-all]`) or Esc dismisses the queue. Images use `[data-testid=news-card-photo]` or `[data-testid=news-card-map]` (stylized vignette, not the live map).
+After each fortnight resolves, up to four headline cards (`[data-testid=news-card]`) appear in a viewport-level overlay (`[data-testid=news-card-overlay]`, `z-index` above sidebar and map). **Onward** (`[data-testid=news-onward]`) or Enter advances; **Skip all** (`[data-testid=news-skip-all]`) or Esc dismisses the queue. Images use `[data-testid=news-card-photo]` or `[data-testid=news-card-map]` (stylized vignette, not the live map). Encirclement beats (when the engine marks a pocket) trump duplicate city headlines; city and encirclement cards may show a factual `[data-testid=news-card-losses]` line (`Ours −N · Theirs −M`) from engine `BattleFacts`, not from lore text.
 
-The map uses the full main height (no bottom Chronicle bar). Open **Log** (`[data-testid=chronicle-log-toggle]`) for the Chronicle drawer (`[data-testid=chronicle-drawer]`; mobile shell `[data-testid=mobile-chronicle-panel]`). Inside `[data-testid=chronicle]`, the latest fortnight shows compact routine rows (`[data-testid=chronicle-routine]`); **Details** (`[data-testid=chronicle-details-toggle]` → `[data-testid=chronicle-details]`) holds full narration, resolutions (`[data-testid=resolution-log]`), and logistics.
+The map uses the full main height (no bottom Chronicle bar). Open **Log** (`[data-testid=chronicle-log-toggle]`) for the Chronicle drawer (`[data-testid=chronicle-drawer]`; mobile shell `[data-testid=mobile-chronicle-panel]`). Inside `[data-testid=chronicle]`, the latest fortnight shows compact routine rows (`[data-testid=chronicle-routine]`) including short battle loss lines when `Resolution.battle` is present; **Details** (`[data-testid=chronicle-details-toggle]` → `[data-testid=chronicle-details]`) holds full narration, resolutions (`[data-testid=resolution-log]`), and logistics.
 
 ## Chief of Staff suggestions
 

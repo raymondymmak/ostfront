@@ -17,6 +17,7 @@ import { defenderSupplyInProvince } from "@/lib/engine/supply"
 import { rollD6 } from "@/lib/rng"
 import type {
   AttackProposal,
+  BattleFacts,
   Faction,
   MoveProposal,
   Proposal,
@@ -220,12 +221,27 @@ export function resolveManeuvers(
       : `One column finds the other already gone (roll ${outcome.roll}).`
     const holder = outcome.attackerWins ? leftName : rightName
     const proposal = [...meeting.left, ...meeting.right].sort((a, b) => a.key.localeCompare(b.key))[0].proposal
+    const leftFaction = meeting.left[0]!.faction
+    const rightFaction = meeting.right[0]!.faction
+    const battle: BattleFacts = {
+      targetId: meeting.rightId,
+      attacker: leftFaction,
+      defender: rightFaction,
+      kind: "meeting",
+      prongs: 1,
+      origins: [meeting.leftId],
+      attackerLoss: leftLoss,
+      defenderLoss: rightLoss,
+      encircled: false,
+      attackerWon: outcome.attackerWins,
+    }
     battleLines.push({
       key: meeting.key,
       resolution: {
         proposal,
         status: "applied",
         summary: `Meeting engagement between ${leftName} and ${rightName}. The columns clash in the open and both fall back. ${holder}'s column holds the field. ${odds} Losses — ${leftName} ${leftLoss}, ${rightName} ${rightLoss}.`,
+        battle,
       },
     })
   }
@@ -340,35 +356,51 @@ export function resolveManeuvers(
     const wins = plan.outcome.attackerWins && captures.get(plan.assault.target.id) === plan.assault.faction
     const stayerSurvivors = survivorsOf(plan.stayerParty, originals, hits)
     const proposal = [...plan.assault.prongs].sort((a, b) => a.key.localeCompare(b.key))[0].proposal
+    const summary = assaultSummary({
+      title: plan.title,
+      target: plan.assault.target,
+      faction: plan.assault.faction,
+      odds: plan.odds,
+      outcome: plan.outcome,
+      wins,
+      occupying,
+      attackerLoss: plan.attackerLoss,
+      defenderLoss: plan.defenderLoss,
+      encircled: plan.encircled,
+      stayerBodies: plan.stayerBodies,
+      rearBodies: plan.rearBodies,
+      stayerSurvivors,
+      exitName: exitNameAfter(
+        state,
+        plan.assault.target.id,
+        plan.assault.target.controller,
+        plan.origins,
+        controllerAtStart,
+        supplyAtStart,
+        captures,
+      ),
+    })
+    const defender =
+      controllerAtStart.get(plan.assault.target.id) ?? plan.assault.target.controller
+    const battle: BattleFacts = {
+      targetId: plan.assault.target.id,
+      attacker: plan.assault.faction,
+      defender,
+      kind: "assault",
+      prongs: plan.origins.length,
+      origins: plan.origins,
+      attackerLoss: plan.attackerLoss,
+      defenderLoss: plan.defenderLoss,
+      encircled: plan.encircled,
+      attackerWon: plan.outcome.attackerWins,
+    }
     battleLines.push({
       key: plan.assault.key,
       resolution: {
         proposal,
         status: "applied",
-        summary: assaultSummary({
-          title: plan.title,
-          target: plan.assault.target,
-          faction: plan.assault.faction,
-          odds: plan.odds,
-          outcome: plan.outcome,
-          wins,
-          occupying,
-          attackerLoss: plan.attackerLoss,
-          defenderLoss: plan.defenderLoss,
-          encircled: plan.encircled,
-          stayerBodies: plan.stayerBodies,
-          rearBodies: plan.rearBodies,
-          stayerSurvivors,
-          exitName: exitNameAfter(
-            state,
-            plan.assault.target.id,
-            plan.assault.target.controller,
-            plan.origins,
-            controllerAtStart,
-            supplyAtStart,
-            captures,
-          ),
-        }),
+        summary,
+        battle,
       },
     })
   }
