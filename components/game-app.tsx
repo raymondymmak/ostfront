@@ -9,7 +9,7 @@ import { TimelinePanel } from "@/components/timeline-panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
-import { GoalLine } from "@/components/goal-line"
+import { CampaignStart } from "@/components/campaign-start"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { independentFormations } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
@@ -380,6 +380,17 @@ export function GameApp() {
   const latest = game.log.at(-1)
   const fallback = !error && latest?.warning ? latest : null
 
+  if (setupOpen) {
+    return (
+      <CampaignStart
+        difficulty={difficulty}
+        onDifficulty={setDifficulty}
+        beginBusy={beginBusy}
+        onBegin={() => void begin(difficulty)}
+      />
+    )
+  }
+
   return (
     <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden">
       <Hud
@@ -463,16 +474,8 @@ export function GameApp() {
             onDraw={addArrow}
             onOverlay={setOverlay}
           />
-          {setupOpen ? (
-            <GoalLine
-              difficulty={difficulty}
-              onDifficulty={setDifficulty}
-              beginBusy={beginBusy}
-              onBegin={() => void begin(difficulty)}
-            />
-          ) : null}
           <AdvisorPanel
-            open={advisorOpen && !setupOpen}
+            open={advisorOpen}
             state={game.state}
             queue={queue}
             closed={finished}
@@ -480,7 +483,7 @@ export function GameApp() {
             onClose={() => setAdvisorOpen(false)}
             onAccept={acceptAdvisorOrders}
           />
-          {phase === "map" && !setupOpen && (
+          {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
                 className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/92 px-3 py-2 text-[#f3e2a8] shadow-lg"
@@ -570,7 +573,7 @@ export function GameApp() {
           </div>
         </section>
       </div>
-      {phase === "result" && game.state.result && !setupOpen && (
+      {phase === "result" && game.state.result && (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-4"
           data-testid="endgame"

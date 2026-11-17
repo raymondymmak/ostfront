@@ -423,6 +423,13 @@ function buildSteps(cli, targets) {
         if (status >= 400) throw new Error(`HTTP ${status} on reload`)
         await assertReachable(page)
         await page.waitForSelector("[data-testid=scenario-picker]", { timeout: 60_000 })
+        const map = page.locator("[data-testid=war-map]")
+        if ((await map.count()) > 0) {
+          await map.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {
+            throw new Error("Live war map must not render before Begin")
+          })
+        }
+        await page.locator("[data-testid=briefing-task]").waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {
