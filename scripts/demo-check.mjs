@@ -391,8 +391,30 @@ async function expectAttr(locator, name, value) {
   if (got !== value) throw new Error(`Expected ${name}=${value}, got ${got}`)
 }
 
+/** @param {import('playwright').Page} page */
+async function dismissNewsCardsIfOpen(page) {
+  const overlay = page.locator('[data-testid="news-card-overlay"]')
+  if (!(await overlay.isVisible().catch(() => false))) return
+  const skip = page.getByRole("button", { name: "Skip all" })
+  if (await skip.isVisible().catch(() => false)) {
+    await skip.click()
+  } else {
+    await page.keyboard.press("Escape")
+  }
+  await overlay.waitFor({ state: "hidden", timeout: 15_000 })
+}
+
 /** @param {import('playwright').Page} page @param {boolean} allowFallback */
+async function openChronicleDrawer(page) {
+  await dismissNewsCardsIfOpen(page)
+  const drawer = page.locator("[data-testid=chronicle-drawer]")
+  if (await drawer.isVisible()) return
+  await page.locator("[data-testid=chronicle-log-toggle]").click()
+  await drawer.waitFor({ state: "visible", timeout: 10_000 })
+}
+
 async function assertGameMasterChronicle(page, allowFallback) {
+  await openChronicleDrawer(page)
   const chronicle = page.locator("[data-testid=chronicle]")
   const gm = chronicle.getByText("Game master", { exact: true })
   const staff = chronicle.getByText("Staff simulation", { exact: true })
@@ -642,14 +664,15 @@ function buildSteps(cli, targets) {
     },
     {
       id: "17-mobile-chronicle",
-      name: "Mobile Chronicle tab (390×844)",
+      name: "Mobile Log drawer (390×844)",
       async run({ page }) {
         try {
           await page.setViewportSize(MOBILE_VIEWPORT)
-          await page.locator("[data-testid=tab-chronicle]").click()
-          const chronicle = page.locator("[data-testid=mobile-chronicle-panel] [data-testid=chronicle]")
-          await chronicle.waitFor({ state: "visible", timeout: 10_000 })
-          await expectText(chronicle, "2 May 1915")
+          await openChronicleDrawer(page)
+          await page.locator("[data-testid=mobile-chronicle-panel] [data-testid=chronicle]").waitFor({
+            state: "visible",
+            timeout: 10_000,
+          })
         } finally {
           await page.setViewportSize(DESKTOP_VIEWPORT)
         }
@@ -661,12 +684,19 @@ function buildSteps(cli, targets) {
       async run({ page }) {
         await page.locator("[data-testid=tab-orders]").click()
         await page.locator("[data-testid=advisor-toggle]").click()
+        await openChronicleDrawer(page)
         const logBefore = await page.locator("[data-testid=chronicle] ul li button").count()
         await page.locator("[data-testid=end-turn]").click()
         await page
           .locator("[data-testid=stavka-deliberating]")
           .waitFor({ state: "visible", timeout: 5_000 })
           .catch(() => {})
+        await page
+          .locator("[data-testid=stavka-deliberating]")
+          .waitFor({ state: "hidden", timeout: TURN_TIMEOUT_MS })
+          .catch(() => {})
+        await dismissNewsCardsIfOpen(page)
+        await openChronicleDrawer(page)
         await page.waitForFunction(
           (before) => document.querySelectorAll("[data-testid=chronicle] ul li button").length > before,
           logBefore,
@@ -687,8 +717,11 @@ function buildSteps(cli, targets) {
       id: "19-chronicle-gm",
       name: "GM narration and Game master badge",
       async run({ page }) {
+        await openChronicleDrawer(page)
         const chronicle = page.locator("[data-testid=chronicle]")
         await chronicle.locator("article").waitFor({ state: "visible", timeout: 10_000 })
+        await page.locator("[data-testid=chronicle-details-toggle]").click()
+        await page.locator("[data-testid=chronicle-details]").waitFor({ state: "visible", timeout: 10_000 })
         const body = (await chronicle.locator("article").textContent()) ?? ""
         if (body.length < 80) throw new Error("Chronicle entry too short after turn.")
         const gmWarn = chronicle.locator("[data-testid=gm-warning]")
@@ -704,8 +737,15 @@ function buildSteps(cli, targets) {
       name: "Close a fortnight with Ctrl+Enter",
       async run({ page }) {
         await page.locator("[data-testid=tab-orders]").click()
+        await openChronicleDrawer(page)
         const logBefore = await page.locator("[data-testid=chronicle] ul li button").count()
         await page.keyboard.press("Control+Enter")
+        await page
+          .locator("[data-testid=stavka-deliberating]")
+          .waitFor({ state: "hidden", timeout: TURN_TIMEOUT_MS })
+          .catch(() => {})
+        await dismissNewsCardsIfOpen(page)
+        await openChronicleDrawer(page)
         await page.waitForFunction(
           (before) => document.querySelectorAll("[data-testid=chronicle] ul li button").length > before,
           logBefore,
@@ -718,6 +758,7 @@ function buildSteps(cli, targets) {
       id: "21-restart",
       name: "Restart campaign (confirm)",
       async run({ page }) {
+        await dismissNewsCardsIfOpen(page)
         await page.getByRole("button", { name: "Restart" }).click()
         await page.getByRole("button", { name: "Confirm restart" }).click()
         await page.locator("[data-testid=scenario-picker]").waitFor({ state: "visible", timeout: 15_000 })

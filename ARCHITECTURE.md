@@ -22,7 +22,7 @@ app/api/turn/route.ts          ← turn guard, load store, resolve, commit
     └─ lib/campaign/public-state.ts stripSeedFromState
     │  JSON { gameId, state, record }
     ▼
-Browser updates map, chronicle, clears order queue
+Browser updates map, optional Log drawer chronicle, clears order queue
 ```
 
 | Layer | Role | Search here |
@@ -36,6 +36,7 @@ Browser updates map, chronicle, clears order queue
 | `lib/campaign/` | Server saves, public JSON | `store.ts`, `resolve-turn.ts`, `public-state.ts` |
 | `lib/redis/` | Upstash REST client, env, test fake | `env.ts`, `client.ts`, `fake-client.ts` |
 | `lib/data/` | Scenario, map, objectives | `scenario.ts`, `objectives.ts`, `theater-geometry.json` |
+| `lib/news/` | Post-turn headline cards (client-only) | `select.ts`, `lore.ts`, `images.ts`, `types.ts` |
 | `lib/teach/` | Lesson drills (no full campaign) | `lessons.ts`, `resolve.ts`, `record.ts` |
 | `tests/` | Vitest specs per mechanic | `npm test` |
 | `scripts/` | Map build, balance sim, `demo-check` | `scripts/demo-check.mjs` |
@@ -54,7 +55,7 @@ In `components/game-app.tsx`, `endTurn`:
 1. Builds `PlayerOrder[]` from the queue (`queuedToPlayerOrders`) plus optional text directive.
 2. Requires `game.gameId` (from `POST /api/new-game`); otherwise shows an error.
 3. `fetch("/api/turn", { method: "POST", body: { gameId, expectedTurn: game.state.turn, orders } })`.
-4. On success: merges `payload.state` and `payload.record` into React state, clears queue, flashes control changes.
+4. On success: merges `payload.state` and `payload.record` into React state, clears queue, flashes control changes, and runs `selectNewsEvents(prev, next, record)` to queue HOI4-style news cards (`NewsCardQueue`).
 5. On failure: leaves map and queue unchanged; sets `staleCampaign` for `stale_turn` / `unknown_game`.
 
 Local persistence: `lib/storage.ts` writes `gameId` + seed-stripped state to `localStorage` (`ostfront-1915-v1`) after play. On load, a one-shot `GET /api/game?gameId=…` refreshes from the server.
@@ -290,7 +291,8 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Echelon** | Unit grouping / corps structure (`lib/engine/echelon.ts`) |
 | **Lua CAS** | Atomic turn commit script in `lib/campaign/redis-scripts.ts` |
 | **Proposal** | Typed order (move, attack, fortify, …) before resolution |
-| **Chronicle** | `TurnRecord` log shown in `timeline-panel.tsx` |
+| **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog`, full text behind **Details** |
+| **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); wins over Log for Escape; city beats trump depot on urban captures |
 
 ---
 
