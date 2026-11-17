@@ -292,7 +292,7 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Lua CAS** | Atomic turn commit script in `lib/campaign/redis-scripts.ts` |
 | **Proposal** | Typed order (move, attack, fortify, …) before resolution |
 | **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog` (battle rows show compact loss lines from `Resolution.battle`), full summaries behind **Details** |
-| **BattleFacts** | Optional `Resolution.battle` set in `resolveManeuvers` for assaults and meeting engagements that already log losses |
+| **BattleFacts** | Optional `Resolution.battle` set in `resolveManeuvers` for assaults and meeting engagements that already log losses; includes sorted `origins` for news map arrows |
 | **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); priority objective → encirclement → city → depot; wins over Log for Escape |
 
 ---

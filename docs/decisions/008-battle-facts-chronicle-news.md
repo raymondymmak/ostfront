@@ -9,10 +9,10 @@ News cards and the Chronicle Log need **engine-authored loss counts** and encirc
 
 ## Decision
 
-Add an optional `battle?: BattleFacts` field on `Resolution`, populated in `resolveManeuvers` only for meeting engagements and assaults that already emit a **Losses —** line. `lib/news/` consumes facts for encirclement cards (`NewsKind.encirclement`), map arrows (parsed prong names from the assault title when needed—no extra fields on `BattleFacts`), compact **Ours · Theirs** loss lines, and Log drawer routine rows. Zod schemas accept records with or without `battle` so older saves load unchanged.
+Add an optional `battle?: BattleFacts` field on `Resolution`, populated in `resolveManeuvers` only for meeting engagements and assaults that already emit a **Losses —** line. `BattleFacts` includes sorted `origins` (province ids) from engine assault plans or the meeting attacker’s `leftId`. `lib/news/` consumes facts for encirclement cards (`NewsKind.encirclement`), map vignette arrows via `battle.origins`, compact **Ours · Theirs** loss lines, and Log drawer routine rows. Zod schemas accept records with or without `battle` so older saves load unchanged.
 
 ## Consequences
 
 - UI can show deterministic lore alongside factual losses; engine summaries and dice behavior stay the source of truth.
 - Encirclement priority (below objectives, above plain city beats) dedupes double headlines when a pocket also takes a city.
-- Any future need for explicit prong province ids on cards would require extending `BattleFacts` (not done in this change).
+- Map arrows no longer depend on parsing assault summary titles.

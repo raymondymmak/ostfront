@@ -34,24 +34,3 @@ export function battleForProvince(record: TurnRecord, provinceId: string): Battl
   }
   return undefined
 }
-
-/** Parse assault summary titles into province ids for map arrows (no extra battle fields). */
-export function assaultOriginIds(summary: string): string[] {
-  const match = summary.match(
-    /^(?:Two-pronged attack|Concentric attack|Attack) from (.+?) into /,
-  )
-  if (!match) return []
-  const chunk = match[1]!
-  const names = chunk.includes(" and ")
-    ? chunk.split(/,\s+|\s+and\s+/).map((part) => part.trim())
-    : [chunk.trim()]
-  const byName = new Map(
-    Object.values(CATALOG_BY_ID).map((row) => [row.name.toLowerCase(), row.id]),
-  )
-  const ids: string[] = []
-  for (const name of names) {
-    const id = byName.get(name.toLowerCase())
-    if (id) ids.push(id)
-  }
-  return ids
-}

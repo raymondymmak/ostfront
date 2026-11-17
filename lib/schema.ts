@@ -117,6 +117,7 @@ export const BattleFactsSchema = z.object({
   defender: z.enum(["central", "russia"]),
   kind: z.enum(["assault", "meeting"]),
   prongs: z.number().int().min(1),
+  origins: z.array(z.string().min(1)),
   attackerLoss: z.number().min(0),
   defenderLoss: z.number().min(0),
   encircled: z.boolean(),

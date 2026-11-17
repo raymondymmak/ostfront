@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { blankCampaign } from "@/lib/data/campaign"
 import { lossesLine, battleForProvince } from "@/lib/news/battle"
@@ -103,6 +105,7 @@ describe("battle facts on resolutions", () => {
     const battle = baseline.record.resolutions.find((item) => item.battle?.kind === "assault")?.battle
     expect(battle?.encircled).toBe(true)
     expect(battle?.prongs).toBe(2)
+    expect(battle?.origins).toEqual(["east", "west"])
   })
 
   it("records exactly one BattleFacts for a multi-prong assault", () => {
@@ -146,6 +149,7 @@ describe("battle facts on resolutions", () => {
     const battles = played.record.resolutions.filter((item) => item.battle?.targetId === "hub")
     expect(battles).toHaveLength(1)
     expect(battles[0]!.battle!.prongs).toBe(2)
+    expect(battles[0]!.battle!.origins).toEqual(["east", "west"])
   })
 
   it("attaches meeting engagement battle facts with losses", () => {
@@ -178,7 +182,12 @@ describe("battle facts on resolutions", () => {
       { rng: highRoll() },
     )
     const meeting = played.record.resolutions.find((item) => item.battle?.kind === "meeting")
-    expect(meeting?.battle).toMatchObject({ kind: "meeting", encircled: false, prongs: 1 })
+    expect(meeting?.battle).toMatchObject({
+      kind: "meeting",
+      encircled: false,
+      prongs: 1,
+      origins: ["kielce"],
+    })
     expect(meeting!.battle!.attackerLoss).toBeGreaterThanOrEqual(0)
     expect(meeting!.battle!.defenderLoss).toBeGreaterThanOrEqual(0)
   })
@@ -241,6 +250,7 @@ describe("schema acceptance for battle metadata", () => {
         defender: "russia",
         kind: "assault",
         prongs: 2,
+        origins: ["a", "c"],
         attackerLoss: 4,
         defenderLoss: 22,
         encircled: true,
@@ -280,6 +290,18 @@ describe("schema acceptance for battle metadata", () => {
   })
 })
 
+describe("news map arrows", () => {
+  it("does not parse assault titles in lib/news (uses battle.origins)", () => {
+    const root = path.join(process.cwd(), "lib/news")
+    const sources = readdirSync(root)
+      .filter((name) => name.endsWith(".ts"))
+      .map((name) => readFileSync(path.join(root, name), "utf8"))
+      .join("\n")
+    expect(sources).not.toMatch(/assaultOriginIds/)
+    expect(sources).not.toMatch(/Two-pronged attack/)
+  })
+})
+
 describe("news encirclement and losses perspective", () => {
   it("prefers encirclement over city when both apply", () => {
     const prev = board([
@@ -313,6 +335,7 @@ describe("news encirclement and losses perspective", () => {
             defender: "russia",
             kind: "assault",
             prongs: 2,
+            origins: ["east", "west"],
             attackerLoss: 5,
             defenderLoss: 12,
             encircled: true,
@@ -330,6 +353,10 @@ describe("news encirclement and losses perspective", () => {
     expect(events).toHaveLength(1)
     expect(events[0]?.kind).toBe("encirclement")
     expect(events[0]?.lossesLine).toBe("Ours −5 · Theirs −12")
+    expect(events[0]?.image).toMatchObject({
+      type: "map",
+      arrowFrom: ["east", "west"],
+    })
   })
 
   it("formats losses from the Central Powers perspective", () => {
@@ -339,6 +366,7 @@ describe("news encirclement and losses perspective", () => {
       defender: "russia",
       kind: "assault",
       prongs: 1,
+      origins: ["a"],
       attackerLoss: 12,
       defenderLoss: 37,
       encircled: false,
@@ -352,6 +380,7 @@ describe("news encirclement and losses perspective", () => {
         defender: "russia",
         kind: "assault",
         prongs: 1,
+        origins: ["a"],
         attackerLoss: 12,
         defenderLoss: 37,
         encircled: false,
@@ -379,6 +408,7 @@ describe("news encirclement and losses perspective", () => {
             defender: "russia",
             kind: "assault",
             prongs: 2,
+            origins: ["east", "west"],
             attackerLoss: 1,
             defenderLoss: 9,
             encircled: true,

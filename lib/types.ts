@@ -165,6 +165,8 @@ export type BattleFacts = {
   kind: "assault" | "meeting"
   /** Directions the attack came from (assault prongs). */
   prongs: number
+  /** Sorted province ids each attacking prong (or meeting attacker column) marched from. */
+  origins: string[]
   attackerLoss: number
   defenderLoss: number
   encircled: boolean

@@ -128,6 +128,7 @@ async function main() {
               defender: "russia",
               kind: "assault",
               prongs: 2,
+              origins: ["kielce", "krakow"],
               attackerLoss: 8,
               defenderLoss: 41,
               encircled: true,

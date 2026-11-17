@@ -1,7 +1,7 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { easternObjectives } from "@/lib/engine/victory"
-import { assaultOriginIds, battleForProvince, lossesLine } from "@/lib/news/battle"
+import { battleForProvince, lossesLine } from "@/lib/news/battle"
 import { newsImage } from "@/lib/news/images"
 import { headlineFor, loreLine } from "@/lib/news/lore"
 import type { NewsEvent, NewsKind } from "@/lib/news/types"
@@ -50,13 +50,9 @@ function buildEvent(draft: Draft, prev: GameState, next: GameState, record: Turn
   const name = provinceName(draft.provinceId)
   const tone = draft.faction === "central" ? "victory" : "defeat"
   const battle = battleForProvince(record, draft.provinceId)
-  const assaultSummary = record.resolutions.find(
-    (item) => item.battle?.targetId === draft.provinceId && item.battle.kind === "assault",
-  )?.summary
-  const parsedOrigins = assaultSummary ? assaultOriginIds(assaultSummary) : []
   const arrows =
-    draft.kind === "encirclement" && parsedOrigins.length > 0
-      ? parsedOrigins
+    battle?.origins?.length
+      ? battle.origins
       : attackArrows(next, draft.provinceId, draft.faction)
   const losses =
     battle && (draft.kind === "cityTaken" || draft.kind === "cityLost" || draft.kind === "encirclement")
