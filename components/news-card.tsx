@@ -112,6 +112,14 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
             {event.headline}
           </h2>
           <p className="text-xs leading-snug text-[#ebe4d4]/85 sm:text-sm">{event.lore}</p>
+          {event.lossesLine ? (
+            <p
+              className="text-[11px] font-medium tracking-wide text-[#c6a15a]/90 sm:text-xs"
+              data-testid="news-card-losses"
+            >
+              {event.lossesLine}
+            </p>
+          ) : null}
           {event.image.type === "photo" && (
             <p className="line-clamp-1 text-[10px] leading-4 text-muted-foreground">{event.image.credit}</p>
           )}

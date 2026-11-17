@@ -68,38 +68,41 @@ async function main() {
     if (!setter) throw new Error("missing __ostfrontSetNewsQueue (use ?newsDemo=1)")
     setter([
       {
-        id: "demo-photo",
+        id: "demo-encirclement",
+        kind: "encirclement",
+        provinceId: "lublin",
+        provinceName: "Lublin",
+        faction: "central",
+        headline: "Lublin: Ring closed on the defenders",
+        lore: "Central Powers: No friendly province remains open; remnants cannot slip the ring.",
+        image: { type: "map", provinceId: "lublin", arrowFrom: ["krakow", "kielce"], tone: "victory" },
+        turn: 3,
+        lossesLine: "Ours −8 · Theirs −41",
+      },
+      {
+        id: "demo-city-losses",
         kind: "cityTaken",
         provinceId: "lwow",
         provinceName: "Lemberg",
         faction: "central",
         headline: "Lemberg taken",
         lore: "Central Powers: Lemberg is Austrian soil again; the III Army's line is broken.",
-        image: { type: "photo", key: "gorlice-column", credit: "IWM Q 55044 (demo)" },
-        turn: 1,
-      },
-      {
-        id: "demo-map",
-        kind: "objectiveTaken",
-        provinceId: "lwow",
-        provinceName: "Lemberg",
-        faction: "central",
-        headline: "Lemberg in our hands",
-        lore: "Central Powers: Garrison remnants fall back along the rail net.",
-        image: { type: "map", provinceId: "lwow", arrowFrom: ["krakow", "kielce"], tone: "victory" },
-        turn: 1,
+        image: { type: "map", provinceId: "lwow", arrowFrom: ["krakow"], tone: "victory" },
+        turn: 2,
+        lossesLine: "Ours −12 · Theirs −37",
       },
     ])
   })
 
-  await page.waitForSelector('[data-testid="news-card-photo"]', { timeout: 15_000 })
+  await page.waitForSelector('[data-testid="news-card-map"]', { timeout: 15_000 })
+  await page.waitForSelector('[data-testid="news-card-losses"]', { timeout: 15_000 })
   await hideDevtools(page)
-  await page.screenshot({ path: path.join(outDir, "news-card-photo.png"), fullPage: false })
+  await page.screenshot({ path: path.join(outDir, "news-card-encirclement.png"), fullPage: false })
 
   await page.keyboard.press("Enter")
-  await page.waitForSelector('[data-testid="news-card-map"]', { timeout: 15_000 })
+  await page.waitForSelector('[data-testid="news-card-losses"]', { timeout: 15_000 })
   await hideDevtools(page)
-  await page.screenshot({ path: path.join(outDir, "news-card-map.png"), fullPage: false })
+  await page.screenshot({ path: path.join(outDir, "news-card-city-losses.png"), fullPage: false })
 
   await page.keyboard.press("Escape")
 
@@ -113,7 +116,25 @@ async function main() {
         date: "18 May 1915",
         narration: "The front shifts after Gorlice.",
         diplomacy: [],
-        resolutions: [],
+        resolutions: [
+          {
+            proposal: { type: "attack", from: "krakow", target: "lublin", units: ["eleventh"] },
+            status: "applied",
+            summary:
+              "Two-pronged attack from Kraków and Kielce into Lublin succeeds, odds 1.40 (roll 5). Lublin passes to the Central Powers. The defenders are surrounded. The garrison is destroyed. Losses — attackers 8, defenders 41.",
+            battle: {
+              targetId: "lublin",
+              attacker: "central",
+              defender: "russia",
+              kind: "assault",
+              prongs: 2,
+              attackerLoss: 8,
+              defenderLoss: 41,
+              encircled: true,
+              attackerWon: true,
+            },
+          },
+        ],
         events: [],
         controlChanges: [],
         logistics: [
@@ -153,8 +174,8 @@ async function main() {
   await mkdir(artifactDir, { recursive: true })
   for (const name of [
     "map-full-height.png",
-    "news-card-photo.png",
-    "news-card-map.png",
+    "news-card-encirclement.png",
+    "news-card-city-losses.png",
     "log-drawer-open.png",
   ]) {
     await copyFile(path.join(outDir, name), path.join(artifactDir, name)).catch(() => {})

@@ -6,6 +6,7 @@ export type NewsKind =
   | "depotLost"
   | "objectiveTaken"
   | "objectiveMissed"
+  | "encirclement"
 
 export type NewsImage =
   | { type: "photo"; key: string; credit: string }
@@ -26,4 +27,6 @@ export type NewsEvent = {
   lore: string
   image: NewsImage
   turn: number
+  /** Compact losses from Central Powers perspective; sourced from BattleFacts only. */
+  lossesLine?: string
 }

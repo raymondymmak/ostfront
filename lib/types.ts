@@ -158,10 +158,24 @@ export type PlayerOrder =
   | { type: "cancelRecruit"; buildId: string }
   | { type: "text"; text: string }
 
+export type BattleFacts = {
+  targetId: string
+  attacker: Faction
+  defender: Faction
+  kind: "assault" | "meeting"
+  /** Directions the attack came from (assault prongs). */
+  prongs: number
+  attackerLoss: number
+  defenderLoss: number
+  encircled: boolean
+  attackerWon: boolean
+}
+
 export type Resolution = {
   proposal: Proposal
   status: "applied" | "rejected"
   summary: string
+  battle?: BattleFacts
 }
 
 export type EventResolution = {

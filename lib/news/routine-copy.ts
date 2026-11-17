@@ -1,3 +1,4 @@
+import { battleRoutineLine } from "@/lib/news/battle"
 import type { TurnRecord } from "@/lib/types"
 
 function compressRoutineLine(line: string): string {
@@ -27,6 +28,10 @@ function linesFromRecord(record: TurnRecord): string[] {
   }
   for (const item of record.resolutions) {
     if (item.status !== "applied") continue
+    if (item.battle) {
+      rows.push(battleRoutineLine(item.battle, item.summary))
+      continue
+    }
     if (/income|treasury|raised|arrives|build/i.test(item.summary)) {
       rows.push(compressRoutineLine(item.summary))
     }

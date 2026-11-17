@@ -39,9 +39,15 @@ const GENERIC_HEADLINES: Record<NewsKind, string[]> = {
   depotLost: ["Depot overrun", "Supply base lost"],
   objectiveTaken: ["Objective reached", "Victory point secured"],
   objectiveMissed: ["Objective missed", "Staff deadline passed"],
+  encirclement: ["Garrison encircled", "Ring closed on the defenders"],
 }
 
 const GENERIC_LORE: Record<NewsKind, string[]> = {
+  encirclement: [
+    "No friendly province remains open; remnants cannot slip the ring.",
+    "Staff wires describe columns closing from every road at once.",
+    "The pocket shrinks before the chronicle clerk finishes the page.",
+  ],
   cityTaken: [
     "Garrison remnants fall back along the rail net.",
     "Censors file a brief communiqué; details reach Stavka later.",
@@ -104,7 +110,7 @@ export function headlineFor(kind: NewsKind, provinceId: string, provinceName: st
   if (city?.length) return pick(city, loreSeed(turn, provinceId, kind))
   const generic = GENERIC_HEADLINES[kind]
   const base = pick(generic, loreSeed(turn, provinceId, kind))
-  if (kind === "cityTaken" || kind === "cityLost" || kind === "depotLost") {
+  if (kind === "cityTaken" || kind === "cityLost" || kind === "depotLost" || kind === "encirclement") {
     return `${provinceName}: ${base}`
   }
   return `${base}: ${provinceName}`
