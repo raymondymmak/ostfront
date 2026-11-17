@@ -90,7 +90,7 @@ export function CampaignStart({
         </svg>
       </div>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-5 py-12 text-center sm:max-w-lg sm:px-8">
+      <main className="relative z-10 mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 py-6 text-center sm:max-w-lg sm:px-8 lg:max-h-dvh lg:py-8">
         <h1 className="font-display text-5xl font-normal italic leading-none tracking-wide text-primary sm:text-6xl md:text-7xl">
           Ostfront
         </h1>
@@ -159,7 +159,10 @@ export function CampaignStart({
         </button>
 
         {moreOpen ? (
-          <div className="mt-4 w-full max-w-sm rounded-lg border border-border bg-card/90 p-4 text-left text-xs leading-5 text-muted-foreground shadow-md">
+          <div
+            className="mt-3 max-h-[min(32vh,14rem)] w-full max-w-sm shrink-0 overflow-y-auto overscroll-contain rounded-lg border border-border bg-card/90 p-4 text-left text-xs leading-5 text-muted-foreground shadow-md"
+            data-testid="campaign-more-briefing"
+          >
             {BRIEFING.map((paragraph) => (
               <p key={paragraph.slice(0, 32)} className="mt-2 first:mt-0">
                 {paragraph}

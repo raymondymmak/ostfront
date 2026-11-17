@@ -35,6 +35,10 @@ Each province has a **garrison supply capacity** (terrain base + depot bonus whe
 
 Trust: teaching resolve does **not** accept client `GameState` for grading. Full campaign **`/api/turn`** loads state from server Redis by `gameId` and accepts only `expectedTurn` and `orders` (server seed, #26).
 
+## News cards (HOI4-style)
+
+After each fortnight resolves, up to four headline cards (`[data-testid=news-card]`) appear over a dimmed map (`[data-testid=news-card-overlay]`). **Onward** (`[data-testid=news-onward]`) or Enter advances; **Skip all** (`[data-testid=news-skip-all]`) or Esc dismisses the queue. Images use `[data-testid=news-card-photo]` or `[data-testid=news-card-map]` (stylized vignette, not the live map). The Chronicle (`[data-testid=chronicle]`) shows compact routine rows (`[data-testid=chronicle-routine]`); full narration and resolutions sit behind **Details** (`[data-testid=chronicle-details-toggle]` → `[data-testid=chronicle-details]`).
+
 ## Chief of Staff suggestions
 
 The advisor panel is `[data-testid=advisor-panel]`. Each suggestion is `[data-testid=advisor-suggestion]` and carries `data-advisor-state`, `data-advisor-queue-lines` (display text per order), and `data-advisor-orders` (structured kind/origin/target/units for QA). Queued arrows expose the same structure on each `[data-testid=queued-orders]` row via `data-queued-order`.

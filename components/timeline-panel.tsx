@@ -1,11 +1,13 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { chronicleFollowsLatest } from "@/lib/chronicle-scroll"
 import { logisticsForPhase, type FinalePhase } from "@/lib/finale"
 import { FACTION_LABEL } from "@/lib/format"
+import { routineLog } from "@/lib/news/select"
 import type { TurnRecord } from "@/lib/types"
 
 type TimelinePanelProps = {
@@ -25,6 +27,8 @@ export function TimelinePanel({
   const datesRef = useRef<HTMLDivElement>(null)
   const entryRef = useRef<HTMLDivElement>(null)
   const followDates = useRef(true)
+  const [detailsForTurn, setDetailsForTurn] = useState<number | null>(null)
+  const detailsOpen = detailsForTurn === active
 
   useEffect(() => {
     const dates = datesRef.current
@@ -99,7 +103,7 @@ export function TimelinePanel({
               viewportClassName="overscroll-contain"
               viewportRef={entryRef}
             >
-              <article className="flex flex-col gap-3 p-3 text-sm">
+              <article key={`${record.turn}-${record.date}`} className="flex flex-col gap-2 p-3 text-sm">
                 {record.warning && (
                   <div
                     className="rounded-md border border-destructive/40 px-2.5 py-2 text-destructive"
@@ -113,68 +117,91 @@ export function TimelinePanel({
                     )}
                   </div>
                 )}
-                {record.narration.split(/\n\n/).map((paragraph) => (
-                  <p key={paragraph.slice(0, 24)} className="leading-6">
-                    {paragraph}
-                  </p>
-                ))}
-                {record.diplomacy.length > 0 && (
-                  <ul className="text-muted-foreground">
-                    {record.diplomacy.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                )}
-                {record.controlChanges.length > 0 && (
-                  <ul className="flex flex-col gap-1">
-                    {record.controlChanges.map((change) => (
-                      <li
-                        key={change.provinceId}
-                        className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1.5"
-                      >
-                        {change.name} passes from {FACTION_LABEL[change.from]} to{" "}
-                        {FACTION_LABEL[change.to]}.
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <ul className="flex flex-col gap-1.5" data-testid="resolution-log">
-                  {record.resolutions.map((item, index) => (
+                <ul className="flex flex-col gap-1" data-testid="chronicle-routine">
+                  {routineLog(record).map((line) => (
                     <li
-                      key={`${item.summary}-${index}`}
-                      className={
-                        item.status === "rejected" ? "text-destructive" : "text-foreground"
-                      }
+                      key={line}
+                      className="truncate rounded border border-border/60 bg-muted/40 px-2 py-1 text-xs leading-snug text-foreground"
+                      title={line}
                     >
-                      <span className="mr-2 text-xs tracking-wide uppercase">
-                        {item.status === "rejected" ? "Rejected" : "Resolved"}
-                      </span>
-                      {item.summary}
-                    </li>
-                  ))}
-                  {record.events.map((item, index) => (
-                    <li
-                      key={`${item.summary}-${index}`}
-                      className={item.status === "rejected" ? "text-destructive" : ""}
-                    >
-                      <span className="mr-2 text-xs tracking-wide uppercase">
-                        {item.status === "rejected" ? "Rejected" : "Event"}
-                      </span>
-                      {item.summary}
-                    </li>
-                  ))}
-                  {record.notes.map((note) => (
-                    <li key={note} className="text-destructive">
-                      <span className="mr-2 text-xs tracking-wide uppercase">Rejected</span>
-                      {note}
-                    </li>
-                  ))}
-                  {logisticsForPhase(record.logistics, phase).map((line) => (
-                    <li key={line} className="text-muted-foreground">
                       {line}
                     </li>
                   ))}
                 </ul>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-fit px-2 text-xs text-muted-foreground"
+                  data-testid="chronicle-details-toggle"
+                  aria-expanded={detailsOpen}
+                  onClick={() => setDetailsForTurn(detailsOpen ? null : active)}
+                >
+                  {detailsOpen ? "Hide details" : "Details"}
+                </Button>
+                {detailsOpen && (
+                  <div className="flex flex-col gap-3 border-t border-border pt-2" data-testid="chronicle-details">
+                    {record.narration.split(/\n\n/).map((paragraph) => (
+                      <p key={paragraph.slice(0, 24)} className="text-muted-foreground leading-6">
+                        {paragraph}
+                      </p>
+                    ))}
+                    {record.diplomacy.length > 0 && (
+                      <ul className="text-muted-foreground">
+                        {record.diplomacy.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {record.controlChanges.length > 0 && (
+                      <ul className="flex flex-col gap-1">
+                        {record.controlChanges.map((change) => (
+                          <li
+                            key={change.provinceId}
+                            className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1.5"
+                          >
+                            {change.name} passes from {FACTION_LABEL[change.from]} to {FACTION_LABEL[change.to]}.
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <ul className="flex flex-col gap-1.5" data-testid="resolution-log">
+                      {record.resolutions.map((item, index) => (
+                        <li
+                          key={`${item.summary}-${index}`}
+                          className={item.status === "rejected" ? "text-destructive" : "text-foreground"}
+                        >
+                          <span className="mr-2 text-xs tracking-wide uppercase">
+                            {item.status === "rejected" ? "Rejected" : "Resolved"}
+                          </span>
+                          {item.summary}
+                        </li>
+                      ))}
+                      {record.events.map((item, index) => (
+                        <li
+                          key={`${item.summary}-${index}`}
+                          className={item.status === "rejected" ? "text-destructive" : ""}
+                        >
+                          <span className="mr-2 text-xs tracking-wide uppercase">
+                            {item.status === "rejected" ? "Rejected" : "Event"}
+                          </span>
+                          {item.summary}
+                        </li>
+                      ))}
+                      {record.notes.map((note) => (
+                        <li key={note} className="text-destructive">
+                          <span className="mr-2 text-xs tracking-wide uppercase">Rejected</span>
+                          {note}
+                        </li>
+                      ))}
+                      {logisticsForPhase(record.logistics, phase).map((line) => (
+                        <li key={line} className="text-muted-foreground">
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </article>
             </ScrollArea>
           )}

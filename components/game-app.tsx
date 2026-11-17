@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { CampaignStart } from "@/components/campaign-start"
+import { NewsCardQueue } from "@/components/news-card"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { independentFormations } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
@@ -26,6 +27,8 @@ import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { applyAdvisorToQueue, leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
+import { selectNewsEvents } from "@/lib/news/select"
+import type { NewsEvent } from "@/lib/news/types"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
 import { WarMap, type MapProvince } from "@/components/war-map"
@@ -51,10 +54,20 @@ export function GameApp() {
   const [advisorOpen, setAdvisorOpen] = useState(false)
   const [sideTab, setSideTab] = useState("orders")
   const [chatEpoch, setChatEpoch] = useState(0)
+  const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
 
   useEffect(() => {
     if (!setupOpen && game.gameId) saveGame(game)
   }, [game, setupOpen])
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return
+    const win = window as Window & { __ostfrontSetNewsQueue?: (events: NewsEvent[]) => void }
+    win.__ostfrontSetNewsQueue = setNewsQueue
+    return () => {
+      delete win.__ostfrontSetNewsQueue
+    }
+  }, [])
 
   useEffect(() => {
     const saved = loadGame()
@@ -303,6 +316,8 @@ export function GameApp() {
         )
       }
       const record = payload.record
+      const prevState = game.state
+      const events = selectNewsEvents(prevState, payload.state!, record)
       setStaleCampaign(false)
       setGame((current) => ({
         version: 2,
@@ -310,6 +325,7 @@ export function GameApp() {
         state: payload.state!,
         log: [...current.log, record],
       }))
+      setNewsQueue(events)
       setQueue([])
       setDirective("")
       setFlash(record.controlChanges.map((change) => change.provinceId))
@@ -350,6 +366,7 @@ export function GameApp() {
     setAdvisorOpen(false)
     setSideTab("orders")
     setChatEpoch((value) => value + 1)
+    setNewsQueue([])
   }
 
   function acceptAdvisorOrders(
@@ -483,6 +500,13 @@ export function GameApp() {
             onClose={() => setAdvisorOpen(false)}
             onAccept={acceptAdvisorOrders}
           />
+          {newsQueue.length > 0 && (
+            <NewsCardQueue
+              key={newsQueue.map((event) => event.id).join(":")}
+              events={newsQueue}
+              onDone={() => setNewsQueue([])}
+            />
+          )}
           {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
