@@ -29,7 +29,7 @@ Browser updates map, chronicle, clears order queue
 | --- | --- | --- |
 | `app/` | Pages and HTTP routes | `app/api/*/route.ts` |
 | `components/` | Map, HUD, panels | `game-app.tsx`, `war-map.tsx`, `goal-line.tsx`, `odds-bar.tsx` |
-| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `map-hover.ts`, `types.ts` |
+| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `map-hover.ts`, `map-target-style.ts`, `types.ts` |
 | `lib/engine/` | Rules of war (ground truth) | `turn.ts`, `simultaneous.ts`, `combat.ts` |
 | `lib/gm/` | Orders → proposals, LLM cascade, advisor | `index.ts`, `interpret.ts`, `cascade.ts`, `advisor.ts` |
 | `lib/ai/` | Rule-based Stavka | `stavka.ts` |

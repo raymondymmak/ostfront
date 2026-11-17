@@ -33,6 +33,7 @@ import {
 } from "@/lib/map/rail-lines"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
+import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 
 export type MapProvince = Province & {
   polygon: ProvinceGeometry
@@ -287,6 +288,13 @@ export function WarMap({
         },
       })
       map.addLayer({
+        id: "target-dim",
+        type: "fill",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: { "fill-color": MAP_TARGET_STYLE.dim.fill, "fill-opacity": 0 },
+      })
+      map.addLayer({
         id: "flash",
         type: "fill",
         source: "provinces",
@@ -305,14 +313,42 @@ export function WarMap({
         type: "fill",
         source: "provinces",
         filter: ["==", ["get", "id"], ""],
-        paint: { "fill-color": "#2d5a8a", "fill-opacity": 0.38 },
+        paint: {
+          "fill-color": MAP_TARGET_STYLE.move.fill,
+          "fill-opacity": MAP_TARGET_STYLE.move.fillOpacity,
+        },
       })
       map.addLayer({
         id: "attack-target",
         type: "fill",
         source: "provinces",
         filter: ["==", ["get", "id"], ""],
-        paint: { "fill-color": "#9e3d32", "fill-opacity": 0.4 },
+        paint: {
+          "fill-color": MAP_TARGET_STYLE.attack.fill,
+          "fill-opacity": MAP_TARGET_STYLE.attack.fillOpacity,
+        },
+      })
+      map.addLayer({
+        id: "move-target-outline",
+        type: "line",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "line-color": MAP_TARGET_STYLE.move.outline,
+          "line-width": MAP_TARGET_STYLE.move.outlineWidth,
+          "line-opacity": 0.95,
+        },
+      })
+      map.addLayer({
+        id: "attack-target-outline",
+        type: "line",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "line-color": MAP_TARGET_STYLE.attack.outline,
+          "line-width": MAP_TARGET_STYLE.attack.outlineWidth,
+          "line-opacity": 0.95,
+        },
       })
       map.addLayer({
         id: "borders",
@@ -602,19 +638,32 @@ export function WarMap({
     if (!map || !loadedRef.current || !map.getLayer("move-target")) return
     const move = targetIds?.move ?? []
     const attack = targetIds?.attack ?? []
-    map.setFilter("move-target", [
-      "in",
-      ["get", "id"],
-      ["literal", move.length ? move : ["__none__"]],
-    ])
-    map.setFilter("attack-target", [
-      "in",
-      ["get", "id"],
-      ["literal", attack.length ? attack : ["__none__"]],
-    ])
-    map.setPaintProperty("move-target", "fill-opacity", move.length ? 0.38 : 0)
-    map.setPaintProperty("attack-target", "fill-opacity", attack.length ? 0.4 : 0)
-  }, [targetIds])
+    const active = move.length > 0 || attack.length > 0
+    const moveLit = move.length ? move : ["__none__"]
+    const attackLit = attack.length ? attack : ["__none__"]
+    map.setFilter("move-target", ["in", ["get", "id"], ["literal", moveLit]])
+    map.setFilter("attack-target", ["in", ["get", "id"], ["literal", attackLit]])
+    map.setPaintProperty("move-target", "fill-opacity", move.length ? MAP_TARGET_STYLE.move.fillOpacity : 0)
+    map.setPaintProperty("attack-target", "fill-opacity", attack.length ? MAP_TARGET_STYLE.attack.fillOpacity : 0)
+    if (map.getLayer("move-target-outline")) {
+      map.setFilter("move-target-outline", ["in", ["get", "id"], ["literal", moveLit]])
+      map.setPaintProperty("move-target-outline", "line-opacity", move.length ? 0.95 : 0)
+    }
+    if (map.getLayer("attack-target-outline")) {
+      map.setFilter("attack-target-outline", ["in", ["get", "id"], ["literal", attackLit]])
+      map.setPaintProperty("attack-target-outline", "line-opacity", attack.length ? 0.95 : 0)
+    }
+    if (map.getLayer("target-dim")) {
+      if (active) {
+        const bright = [...new Set([...(selectedId ? [selectedId] : []), ...move, ...attack])]
+        map.setFilter("target-dim", ["!", ["in", ["get", "id"], ["literal", bright]]])
+        map.setPaintProperty("target-dim", "fill-opacity", MAP_TARGET_STYLE.dim.opacity)
+      } else {
+        map.setFilter("target-dim", ["==", ["get", "id"], "__none__"])
+        map.setPaintProperty("target-dim", "fill-opacity", 0)
+      }
+    }
+  }, [targetIds, selectedId])
 
   useEffect(() => {
     const map = mapRef.current
