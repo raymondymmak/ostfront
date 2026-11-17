@@ -6,6 +6,7 @@ import { projectIncome } from "@/lib/engine/economy"
 import { standing } from "@/lib/engine/victory"
 import { statusLabel } from "@/lib/finale"
 import { scenarioSpec } from "@/lib/data/objectives"
+import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import { FACTION_LABEL } from "@/lib/format"
 import type { GameState } from "@/lib/types"
 
@@ -34,6 +35,7 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMod
   const centralShare = total === 0 ? 0 : (central / total) * 100
   const russiaShare = total === 0 ? 0 : 100 - centralShare
   const fortnight = Math.min(state.turn + 1, spec.length)
+  const goal = campaignGoalLine(state.scenario)
 
   return (
     <header className="border-b border-border px-3 py-2.5 sm:px-4">
@@ -45,6 +47,12 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMod
           data-testid="objectives"
           className="order-3 w-full min-w-0 md:order-none md:w-auto md:flex-1"
         >
+          <p
+            data-testid="campaign-goal"
+            className="mb-1.5 text-center text-xs font-medium leading-snug text-foreground md:text-left"
+          >
+            {goal}
+          </p>
           <div
             className="flex h-3 w-full overflow-hidden rounded-full bg-[#2a241e]"
             role="img"
@@ -114,12 +122,6 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMod
                 </span>
               </span>
             )}
-            {!state.result && board.next ? (
-              <span title={board.next.overdue ? "This objective is past its date" : "Next objective on the timetable"}>
-                {board.next.name} by {board.next.date}
-                {board.next.overdue ? " · overdue" : ""}
-              </span>
-            ) : null}
           </div>
         </div>
         <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">

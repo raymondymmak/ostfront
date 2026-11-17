@@ -58,11 +58,14 @@ type WarMapProps = MapInput & {
   flashIds: string[]
   /** Coach / teaching highlights anchored to province ids (not screen pixels). */
   coachHighlightIds?: string[]
+  targetIds?: { move: string[]; attack: string[] }
+  targetHoverNote?: (provinceId: string, base: string) => string
   onOverlay: (overlay: Overlay) => void
 }
 
 type Snapshot = MapInput & {
   showRails: boolean
+  targetHoverNote?: (provinceId: string, base: string) => string
 }
 
 export function WarMap({
@@ -72,6 +75,8 @@ export function WarMap({
   orders,
   flashIds,
   coachHighlightIds = [],
+  targetIds,
+  targetHoverNote,
   orderMode,
   onSelect,
   onDraw,
@@ -296,6 +301,20 @@ export function WarMap({
         paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
       })
       map.addLayer({
+        id: "move-target",
+        type: "fill",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: { "fill-color": "#2d5a8a", "fill-opacity": 0.38 },
+      })
+      map.addLayer({
+        id: "attack-target",
+        type: "fill",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: { "fill-color": "#9e3d32", "fill-opacity": 0.4 },
+      })
+      map.addLayer({
         id: "borders",
         type: "line",
         source: "provinces",
@@ -423,7 +442,10 @@ export function WarMap({
               ? `Total unit strength: ${strength} (${controller})`
               : "No formations present",
           ]
-          setHoverTip(lines.join("\n"))
+          const idStr = String(feature.properties?.id ?? "")
+          const base = lines.join("\n")
+          const note = propsRef.current.targetHoverNote?.(idStr, base) ?? base
+          setHoverTip(note)
         }
         if (hovered !== null && hovered !== id) {
           map.setFeatureState({ source: "provinces", id: hovered }, { hover: false })
@@ -565,6 +587,7 @@ export function WarMap({
       showRails,
       onSelect,
       onDraw,
+      targetHoverNote,
     }
     const map = mapRef.current
     if (!map || !loadedRef.current) return
@@ -572,7 +595,26 @@ export function WarMap({
     map.once("idle", () => blitMap(map, blitRef.current))
     if (orderMode) map.dragPan.disable()
     else map.dragPan.enable()
-  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw])
+  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loadedRef.current || !map.getLayer("move-target")) return
+    const move = targetIds?.move ?? []
+    const attack = targetIds?.attack ?? []
+    map.setFilter("move-target", [
+      "in",
+      ["get", "id"],
+      ["literal", move.length ? move : ["__none__"]],
+    ])
+    map.setFilter("attack-target", [
+      "in",
+      ["get", "id"],
+      ["literal", attack.length ? attack : ["__none__"]],
+    ])
+    map.setPaintProperty("move-target", "fill-opacity", move.length ? 0.38 : 0)
+    map.setPaintProperty("attack-target", "fill-opacity", attack.length ? 0.4 : 0)
+  }, [targetIds])
 
   useEffect(() => {
     const map = mapRef.current
@@ -621,6 +663,11 @@ export function WarMap({
       className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
+      data-map-targets={
+        targetIds
+          ? `move:${targetIds.move.join(",")};attack:${targetIds.attack.join(",")}`
+          : undefined
+      }
     >
       {failed ? (
         <SvgMap
@@ -631,6 +678,8 @@ export function WarMap({
           flashIds={flashIds}
           orderMode={orderMode}
           showRails={showRails}
+          targetIds={targetIds}
+          targetHoverNote={targetHoverNote}
           onSelect={onSelect}
           onDraw={onDraw}
         />

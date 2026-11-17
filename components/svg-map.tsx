@@ -27,6 +27,8 @@ type SvgMapProps = {
   flashIds: string[]
   orderMode: boolean
   showRails: boolean
+  targetIds?: { move: string[]; attack: string[] }
+  targetHoverNote?: (provinceId: string, base: string) => string
   onSelect: (id: string) => void
   onDraw: (from: string, to: string) => void
 }
@@ -39,6 +41,7 @@ export function SvgMap({
   flashIds,
   orderMode,
   showRails,
+  targetIds,
   onSelect,
   onDraw,
 }: SvgMapProps) {
@@ -164,12 +167,15 @@ export function SvgMap({
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
         const stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
-        const fill = provinceFill(province, overlay)
+        const moveTint = targetIds?.move.includes(province.id)
+        const attackTint = targetIds?.attack.includes(province.id)
+        const fill = attackTint ? "#c06055" : moveTint ? "#4a7fb5" : provinceFill(province, overlay)
         return (
           <path
             key={province.id}
             d={geometryPath(province.polygon)}
             fill={fill}
+            fillOpacity={moveTint || attackTint ? 0.85 : undefined}
             fillRule="evenodd"
             stroke={stroke}
             strokeWidth={selected ? view.label * 0.22 : view.label * 0.08}

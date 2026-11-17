@@ -439,12 +439,12 @@ function buildSteps(cli, targets) {
     },
     {
       id: "03-briefing",
-      name: "Read opening briefing in Chronicle",
+      name: "Read campaign goal in HUD",
       async run({ page }) {
-        const chronicle = page.locator("[data-testid=chronicle]")
-        await chronicle.waitFor({ state: "visible", timeout: 15_000 })
-        await expectText(chronicle, "2 May 1915")
-        await expectText(chronicle, "Gorlice")
+        const goal = page.locator("[data-testid=campaign-goal]")
+        await goal.waitFor({ state: "visible", timeout: 15_000 })
+        await expectText(goal, "Lemberg")
+        await expectText(goal, "Kraków")
       },
     },
     {
