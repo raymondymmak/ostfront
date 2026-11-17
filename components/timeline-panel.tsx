@@ -138,7 +138,7 @@ export function TimelinePanel({
                 </Button>
                 {detailsOpen && detailRecord && (
                   <div className="flex flex-col gap-2 border-t border-border pt-2" data-testid="chronicle-details">
-                    <TurnDetails record={detailRecord} phase={phase} includeLogistics={false} />
+                    <TurnDetails record={detailRecord} phase={phase} />
                   </div>
                 )}
               </>

@@ -349,7 +349,7 @@ export function GameApp() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault()
-        if (newsQueue.length) setNewsQueue([])
+        if (newsQueue.length) return
         setLogOpen(false)
         void endTurn()
       }
@@ -475,7 +475,11 @@ export function GameApp() {
           )}
         </div>
       )}
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem]">
+      <div
+        className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem]"
+        {...(newsQueue.length > 0 ? { inert: true } : {})}
+        data-testid="game-shell"
+      >
         <div className="relative min-h-0 flex-1 overflow-hidden min-h-[min(58dvh,100%)]">
           <WarMap
             provinces={provinces}
@@ -569,7 +573,7 @@ export function GameApp() {
                 hint={hint}
                 busy={busy}
                 onEndTurn={() => {
-                  if (newsQueue.length) setNewsQueue([])
+                  if (newsQueue.length) return
                   void endTurn()
                 }}
                 onSelect={setSelectedId}
