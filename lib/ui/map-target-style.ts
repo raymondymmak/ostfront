@@ -1,15 +1,21 @@
+/** Base province control fills (MapLibre + SVG). Highlights use lighter tints of these. */
+export const MAP_FACTION_FILL = {
+  central: "#4a6d90",
+  russia: "#a85b49",
+} as const
+
 /** Shared move/attack highlight styling for MapLibre and SVG fallback. */
 export const MAP_TARGET_STYLE = {
   move: {
-    fill: "#4fc3ff",
-    fillOpacity: 0.58,
-    outline: "#e8fcff",
+    fill: "#7eb0d4",
+    fillOpacity: 0.62,
+    outline: "#c5dff0",
     outlineWidth: 2.5,
   },
   attack: {
-    fill: "#ff5538",
-    fillOpacity: 0.58,
-    outline: "#ffc9a8",
+    fill: "#cc8f7a",
+    fillOpacity: 0.62,
+    outline: "#ebc9bb",
     outlineWidth: 2.5,
   },
   dim: {

@@ -23,114 +23,143 @@ export function CampaignStart({
   const [moreOpen, setMoreOpen] = useState(false)
   const goal = campaignGoalLine("gorlice")
 
+  const difficulties = [
+    ["easy", "Easy"],
+    ["normal", "Normal"],
+    ["hard", "Hard"],
+  ] as const
+
   return (
     <div
-      className="relative flex min-h-dvh flex-col overflow-hidden bg-[#120f0c] text-[#f3e2a8]"
+      className="relative flex min-h-dvh flex-col overflow-hidden bg-background text-foreground"
       data-testid="scenario-picker"
     >
       <div className="pointer-events-none absolute inset-0" aria-hidden data-testid="campaign-start-backdrop">
-        <svg viewBox="0 0 800 500" preserveAspectRatio="xMidYMid slice" className="h-full w-full">
+        <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" className="h-full w-full">
           <defs>
-            <radialGradient id="ost-vignette" cx="48%" cy="42%" r="72%">
-              <stop offset="0%" stopColor="#3d3228" stopOpacity="0.55" />
-              <stop offset="55%" stopColor="#1a1510" stopOpacity="0.92" />
+            <radialGradient id="ost-vignette" cx="50%" cy="46%" r="78%">
+              <stop offset="0%" stopColor="#2a241e" stopOpacity="0.2" />
+              <stop offset="55%" stopColor="#14110e" stopOpacity="0.75" />
               <stop offset="100%" stopColor="#0a0806" />
             </radialGradient>
-            <linearGradient id="ost-front" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#4a6d90" stopOpacity="0.35" />
-              <stop offset="48%" stopColor="#8e4a3a" stopOpacity="0.5" />
-              <stop offset="100%" stopColor="#5c261c" stopOpacity="0.45" />
+            <filter id="ost-paper" x="0%" y="0%" width="100%" height="100%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="4" seed="8" result="noise" />
+              <feColorMatrix in="noise" type="saturate" values="0" result="gray" />
+              <feComponentTransfer in="gray" result="grain">
+                <feFuncA type="linear" slope="0.07" />
+              </feComponentTransfer>
+              <feBlend in="SourceGraphic" in2="grain" mode="multiply" />
+            </filter>
+            <linearGradient id="ost-ink-wash" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ebe4d4" stopOpacity="0.06" />
+              <stop offset="100%" stopColor="#c6a15a" stopOpacity="0.04" />
             </linearGradient>
-            <marker id="ost-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill="#c6a15a" fillOpacity="0.85" />
-            </marker>
           </defs>
-          <rect width="800" height="500" fill="url(#ost-vignette)" />
-          <path
-            d="M 40 380 Q 120 280 200 240 T 420 210 Q 520 195 620 220 T 760 280 L 760 420 L 40 420 Z"
-            fill="url(#ost-front)"
-            fillOpacity="0.55"
-          />
-          <path
-            d="M 60 260 Q 180 220 320 200 Q 460 185 560 210 Q 640 228 700 250"
-            fill="none"
-            stroke="#2a2118"
-            strokeWidth="3"
-            strokeOpacity="0.5"
-          />
-          <line
-            x1="140"
-            y1="318"
-            x2="620"
-            y2="268"
-            stroke="#c6a15a"
-            strokeWidth="2.5"
-            strokeDasharray="12 10"
-            strokeOpacity="0.75"
-            markerEnd="url(#ost-arrow)"
-          />
-          <text x="400" y="88" textAnchor="middle" fill="#c6a15a" fillOpacity="0.35" fontSize="22" fontFamily="Georgia, serif">
-            Eastern Front, May 1915
-          </text>
+          <rect width="1200" height="800" fill="#14110e" />
+          <g filter="url(#ost-paper)" opacity="0.92">
+            <path
+              d="M 80 520 Q 140 380 260 320 T 520 280 Q 640 265 760 290 T 980 360 L 1020 620 L 60 640 Z"
+              fill="#4a6d90"
+              fillOpacity="0.22"
+            />
+            <path
+              d="M 520 240 Q 680 220 820 250 T 1080 340 L 1120 580 Q 900 560 700 500 T 420 460 Q 300 450 180 480 L 80 520 Z"
+              fill="#a85b49"
+              fillOpacity="0.2"
+            />
+            <path
+              d="M 200 200 Q 360 170 520 185 T 820 230 Q 920 255 1000 300"
+              fill="none"
+              stroke="#ebe4d4"
+              strokeWidth="1.2"
+              strokeOpacity="0.12"
+            />
+            <path
+              d="M 120 340 Q 280 300 440 290 T 760 310 Q 900 330 1020 380"
+              fill="none"
+              stroke="#c6a15a"
+              strokeWidth="0.8"
+              strokeOpacity="0.18"
+            />
+            <circle cx="540" cy="360" r="3" fill="#c6a15a" fillOpacity="0.35" />
+            <circle cx="620" cy="320" r="2.5" fill="#c6a15a" fillOpacity="0.28" />
+            <circle cx="480" cy="400" r="2" fill="#ebe4d4" fillOpacity="0.2" />
+          </g>
+          <rect width="1200" height="800" fill="url(#ost-vignette)" />
+          <rect width="1200" height="800" fill="url(#ost-ink-wash)" />
         </svg>
       </div>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-5 py-10 sm:px-6">
-        <p className="font-display text-4xl italic leading-none tracking-wide text-[#c6a15a]">Ostfront</p>
-        <p className="mt-3 font-display text-2xl leading-tight text-[#ebe4d4]">Gorlice–Tarnów</p>
-        <p className="text-sm text-[#b3a48f]">2 May 1915</p>
-        <p className="mt-4 text-sm font-medium leading-snug text-[#ebe4d4]" data-testid="briefing-task">
+      <main className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-5 py-12 text-center sm:max-w-lg sm:px-8">
+        <h1 className="font-display text-5xl font-normal italic leading-none tracking-wide text-primary sm:text-6xl md:text-7xl">
+          Ostfront
+        </h1>
+        <p className="mt-4 font-display text-xl leading-tight text-foreground sm:text-2xl">Gorlice–Tarnów</p>
+        <p className="mt-1 text-sm text-muted-foreground">2 May 1915</p>
+
+        <p
+          className="mt-6 max-w-sm text-base font-medium leading-snug text-accent-foreground sm:text-[1.05rem]"
+          data-testid="briefing-task"
+        >
           {goal}
         </p>
 
-        <div className="mt-6 flex flex-wrap items-center gap-2" data-testid="difficulty">
-          {(
-            [
-              ["easy", "Easy"],
-              ["normal", "Normal"],
-              ["hard", "Hard"],
-            ] as const
-          ).map(([id, title]) => (
-            <button
-              key={id}
-              type="button"
-              data-testid={`difficulty-${id}`}
-              onClick={() => onDifficulty(id)}
-              className={`rounded-md border px-3 py-1.5 text-sm font-medium ${difficulty === id ? "border-[#c6a15a] bg-[#c6a15a]/15 text-[#f3e2a8]" : "border-[#4a4034] text-[#b3a48f] hover:border-[#6a5e4e]"}`}
-            >
-              {title}
-            </button>
-          ))}
+        <div
+          className="mt-8 flex w-full max-w-xs rounded-lg border border-border bg-card/80 p-1 shadow-lg backdrop-blur-sm sm:max-w-sm"
+          data-testid="difficulty"
+          role="group"
+          aria-label="Difficulty"
+        >
+          {difficulties.map(([id, title]) => {
+            const selected = difficulty === id
+            return (
+              <button
+                key={id}
+                type="button"
+                data-testid={`difficulty-${id}`}
+                onClick={() => onDifficulty(id)}
+                className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-colors ${
+                  selected
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                }`}
+              >
+                {title}
+              </button>
+            )
+          })}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-6 flex w-full max-w-xs flex-col gap-2.5 sm:max-w-sm">
           <Button
             type="button"
             data-testid="begin-scenario"
             disabled={beginBusy}
-            className="min-w-[7rem]"
+            size="lg"
+            className="h-11 w-full text-base font-semibold"
             onClick={onBegin}
           >
             {beginBusy ? "Opening…" : "Begin"}
           </Button>
           <a
             href="/teach"
-            className="rounded-md border border-[#4a4034] px-3 py-2 text-sm font-medium text-[#ebe4d4] hover:bg-[#2a241e]"
             data-testid="begin-teach"
+            className="group/button inline-flex h-10 w-full shrink-0 items-center justify-center rounded-lg border border-transparent bg-secondary px-2.5 text-base font-medium text-secondary-foreground transition-all hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]"
           >
             Teaching drill
           </a>
-          <button
-            type="button"
-            className="ml-auto text-sm text-[#b3a48f] underline-offset-2 hover:underline"
-            onClick={() => setMoreOpen((value) => !value)}
-          >
-            {moreOpen ? "Less" : "More"}
-          </button>
         </div>
 
+        <button
+          type="button"
+          className="mt-5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          onClick={() => setMoreOpen((value) => !value)}
+        >
+          {moreOpen ? "Less briefing" : "More briefing"}
+        </button>
+
         {moreOpen ? (
-          <div className="mt-4 max-h-36 overflow-y-auto rounded-md border border-[#3d3228] bg-[#1a1510]/90 p-3 text-xs leading-5 text-[#b3a48f]">
+          <div className="mt-4 w-full max-w-sm rounded-lg border border-border bg-card/90 p-4 text-left text-xs leading-5 text-muted-foreground shadow-md">
             {BRIEFING.map((paragraph) => (
               <p key={paragraph.slice(0, 32)} className="mt-2 first:mt-0">
                 {paragraph}

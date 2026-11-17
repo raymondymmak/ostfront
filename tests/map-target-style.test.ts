@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { MAP_TARGET_STYLE, mapTargetsActive } from "@/lib/ui/map-target-style"
+import { MAP_FACTION_FILL, MAP_TARGET_STYLE, mapTargetsActive } from "@/lib/ui/map-target-style"
 
 describe("map target highlight style", () => {
-  it("uses high-contrast outlines separate from controller fills", () => {
+  it("uses lighter faction-tinted fills and outlines", () => {
     expect(MAP_TARGET_STYLE.move.outlineWidth).toBeGreaterThanOrEqual(2.5)
     expect(MAP_TARGET_STYLE.attack.outlineWidth).toBeGreaterThanOrEqual(2.5)
-    expect(MAP_TARGET_STYLE.move.fill).not.toBe("#4a6d90")
-    expect(MAP_TARGET_STYLE.attack.fill).not.toBe("#a85b49")
+    expect(MAP_TARGET_STYLE.move.fill).not.toBe(MAP_FACTION_FILL.central)
+    expect(MAP_TARGET_STYLE.attack.fill).not.toBe(MAP_FACTION_FILL.russia)
+    expect(MAP_TARGET_STYLE.move.fill.startsWith("#7")).toBe(true)
+    expect(MAP_TARGET_STYLE.attack.fill.startsWith("#c")).toBe(true)
   })
 
   it("detects when legal targets should drive dimming", () => {
