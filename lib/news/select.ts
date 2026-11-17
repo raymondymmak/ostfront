@@ -102,17 +102,6 @@ export function selectNewsEvents(prev: GameState, next: GameState, record: TurnR
     const prevProvince = prev.provinces.find((p) => p.id === change.provinceId)
     const depotFaction = prevProvince?.depot
 
-    if (depotFaction && depotFaction === change.from) {
-      drafts.push({
-        kind: "depotLost",
-        provinceId: change.provinceId,
-        faction: change.to,
-        priority: PRIORITY.depotLost,
-      })
-      claimed.add(change.provinceId)
-      continue
-    }
-
     if (isCity(prev.scenario, change.provinceId, terrain)) {
       const kind: NewsKind = change.to === "central" ? "cityTaken" : "cityLost"
       drafts.push({
@@ -120,6 +109,17 @@ export function selectNewsEvents(prev: GameState, next: GameState, record: TurnR
         provinceId: change.provinceId,
         faction: change.to,
         priority: PRIORITY[kind],
+      })
+      claimed.add(change.provinceId)
+      continue
+    }
+
+    if (depotFaction && depotFaction === change.from) {
+      drafts.push({
+        kind: "depotLost",
+        provinceId: change.provinceId,
+        faction: change.from,
+        priority: PRIORITY.depotLost,
       })
       claimed.add(change.provinceId)
     }

@@ -291,8 +291,8 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Echelon** | Unit grouping / corps structure (`lib/engine/echelon.ts`) |
 | **Lua CAS** | Atomic turn commit script in `lib/campaign/redis-scripts.ts` |
 | **Proposal** | Typed order (move, attack, fortify, …) before resolution |
-| **Chronicle** | `TurnRecord` in Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog`, full text behind **Details** |
-| **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`) |
+| **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog`, full text behind **Details** |
+| **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); wins over Log for Escape; city beats trump depot on urban captures |
 
 ---
 

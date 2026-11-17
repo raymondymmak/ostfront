@@ -66,8 +66,9 @@ export function TimelinePanel({
 
   if (log.length === 0) {
     return (
-      <div className="flex h-full min-h-0 flex-col" data-testid="chronicle">
+      <div className="flex h-full min-h-0 flex-col p-3 text-sm" data-testid="chronicle">
         {variant === "embedded" ? header : null}
+        <p className="text-xs text-muted-foreground">No fortresses fallen yet — close a fortnight to open the log.</p>
       </div>
     )
   }
@@ -75,10 +76,33 @@ export function TimelinePanel({
   if (variant === "drawer") {
     const groups = routineLogByTurn(log)
     const detailRecord = log[active]
+    const drawerRecord = log[active]
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chronicle">
         <ScrollArea className="min-h-0 flex-1" viewportRef={entryRef} viewportClassName="overscroll-contain">
           <article className="flex flex-col gap-3 p-3 text-sm">
+            {drawerRecord ? (
+              <Badge variant="outline" className="w-fit text-[10px]">
+                {drawerRecord.gmSource === "llm" ? "Game master" : "Staff simulation"}
+              </Badge>
+            ) : null}
+            <ul className="flex flex-wrap gap-1 border-b border-border pb-2">
+              {log.map((entry, index) => (
+                <li key={`${entry.turn}-${entry.date}`}>
+                  <button
+                    type="button"
+                    onClick={() => onActive(index)}
+                    className={`rounded-md border px-2 py-0.5 text-xs ${
+                      index === active
+                        ? "border-primary/50 bg-primary/15 text-foreground"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    {entry.date}
+                  </button>
+                </li>
+              ))}
+            </ul>
             <ul className="flex flex-col gap-2" data-testid="chronicle-routine">
               {groups.map((group) => (
                 <li key={`${group.turn}-${group.date}`} className="flex flex-col gap-1">
@@ -114,23 +138,6 @@ export function TimelinePanel({
                 </Button>
                 {detailsOpen && detailRecord && (
                   <div className="flex flex-col gap-2 border-t border-border pt-2" data-testid="chronicle-details">
-                    <ul className="mb-1 flex flex-wrap gap-1">
-                      {log.map((entry, index) => (
-                        <li key={`${entry.turn}-${entry.date}`}>
-                          <button
-                            type="button"
-                            onClick={() => onActive(index)}
-                            className={`rounded-md border px-2 py-0.5 text-xs ${
-                              index === active
-                                ? "border-primary/50 bg-primary/15 text-foreground"
-                                : "border-border text-muted-foreground"
-                            }`}
-                          >
-                            {entry.date}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
                     <TurnDetails record={detailRecord} phase={phase} includeLogistics={false} />
                   </div>
                 )}

@@ -28,6 +28,20 @@ function baseRecord(overrides: Partial<TurnRecord> = {}): TurnRecord {
 }
 
 describe("selectNewsEvents", () => {
+  it("uses cityTaken for a non-objective depot city (Warsaw) when Central captures it", () => {
+    const prev = createInitialState()
+    const next = clone(prev)
+    const warsaw = next.provinces.find((p) => p.id === "warszawa")!
+    warsaw.controller = "central"
+    const record = baseRecord({
+      controlChanges: [{ provinceId: "warszawa", name: "Warsaw", from: "russia", to: "central" }],
+    })
+    const events = selectNewsEvents(prev, next, record)
+    expect(events).toHaveLength(1)
+    expect(events[0]?.kind).toBe("cityTaken")
+    expect(events[0]?.provinceId).toBe("warszawa")
+  })
+
   it("shows one card when a victory city is taken", () => {
     const prev = createInitialState()
     const next = clone(prev)

@@ -6,6 +6,7 @@ import Image from "next/image"
 import { NewsMapVignette } from "@/components/news-map-vignette"
 import { Button } from "@/components/ui/button"
 import { photoSrc } from "@/lib/news/images"
+import { newsEscapeDismissesQueue } from "@/lib/news/overlay-stack"
 import type { NewsEvent } from "@/lib/news/types"
 import { FACTION_LABEL } from "@/lib/format"
 
@@ -46,13 +47,14 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
         event.preventDefault()
         advance()
       }
-      if (event.key === "Escape") {
+      if (newsEscapeDismissesQueue(event.key, true)) {
         event.preventDefault()
+        event.stopPropagation()
         skipAll()
       }
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    window.addEventListener("keydown", onKey, { capture: true })
+    return () => window.removeEventListener("keydown", onKey, { capture: true })
   }, [advance, skipAll])
 
   if (!events.length || !mounted) return null

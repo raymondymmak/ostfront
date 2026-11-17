@@ -331,6 +331,7 @@ export function GameApp() {
         state: payload.state!,
         log: [...current.log, record],
       }))
+      if (events.length) setLogOpen(false)
       setNewsQueue(events)
       setQueue([])
       setDirective("")
@@ -348,12 +349,14 @@ export function GameApp() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault()
+        if (newsQueue.length) setNewsQueue([])
+        setLogOpen(false)
         void endTurn()
       }
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [endTurn])
+    window.addEventListener("keydown", onKey, { capture: true })
+    return () => window.removeEventListener("keydown", onKey, { capture: true })
+  }, [endTurn, newsQueue.length])
 
   function reset() {
     if (!armReset) {
@@ -514,6 +517,7 @@ export function GameApp() {
             active={game.log.length ? activeLog : 0}
             onActive={setLogIndex}
             phase={phase}
+            newsCardsActive={newsQueue.length > 0}
           />
           {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
@@ -564,7 +568,10 @@ export function GameApp() {
                 }}
                 hint={hint}
                 busy={busy}
-                onEndTurn={() => void endTurn()}
+                onEndTurn={() => {
+                  if (newsQueue.length) setNewsQueue([])
+                  void endTurn()
+                }}
                 onSelect={setSelectedId}
               />
             </TabsContent>
