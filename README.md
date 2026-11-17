@@ -12,7 +12,7 @@ In early 1915 the Eastern Front had bogged down. Germany and Austria-Hungary con
 
 ## How to play
 
-1. **Start.** Pick a difficulty and begin the offensive. The map shows provinces, your formations, and Russian-held ground.
+1. **Start.** A full-screen briefing opens (not the live map): pick difficulty, read the one-line goal, tap **Begin**. **More** holds the full 1915 text if you want it.
 2. **Select a province.** Click the map or pick a formation from the Orders list. The Province panel shows supply, neighbors, and who holds the ground.
 3. **Give orders.** Each formation gets **one** order this fortnight. You can draw an arrow on the map, use **Move** / **Attack** on a neighbor, type a short directive, or ask the Chief of Staff for suggestions (see glossary).
 4. **Queue and review.** Queued orders appear in the Orders panel. Attack lines can show estimated odds—they are a **forecast**, not a promise (see below).

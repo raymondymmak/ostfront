@@ -18,6 +18,8 @@ import {
 import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
+import { provinceHoverNote } from "@/lib/ui/map-hover"
+import { MAP_TARGET_STYLE, mapTargetsActive } from "@/lib/ui/map-target-style"
 
 type SvgMapProps = {
   provinces: MapProvince[]
@@ -27,6 +29,8 @@ type SvgMapProps = {
   flashIds: string[]
   orderMode: boolean
   showRails: boolean
+  targetIds?: { move: string[]; attack: string[] }
+  targetHoverNote?: (provinceId: string, base: string) => string
   onSelect: (id: string) => void
   onDraw: (from: string, to: string) => void
 }
@@ -39,12 +43,15 @@ export function SvgMap({
   flashIds,
   orderMode,
   showRails,
+  targetIds,
+  targetHoverNote,
   onSelect,
   onDraw,
 }: SvgMapProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [originId, setOriginId] = useState<string | null>(null)
   const [preview, setPreview] = useState<[number, number] | null>(null)
+  const [hoverTip, setHoverTip] = useState<string | null>(null)
 
   const view = useMemo(() => {
     const [minLon, minLat, maxLon, maxLat] = VIEW_BBOX
@@ -70,6 +77,7 @@ export function SvgMap({
     [],
   )
   const origin = originId ? byId.get(originId) : undefined
+  const targetsActive = mapTargetsActive(targetIds)
 
   function point(event: ReactMouseEvent<SVGSVGElement>) {
     const svg = svgRef.current
@@ -93,22 +101,46 @@ export function SvgMap({
   }
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={view.box}
-      className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
-      data-testid="svg-map"
-      onMouseMove={(event) => {
-        if (!originId) return
-        setPreview(point(event))
-      }}
-      onMouseUp={() => commit(null)}
-      onMouseLeave={() => {
-        if (!originId) return
-        setOriginId(null)
-        setPreview(null)
-      }}
-    >
+    <>
+      <svg
+        ref={svgRef}
+        viewBox={view.box}
+        className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
+        data-testid="svg-map"
+        onMouseMove={(event) => {
+          if (!originId) return
+          setPreview(point(event))
+        }}
+        onMouseUp={() => commit(null)}
+        onMouseLeave={() => {
+          setHoverTip(null)
+          if (!originId) return
+          setOriginId(null)
+          setPreview(null)
+        }}
+      >
+      <defs>
+        <pattern
+          id="svg-move-hatch"
+          patternUnits="userSpaceOnUse"
+          width="0.22"
+          height="0.22"
+          patternTransform="rotate(35)"
+        >
+          <rect width="0.22" height="0.22" fill={MAP_TARGET_STYLE.move.fill} fillOpacity={0.35} />
+          <line x1="0" y1="0.22" x2="0.22" y2="0" stroke={MAP_TARGET_STYLE.move.outline} strokeWidth={0.018} />
+        </pattern>
+        <pattern
+          id="svg-attack-hatch"
+          patternUnits="userSpaceOnUse"
+          width="0.22"
+          height="0.22"
+          patternTransform="rotate(35)"
+        >
+          <rect width="0.22" height="0.22" fill={MAP_TARGET_STYLE.attack.fill} fillOpacity={0.35} />
+          <line x1="0" y1="0.22" x2="0.22" y2="0" stroke={MAP_TARGET_STYLE.attack.outline} strokeWidth={0.018} />
+        </pattern>
+      </defs>
       {visibleStates.map((region) => (
         <path
           key={region.id}
@@ -163,30 +195,69 @@ export function SvgMap({
         if (!geometryValid(province.polygon)) return null
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
-        const stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
-        const fill = provinceFill(province, overlay)
+        const moveTint = targetIds?.move.includes(province.id)
+        const attackTint = targetIds?.attack.includes(province.id)
+        const dimmed =
+          targetsActive && !selected && !moveTint && !attackTint
+        let stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
+        let strokeWidth = selected ? view.label * 0.22 : view.label * 0.08
+        let fill = provinceFill(province, overlay)
+        let fillOpacity: number | undefined
+        let hatch: string | undefined
+        if (attackTint) {
+          fill = MAP_TARGET_STYLE.attack.fill
+          stroke = MAP_TARGET_STYLE.attack.outline
+          strokeWidth = view.label * 0.26
+          fillOpacity = MAP_TARGET_STYLE.attack.fillOpacity
+          hatch = "url(#svg-attack-hatch)"
+        } else if (moveTint) {
+          fill = MAP_TARGET_STYLE.move.fill
+          stroke = MAP_TARGET_STYLE.move.outline
+          strokeWidth = view.label * 0.26
+          fillOpacity = MAP_TARGET_STYLE.move.fillOpacity
+          hatch = "url(#svg-move-hatch)"
+        } else if (dimmed) {
+          fillOpacity = MAP_TARGET_STYLE.mutedProvinceOpacity
+        }
+        const tip = provinceHoverNote(province, targetHoverNote)
+        const pathD = geometryPath(province.polygon)
         return (
-          <path
-            key={province.id}
-            d={geometryPath(province.polygon)}
-            fill={fill}
-            fillRule="evenodd"
-            stroke={stroke}
-            strokeWidth={selected ? view.label * 0.22 : view.label * 0.08}
-            className={flashing ? "animate-pulse" : undefined}
-            style={{ cursor: orderMode ? "crosshair" : "pointer" }}
-            onMouseDown={(event) => {
-              if (!orderMode) return
-              event.preventDefault()
-              event.stopPropagation()
-              setOriginId(province.id)
-            }}
-            onMouseUp={(event) => {
-              event.stopPropagation()
-              if (orderMode && originId) commit(province.id)
-              else onSelect(province.id)
-            }}
-          />
+          <g key={province.id}>
+            <path
+              d={pathD}
+              fill={fill}
+              fillOpacity={fillOpacity}
+              fillRule="evenodd"
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              className={flashing ? "animate-pulse" : undefined}
+              style={{ cursor: orderMode ? "crosshair" : "pointer" }}
+              onMouseEnter={() => setHoverTip(tip)}
+              onMouseLeave={() => setHoverTip(null)}
+              onMouseDown={(event) => {
+                if (!orderMode) return
+                event.preventDefault()
+                event.stopPropagation()
+                setOriginId(province.id)
+              }}
+              onMouseUp={(event) => {
+                event.stopPropagation()
+                if (orderMode && originId) commit(province.id)
+                else onSelect(province.id)
+              }}
+            >
+              <title>{tip}</title>
+            </path>
+            {hatch ? (
+              <path
+                d={pathD}
+                fill={hatch}
+                fillOpacity={0.55}
+                fillRule="evenodd"
+                pointerEvents="none"
+              />
+            ) : null}
+          </g>
         )
       })}
       {showRails &&
@@ -340,7 +411,17 @@ export function SvgMap({
           </g>
         )
       })}
-    </svg>
+      </svg>
+      {hoverTip ? (
+        <div
+          className={`pointer-events-none absolute left-2 z-20 max-w-[min(14rem,calc(100%-1rem))] rounded-md bg-[#241c14]/92 px-2.5 py-2 text-xs whitespace-pre-line text-[#f3e2a8] shadow-sm ${orderMode ? "top-12" : "top-2"}`}
+          role="tooltip"
+          data-testid="svg-map-hover-tip"
+        >
+          {hoverTip}
+        </div>
+      ) : null}
+    </>
   )
 }
 

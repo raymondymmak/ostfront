@@ -9,9 +9,9 @@ import { TimelinePanel } from "@/components/timeline-panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
-import { BRIEFING } from "@/lib/data/scenario"
+import { CampaignStart } from "@/components/campaign-start"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
-import { independentFormations, partyOf } from "@/lib/engine/echelon"
+import { independentFormations } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
 import { gradeLabel } from "@/lib/engine/victory"
 import {
@@ -25,6 +25,7 @@ import type { AdvisorOrder } from "@/lib/gm/advisor-types"
 import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { applyAdvisorToQueue, leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
 import { WarMap, type MapProvince } from "@/components/war-map"
@@ -118,6 +119,10 @@ export function GameApp() {
   const activeLog = logIndex ?? Math.max(0, game.log.length - 1)
   const finished = ordersLocked(Boolean(game.state.result))
   const phase = finalePhase(finished, resultOpen)
+  const mapTargets = useMemo(() => {
+    if (finished || !selected || selected.controller !== "central") return null
+    return legalTargets(game.state, selected.id, queue)
+  }, [finished, selected, game.state, queue])
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
     if (ordersLocked(Boolean(game.state.result))) return
@@ -141,21 +146,8 @@ export function GameApp() {
     }
     const kind = to.controller === "central" ? "move" : "attack"
     const chosen = leaveDepotGarrison(available, from.depot === "central", commitAll)
-    const departing = new Set(partyOf(from.units, chosen.map((unit) => unit.id)).map((unit) => unit.id))
-    const remaining = independentFormations(
-      from.units.filter((unit) => unit.faction === "central" && !departing.has(unit.id) && !claimed.has(unit.id)),
-    )
-    if (!from.neighbors.includes(toId)) {
-      setHint(
-        `${from.name} and ${to.name} do not share a border. The engine will reject the order so you can see why.`,
-      )
-    } else if (from.supply < 30) {
-      setHint(`${from.name} is below supply 30. The engine will refuse the advance.`)
-    } else if (from.depot === "central" && remaining.length === 0) {
-      setHint(`This arrow empties the ${from.name} depot. Leave a garrison unless you mean to abandon it.`)
-    } else {
-      setHint(null)
-    }
+    const targets = legalTargets(game.state, fromId, queue)
+    setHint(legalTargetHoverNote(targets, toId))
     setQueue((current) => {
       if (current.some((order) => order.kind === kind && order.from === fromId && order.to === toId)) {
         return current
@@ -388,6 +380,17 @@ export function GameApp() {
   const latest = game.log.at(-1)
   const fallback = !error && latest?.warning ? latest : null
 
+  if (setupOpen) {
+    return (
+      <CampaignStart
+        difficulty={difficulty}
+        onDifficulty={setDifficulty}
+        beginBusy={beginBusy}
+        onBegin={() => void begin(difficulty)}
+      />
+    )
+  }
+
   return (
     <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden">
       <Hud
@@ -454,12 +457,25 @@ export function GameApp() {
             orders={queue}
             flashIds={flash}
             orderMode={orderMode && !finished}
+            targetIds={
+              mapTargets && (mapTargets.move.length || mapTargets.attack.length)
+                ? { move: mapTargets.move, attack: mapTargets.attack }
+                : undefined
+            }
+            targetHoverNote={
+              mapTargets
+                ? (id, base) => {
+                    const extra = legalTargetHoverNote(mapTargets, id)
+                    return extra ? `${base}\n${extra}` : base
+                  }
+                : undefined
+            }
             onSelect={setSelectedId}
             onDraw={addArrow}
             onOverlay={setOverlay}
           />
           <AdvisorPanel
-            open={advisorOpen && !setupOpen}
+            open={advisorOpen}
             state={game.state}
             queue={queue}
             closed={finished}
@@ -467,7 +483,7 @@ export function GameApp() {
             onClose={() => setAdvisorOpen(false)}
             onAccept={acceptAdvisorOrders}
           />
-          {phase === "map" && !setupOpen && (
+          {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
                 className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/92 px-3 py-2 text-[#f3e2a8] shadow-lg"
@@ -541,7 +557,6 @@ export function GameApp() {
               log={game.log}
               active={game.log.length ? activeLog : 0}
               onActive={setLogIndex}
-              briefing={BRIEFING}
               phase={phase}
             />
           </TabsContent>
@@ -553,13 +568,12 @@ export function GameApp() {
               log={game.log}
               active={game.log.length ? activeLog : 0}
               onActive={setLogIndex}
-              briefing={BRIEFING}
               phase={phase}
             />
           </div>
         </section>
       </div>
-      {phase === "result" && game.state.result && !setupOpen && (
+      {phase === "result" && game.state.result && (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-4"
           data-testid="endgame"
@@ -595,60 +609,6 @@ export function GameApp() {
                 Play again
               </Button>
             </div>
-          </div>
-        </div>
-      )}
-      {setupOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4" data-testid="scenario-picker">
-          <div className="flex w-full max-w-xl flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-lg">
-            <div>
-              <p className="text-xs tracking-wide text-muted-foreground uppercase">Eastern Front, 1915</p>
-              <p className="mt-1 font-display text-3xl leading-none">Gorlice–Tarnów</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Nothing happens while you are away. Both sides lock their orders, and the fortnight closes together.
-              </p>
-            </div>
-            <div className="rounded-lg border border-primary bg-primary/10 p-3" data-testid="scenario-gorlice">
-              <span className="font-display text-xl leading-none">2 May – 11 July</span>
-              <span className="mt-2 block text-sm text-muted-foreground">
-                Six fortnights. Mackensen&apos;s 11th Army and the Austro-Hungarian 4th Army break Radko Dimitriev&apos;s 3rd Army at Lemberg. The pursuit is Lublin and Rovno. Hold Kraków.
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2" data-testid="difficulty">
-              {(
-                [
-                  ["easy", "Easy", "Thinner Russian corps, Stavka stays cautious"],
-                  ["normal", "Normal", "The 2 May line, and a real breakthrough"],
-                  ["hard", "Hard", "Fuller Russian corps, and Stavka hits back"],
-                ] as const
-              ).map(([id, title, copy]) => (
-                <button
-                  key={id}
-                  type="button"
-                  data-testid={`difficulty-${id}`}
-                  onClick={() => setDifficulty(id)}
-                  className={`rounded-lg border px-3 py-2 text-left text-sm ${difficulty === id ? "border-primary bg-primary/10" : "border-border"}`}
-                >
-                  <span className="block font-medium">{title}</span>
-                  <span className="text-muted-foreground">{copy}</span>
-                </button>
-              ))}
-            </div>
-            <Button
-              type="button"
-              data-testid="begin-scenario"
-              disabled={beginBusy}
-              onClick={() => void begin(difficulty)}
-            >
-              {beginBusy ? "Opening campaign…" : "Begin the offensive"}
-            </Button>
-            <a
-              href="/teach"
-              className="inline-flex w-full items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-              data-testid="begin-teach"
-            >
-              Try the converging-attacks teaching drill
-            </a>
           </div>
         </div>
       )}

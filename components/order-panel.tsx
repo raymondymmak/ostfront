@@ -11,6 +11,7 @@ import { interpretOrders } from "@/lib/gm/interpret"
 import { combinedQueueLines, formatQueuedOrderLine, type QueuedOrder } from "@/lib/orders"
 import { snapshotQueuedOrder } from "@/lib/queue-snapshot"
 import type { GameState } from "@/lib/types"
+import { OddsBar } from "@/components/odds-bar"
 
 type OrderPanelProps = {
   state: GameState
@@ -120,9 +121,12 @@ export function OrderPanel({
         <Separator />
         <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Queued arrows</h3>
         {combinedQueueLines(state, queue).map((line) => (
-          <p key={line.targetId} className="text-sm text-muted-foreground" data-testid="combined-odds">
-            {line.targetName} is one battle from {joinAnd(line.fromNames)}. {describeOdds(line.preview)}
-          </p>
+          <div key={line.targetId} className="text-sm text-muted-foreground">
+            <p>
+              {line.targetName} is one battle from {joinAnd(line.fromNames)}.
+            </p>
+            <OddsBar preview={line.preview} testId="combined-odds" />
+          </div>
         ))}
         {queue.length === 0 && (
           <p className="text-sm text-muted-foreground">No arrows yet. Unordered formations hold.</p>
@@ -150,10 +154,12 @@ export function OrderPanel({
                   </Button>
                 </div>
                 {odds && (
-                  <p className="mt-1 text-xs text-muted-foreground" data-testid="attack-odds">
-                    {describeOdds(odds)}
-                    {from && from.supply < 30 ? " Supply is too low to march." : ""}
-                  </p>
+                  <>
+                    <OddsBar preview={odds} testId="attack-odds" compact />
+                    {from && from.supply < 30 ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">Supply is too low to march.</p>
+                    ) : null}
+                  </>
                 )}
                 {emptiesDepot(state, order) && (
                   <p className="mt-1 text-xs text-destructive" data-testid="depot-warning">
@@ -271,18 +277,6 @@ function joinAnd(names: string[]): string {
   if (names.length <= 1) return names[0] ?? ""
   if (names.length === 2) return `${names[0]} and ${names[1]}`
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
-}
-
-function describeOdds(odds: EngagementPreview): string {
-  const caveat = " Against the garrison as it stands; a simultaneous enemy march can change the fight."
-  if (odds.empty && odds.origins < 2) return `Undefended, before the dice.${caveat}`
-  const ratio = odds.empty || !Number.isFinite(odds.ratio) ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
-  if (odds.origins >= 2) {
-    const shape = odds.origins === 2 ? "two-pronged" : "concentric"
-    const ring = odds.encircled ? ", and the defender is surrounded" : ""
-    return `One battle, ${odds.origins} directions, ${shape}, about ${ratio} before the dice${ring}.${caveat}`
-  }
-  return `About ${ratio} before the dice.${caveat}`
 }
 
 function describeProposal(

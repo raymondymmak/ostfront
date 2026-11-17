@@ -63,9 +63,11 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 
 | Feature | How to reach it | Proof it worked |
 | --- | --- | --- |
-| **Start campaign / pick difficulty** | On first load (or after Restart → Confirm), modal `[data-testid=scenario-picker]`: choose `[data-testid=difficulty-easy\|normal\|hard]`, then **Begin the offensive** `[data-testid=begin-scenario]`. | Picker hides; map `[data-testid=war-map]` visible; HUD date **2 May 1915**; Chronicle shows opening copy. |
-| **Read briefing** | Chronicle `[data-testid=chronicle]`; on mobile (**390×844**) use **Chronicle** tab → `[data-testid=mobile-chronicle-panel]`. | Opening briefing text visible. |
-| **Top bar readout** | Always in `<header>` after campaign start. | `[data-testid=objectives]` strength bar; labels **Strength**, **Provinces**; `[data-testid=treasury]` manpower/industry; **★ VP** fraction; `[data-testid=grade]` provisional or final grade; date and fortnight counter top-right. |
+| **Start campaign / pick difficulty** | First load or Restart → Confirm: full-screen `[data-testid=scenario-picker]` (`[data-testid=campaign-start-backdrop]` only — no live map). Pick `[data-testid=difficulty-easy\|normal\|hard]`, **Begin** `[data-testid=begin-scenario]`, optional **More** briefing. | Picker hidden; `[data-testid=war-map]` and HUD mount; date **2 May 1915**. |
+| **Read campaign goal** | Pre-start: `[data-testid=briefing-task]` on the start screen. After Begin: `[data-testid=campaign-goal]` in the HUD. | One-line objective. Full paragraphs only behind **More**. |
+| **Top bar readout** | Always in `<header>` after campaign start. | `[data-testid=objectives]` strength bar and `[data-testid=campaign-goal]`; labels **Strength**, **Provinces**; `[data-testid=treasury]` manpower/industry; **★ VP** fraction; `[data-testid=grade]` provisional or final grade; date and fortnight counter top-right. |
+| **Legal move / attack highlights** | Select a Central Powers province with free formations. | `[data-testid=war-map]` `data-map-targets` lists move/attack neighbor ids; tints are lighter shades of Central Powers blue and Russia red; hover shows blocked reasons. |
+| **Attack odds bar** | Queue an attack or open an enemy neighbor on **Province**. | `[data-testid=attack-odds]` or `[data-testid=combined-odds]` with `data-odds-band` and `data-ratio`; long caveat on hover/title. |
 | **Select province (map)** | Click a province on `[data-testid=war-map]` (MapLibre canvas). | **Province** tab `h2` shows that province (demo clicks **Katowice**, not default Kraków). |
 | **Select province (list)** | **Orders** → **Your formations** row, or **Province** tab after map selection. | Province panel title updates. |
 | **Province tab** | `[data-testid=tab-province]` (**Province**). | Supply/unrest meters, neighbors list, fortify/recruit when eligible. |

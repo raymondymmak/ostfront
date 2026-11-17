@@ -11,6 +11,8 @@ import { RECRUIT, recruitmentYard } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, type EngagementPreview } from "@/lib/engine/turn"
 import { provinceActionState, type QueuedOrder } from "@/lib/orders"
 import { FACTION_LABEL, KIND_LABEL, TERRAIN_LABEL } from "@/lib/format"
+import { OddsBar } from "@/components/odds-bar"
+import { oddsDetailLine } from "@/lib/ui/odds-detail"
 import type { GameState, Province, Purse, UnitKind } from "@/lib/types"
 
 type ProvincePanelProps = {
@@ -41,7 +43,7 @@ export function ProvincePanel({
   if (!province) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        Select a province. Lemberg is Austrian soil, held by the Russian 3rd Army. Rovno is the Russian depot.
+        Select a province on the map. Legal moves and attacks highlight in blue and red.
       </div>
     )
   }
@@ -201,25 +203,28 @@ export function ProvincePanel({
                       if (!closed && friendly) onOrder(province.id, neighbor.id)
                       else onSelect(neighbor.id)
                     }}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-left text-sm hover:bg-muted"
+                    className="flex w-full flex-col gap-1 rounded-lg border border-border px-2.5 py-2 text-left text-sm hover:bg-muted"
                   >
-                    <span>
-                      {neighbor.name}
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {FACTION_LABEL[neighbor.controller]}
-                        {neighbor.rail.includes(province.id) || province.rail.includes(neighbor.id)
-                          ? " · rail"
-                          : ""}
-                        {attack ? ` · ${neighborOddsLabel(attack)}` : ""}
+                    <div className="flex items-center justify-between gap-2">
+                      <span>
+                        {neighbor.name}
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {FACTION_LABEL[neighbor.controller]}
+                          {neighbor.rail.includes(province.id) || province.rail.includes(neighbor.id)
+                            ? " · rail"
+                            : ""}
+                          {attack ? ` · ${oddsDetailLine(attack)}` : ""}
+                        </span>
                       </span>
-                    </span>
-                    <span className="text-xs text-primary">
-                      {closed || !friendly
-                        ? "Open"
-                        : neighbor.controller === "central"
-                          ? "Move"
-                          : "Attack"}
-                    </span>
+                      <span className="text-xs text-primary">
+                        {closed || !friendly
+                          ? "Open"
+                          : neighbor.controller === "central"
+                            ? "Move"
+                            : "Attack"}
+                      </span>
+                    </div>
+                    {attack ? <OddsBar preview={attack} compact /> : null}
                   </button>
                 </li>
               )
@@ -261,15 +266,6 @@ function previewNeighbor(
     { fromId: province.id, unitIds: localIds },
     ...pending.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
   ])
-}
-
-function neighborOddsLabel(attack: EngagementPreview): string {
-  if (attack.origins > 1) {
-    const shape = attack.origins === 2 ? "two-pronged" : "concentric"
-    const ratio = attack.empty ? "undefended" : `${attack.ratio.toFixed(2)} : 1`
-    return attack.encircled ? `one battle, ${shape}, surrounded, ${ratio}` : `one battle, ${shape}, ${ratio}`
-  }
-  return attack.empty ? "undefended" : `odds ${attack.ratio.toFixed(2)} : 1`
 }
 
 function Meter({

@@ -33,6 +33,7 @@ import {
 } from "@/lib/map/rail-lines"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
+import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 
 export type MapProvince = Province & {
   polygon: ProvinceGeometry
@@ -58,11 +59,14 @@ type WarMapProps = MapInput & {
   flashIds: string[]
   /** Coach / teaching highlights anchored to province ids (not screen pixels). */
   coachHighlightIds?: string[]
+  targetIds?: { move: string[]; attack: string[] }
+  targetHoverNote?: (provinceId: string, base: string) => string
   onOverlay: (overlay: Overlay) => void
 }
 
 type Snapshot = MapInput & {
   showRails: boolean
+  targetHoverNote?: (provinceId: string, base: string) => string
 }
 
 export function WarMap({
@@ -72,6 +76,8 @@ export function WarMap({
   orders,
   flashIds,
   coachHighlightIds = [],
+  targetIds,
+  targetHoverNote,
   orderMode,
   onSelect,
   onDraw,
@@ -282,6 +288,13 @@ export function WarMap({
         },
       })
       map.addLayer({
+        id: "target-dim",
+        type: "fill",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: { "fill-color": MAP_TARGET_STYLE.dim.fill, "fill-opacity": 0 },
+      })
+      map.addLayer({
         id: "flash",
         type: "fill",
         source: "provinces",
@@ -294,6 +307,48 @@ export function WarMap({
         source: "provinces",
         filter: ["==", ["get", "id"], ""],
         paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
+      })
+      map.addLayer({
+        id: "move-target",
+        type: "fill",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "fill-color": MAP_TARGET_STYLE.move.fill,
+          "fill-opacity": MAP_TARGET_STYLE.move.fillOpacity,
+        },
+      })
+      map.addLayer({
+        id: "attack-target",
+        type: "fill",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "fill-color": MAP_TARGET_STYLE.attack.fill,
+          "fill-opacity": MAP_TARGET_STYLE.attack.fillOpacity,
+        },
+      })
+      map.addLayer({
+        id: "move-target-outline",
+        type: "line",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "line-color": MAP_TARGET_STYLE.move.outline,
+          "line-width": MAP_TARGET_STYLE.move.outlineWidth,
+          "line-opacity": 0.95,
+        },
+      })
+      map.addLayer({
+        id: "attack-target-outline",
+        type: "line",
+        source: "provinces",
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "line-color": MAP_TARGET_STYLE.attack.outline,
+          "line-width": MAP_TARGET_STYLE.attack.outlineWidth,
+          "line-opacity": 0.95,
+        },
       })
       map.addLayer({
         id: "borders",
@@ -423,7 +478,10 @@ export function WarMap({
               ? `Total unit strength: ${strength} (${controller})`
               : "No formations present",
           ]
-          setHoverTip(lines.join("\n"))
+          const idStr = String(feature.properties?.id ?? "")
+          const base = lines.join("\n")
+          const note = propsRef.current.targetHoverNote?.(idStr, base) ?? base
+          setHoverTip(note)
         }
         if (hovered !== null && hovered !== id) {
           map.setFeatureState({ source: "provinces", id: hovered }, { hover: false })
@@ -565,6 +623,7 @@ export function WarMap({
       showRails,
       onSelect,
       onDraw,
+      targetHoverNote,
     }
     const map = mapRef.current
     if (!map || !loadedRef.current) return
@@ -572,7 +631,39 @@ export function WarMap({
     map.once("idle", () => blitMap(map, blitRef.current))
     if (orderMode) map.dragPan.disable()
     else map.dragPan.enable()
-  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw])
+  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loadedRef.current || !map.getLayer("move-target")) return
+    const move = targetIds?.move ?? []
+    const attack = targetIds?.attack ?? []
+    const active = move.length > 0 || attack.length > 0
+    const moveLit = move.length ? move : ["__none__"]
+    const attackLit = attack.length ? attack : ["__none__"]
+    map.setFilter("move-target", ["in", ["get", "id"], ["literal", moveLit]])
+    map.setFilter("attack-target", ["in", ["get", "id"], ["literal", attackLit]])
+    map.setPaintProperty("move-target", "fill-opacity", move.length ? MAP_TARGET_STYLE.move.fillOpacity : 0)
+    map.setPaintProperty("attack-target", "fill-opacity", attack.length ? MAP_TARGET_STYLE.attack.fillOpacity : 0)
+    if (map.getLayer("move-target-outline")) {
+      map.setFilter("move-target-outline", ["in", ["get", "id"], ["literal", moveLit]])
+      map.setPaintProperty("move-target-outline", "line-opacity", move.length ? 0.95 : 0)
+    }
+    if (map.getLayer("attack-target-outline")) {
+      map.setFilter("attack-target-outline", ["in", ["get", "id"], ["literal", attackLit]])
+      map.setPaintProperty("attack-target-outline", "line-opacity", attack.length ? 0.95 : 0)
+    }
+    if (map.getLayer("target-dim")) {
+      if (active) {
+        const bright = [...new Set([...(selectedId ? [selectedId] : []), ...move, ...attack])]
+        map.setFilter("target-dim", ["!", ["in", ["get", "id"], ["literal", bright]]])
+        map.setPaintProperty("target-dim", "fill-opacity", MAP_TARGET_STYLE.dim.opacity)
+      } else {
+        map.setFilter("target-dim", ["==", ["get", "id"], "__none__"])
+        map.setPaintProperty("target-dim", "fill-opacity", 0)
+      }
+    }
+  }, [targetIds, selectedId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -621,6 +712,11 @@ export function WarMap({
       className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
+      data-map-targets={
+        targetIds
+          ? `move:${targetIds.move.join(",")};attack:${targetIds.attack.join(",")}`
+          : undefined
+      }
     >
       {failed ? (
         <SvgMap
@@ -631,6 +727,8 @@ export function WarMap({
           flashIds={flashIds}
           orderMode={orderMode}
           showRails={showRails}
+          targetIds={targetIds}
+          targetHoverNote={targetHoverNote}
           onSelect={onSelect}
           onDraw={onDraw}
         />
