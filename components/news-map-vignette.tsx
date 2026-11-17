@@ -4,9 +4,12 @@ import { useId, useMemo } from "react"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { vignettePaths, vignetteProvinceIds, vignetteViewBox } from "@/lib/map/svg-geometry"
 import type { NewsImage } from "@/lib/news/types"
+import type { Faction } from "@/lib/types"
+import { newsVignetteTargetFill, newsVignetteTargetGlow } from "@/lib/ui/map-target-style"
 
 type NewsMapVignetteProps = {
   image: Extract<NewsImage, { type: "map" }>
+  faction: Faction
 }
 
 function curvedArrowPath(x1: number, y1: number, x2: number, y2: number, bend = 0.16): string {
@@ -26,7 +29,7 @@ function curvedArrowPath(x1: number, y1: number, x2: number, y2: number, bend = 
   return `M ${x1} ${y1} Q ${cx} ${cy} ${stopX} ${stopY}`
 }
 
-export function NewsMapVignette({ image }: NewsMapVignetteProps) {
+export function NewsMapVignette({ image, faction }: NewsMapVignetteProps) {
   const uid = useId().replace(/:/g, "")
   const target = CATALOG_BY_ID[image.provinceId]
 
@@ -39,7 +42,8 @@ export function NewsMapVignette({ image }: NewsMapVignetteProps) {
   const paths = useMemo(() => vignettePaths(provinceIds), [provinceIds])
 
   const accent = image.tone === "victory" ? "#c6a15a" : "#a85b49"
-  const targetFill = image.tone === "victory" ? "#6a7d52" : "#8b4035"
+  const targetFill = newsVignetteTargetFill(faction)
+  const targetGlow = newsVignetteTargetGlow(faction)
   const span = view?.span ?? 1
   const strokeMain = span * 0.01
   const strokeSoft = span * 0.005
@@ -82,7 +86,7 @@ export function NewsMapVignette({ image }: NewsMapVignetteProps) {
           <stop offset="100%" stopColor="#050403" stopOpacity="0.88" />
         </radialGradient>
         <filter id={`${uid}-glow`} x="-50%" y="-50%" width="200%" height="200%">
-          <feDropShadow dx="0" dy="0" stdDeviation={strokeMain * 1.8} floodColor={accent} floodOpacity="0.55" />
+          <feDropShadow dx="0" dy="0" stdDeviation={strokeMain * 1.8} floodColor={targetGlow} floodOpacity="0.65" />
         </filter>
         <marker
           id={`${uid}-head`}
@@ -105,10 +109,11 @@ export function NewsMapVignette({ image }: NewsMapVignetteProps) {
           <path
             key={id}
             data-province-id={id}
+            data-target-fill={isTarget ? targetFill : undefined}
             d={d}
             fill={isTarget ? targetFill : "#5a4a3a"}
             fillOpacity={1}
-            stroke={isTarget ? accent : "#3a3028"}
+            stroke={isTarget ? targetGlow : "#3a3028"}
             strokeWidth={isTarget ? strokeMain : strokeSoft}
             fillRule="evenodd"
             filter={isTarget ? `url(#${uid}-glow)` : undefined}

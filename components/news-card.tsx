@@ -98,7 +98,7 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
             />
           ) : (
             <div className="h-full w-full" data-testid="news-card-map">
-              <NewsMapVignette image={event.image} />
+              <NewsMapVignette image={event.image} faction={event.faction} />
             </div>
           )}
         </div>
