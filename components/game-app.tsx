@@ -75,6 +75,8 @@ export function GameApp() {
     const saved = loadGame()
     const gameId = saved?.gameId
     if (!gameId) return
+    const newsDemo =
+      typeof window !== "undefined" && new URLSearchParams(window.location.search).has("newsDemo")
     let cancelled = false
     void (async () => {
       try {
@@ -82,11 +84,13 @@ export function GameApp() {
         if (!response.ok || cancelled) return
         const payload = (await response.json()) as SaveGame & { gameId: string }
         if (!payload.state || cancelled) return
+        const log =
+          newsDemo && saved?.log?.length ? saved.log : (payload.log ?? [])
         setGame({
           version: 2,
           gameId: payload.gameId,
           state: payload.state,
-          log: payload.log ?? [],
+          log,
         })
         setSetupOpen(false)
       } catch {

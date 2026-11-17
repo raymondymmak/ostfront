@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { headlineFor, loreLine } from "@/lib/news/lore"
-import { routineLog, selectNewsEvents } from "@/lib/news/select"
+import { routineLog, routineLogByTurn, selectNewsEvents } from "@/lib/news/select"
 import type { TurnRecord } from "@/lib/types"
 
 function clone<T>(value: T): T {
@@ -102,8 +102,29 @@ describe("routineLog", () => {
         ],
       }),
     )
-    expect(rows.some((line) => /collect \d+ manpower/i.test(line))).toBe(true)
-    expect(rows.some((line) => /supply 30/i.test(line))).toBe(true)
+    expect(rows.some((line) => /\+2 mp, \+1 ip/.test(line))).toBe(true)
+    expect(rows.some((line) => /below supply 30/.test(line))).toBe(true)
     expect(rows.some((line) => /marches toward/i.test(line))).toBe(false)
+  })
+
+  it("dedupes identical supply rows", () => {
+    const line = "Kraków: 200 strength exceeds supply capacity 120"
+    const rows = routineLog(
+      baseRecord({
+        logistics: [line, line],
+      }),
+    )
+    expect(rows).toEqual(["Kraków over supply: 200/120"])
+  })
+})
+
+describe("routineLogByTurn", () => {
+  it("orders turns newest first", () => {
+    const groups = routineLogByTurn([
+      baseRecord({ turn: 0, date: "Jan 1915", logistics: ["Central Powers collect 1 manpower and 0 industry."] }),
+      baseRecord({ turn: 1, date: "Feb 1915", logistics: ["Kraków drops below supply 30. Its formations cannot advance next fortnight."] }),
+    ])
+    expect(groups[0]?.date).toBe("Feb 1915")
+    expect(groups[1]?.date).toBe("Jan 1915")
   })
 })

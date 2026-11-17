@@ -11,10 +11,10 @@ import {
   VIEW_BBOX,
   backdropColor,
   eachCoord,
-  geometryPolygons,
   geometryValid,
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
+import { geometryPath } from "@/lib/map/svg-geometry"
 import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
@@ -478,17 +478,6 @@ function lineOverlapsView(line: number[][]): boolean {
     if (y > maxY) maxY = y
   }
   return maxX >= VIEW_BBOX[0] && minX <= VIEW_BBOX[2] && maxY >= VIEW_BBOX[1] && minY <= VIEW_BBOX[3]
-}
-
-function geometryPath(geometry: ProvinceGeometry): string {
-  const parts: string[] = []
-  for (const rings of geometryPolygons(geometry)) {
-    for (const ring of rings) {
-      const cmds = ring.map(([lon, lat], index) => `${index === 0 ? "M" : "L"}${lon},${-lat}`)
-      parts.push(`${cmds.join(" ")} Z`)
-    }
-  }
-  return parts.join(" ")
 }
 
 function provinceFill(province: MapProvince, overlay: SvgMapProps["overlay"]): string {

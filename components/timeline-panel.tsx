@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { chronicleFollowsLatest } from "@/lib/chronicle-scroll"
 import { logisticsForPhase, type FinalePhase } from "@/lib/finale"
 import { FACTION_LABEL } from "@/lib/format"
-import { routineLog } from "@/lib/news/select"
+import { routineLog, routineLogByTurn } from "@/lib/news/select"
 import type { TurnRecord } from "@/lib/types"
 
 type TimelinePanelProps = {
@@ -73,65 +73,70 @@ export function TimelinePanel({
   }
 
   if (variant === "drawer") {
+    const groups = routineLogByTurn(log)
+    const detailRecord = log[active]
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chronicle">
         <ScrollArea className="min-h-0 flex-1" viewportRef={entryRef} viewportClassName="overscroll-contain">
-          {record && (
-            <article key={`${record.turn}-${record.date}`} className="flex flex-col gap-2 p-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {record && (
-                  <Badge variant="outline" className="text-[10px]">
-                    {record.gmSource === "llm" ? "Game master" : "Staff simulation"}
-                  </Badge>
+          <article className="flex flex-col gap-3 p-3 text-sm">
+            <ul className="flex flex-col gap-2" data-testid="chronicle-routine">
+              {groups.map((group) => (
+                <li key={`${group.turn}-${group.date}`} className="flex flex-col gap-1">
+                  <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                    {group.date}
+                  </p>
+                  <ul className="flex flex-col gap-1">
+                    {group.lines.map((line) => (
+                      <li
+                        key={`${group.turn}-${line}`}
+                        className="line-clamp-2 rounded border border-border/60 bg-muted/40 px-2 py-1 text-xs leading-snug text-foreground"
+                      >
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+            {detailRecord?.warning && <GmWarning record={detailRecord} />}
+            {groups.length > 0 && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-fit px-2 text-xs text-muted-foreground"
+                  data-testid="chronicle-details-toggle"
+                  aria-expanded={detailsOpen}
+                  onClick={() => setDetailsForTurn(detailsOpen ? null : active)}
+                >
+                  {detailsOpen ? "Hide details" : "Details"}
+                </Button>
+                {detailsOpen && detailRecord && (
+                  <div className="flex flex-col gap-2 border-t border-border pt-2" data-testid="chronicle-details">
+                    <ul className="mb-1 flex flex-wrap gap-1">
+                      {log.map((entry, index) => (
+                        <li key={`${entry.turn}-${entry.date}`}>
+                          <button
+                            type="button"
+                            onClick={() => onActive(index)}
+                            className={`rounded-md border px-2 py-0.5 text-xs ${
+                              index === active
+                                ? "border-primary/50 bg-primary/15 text-foreground"
+                                : "border-border text-muted-foreground"
+                            }`}
+                          >
+                            {entry.date}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <TurnDetails record={detailRecord} phase={phase} includeLogistics={false} />
+                  </div>
                 )}
-              </div>
-              <ul className="flex flex-wrap gap-1">
-                {log.map((entry, index) => (
-                  <li key={`${entry.turn}-${entry.date}`}>
-                    <button
-                      type="button"
-                      onClick={() => onActive(index)}
-                      className={`rounded-md border px-2 py-0.5 text-xs ${
-                        index === active
-                          ? "border-primary/50 bg-primary/15 text-foreground"
-                          : "border-border text-muted-foreground"
-                      }`}
-                    >
-                      {entry.date}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {record.warning && <GmWarning record={record} />}
-              <ul className="flex flex-col gap-1" data-testid="chronicle-routine">
-                {routineLog(record).map((line) => (
-                  <li
-                    key={line}
-                    className="truncate rounded border border-border/60 bg-muted/40 px-2 py-1 text-xs leading-snug text-foreground"
-                    title={line}
-                  >
-                    {line}
-                  </li>
-                ))}
-              </ul>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 w-fit px-2 text-xs text-muted-foreground"
-                data-testid="chronicle-details-toggle"
-                aria-expanded={detailsOpen}
-                onClick={() => setDetailsForTurn(detailsOpen ? null : active)}
-              >
-                {detailsOpen ? "Hide details" : "Details"}
-              </Button>
-              {detailsOpen && (
-                <div className="flex flex-col gap-2 border-t border-border pt-2" data-testid="chronicle-details">
-                  <TurnDetails record={record} phase={phase} />
-                </div>
-              )}
-            </article>
-          )}
+              </>
+            )}
+          </article>
         </ScrollArea>
       </div>
     )
@@ -224,7 +229,15 @@ function GmWarning({ record }: { record: TurnRecord }) {
   )
 }
 
-function TurnDetails({ record, phase }: { record: TurnRecord; phase: FinalePhase }) {
+function TurnDetails({
+  record,
+  phase,
+  includeLogistics = true,
+}: {
+  record: TurnRecord
+  phase: FinalePhase
+  includeLogistics?: boolean
+}) {
   return (
     <>
       {record.narration.split(/\n\n/).map((paragraph) => (
@@ -280,11 +293,13 @@ function TurnDetails({ record, phase }: { record: TurnRecord; phase: FinalePhase
             {note}
           </li>
         ))}
-        {logisticsForPhase(record.logistics, phase).map((line) => (
-          <li key={line} className="text-muted-foreground">
-            {line}
-          </li>
-        ))}
+        {includeLogistics
+          ? logisticsForPhase(record.logistics, phase).map((line) => (
+              <li key={line} className="text-muted-foreground">
+                {line}
+              </li>
+            ))
+          : null}
       </ul>
     </>
   )

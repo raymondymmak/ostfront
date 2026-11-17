@@ -129,33 +129,4 @@ export function selectNewsEvents(prev: GameState, next: GameState, record: TurnR
   return drafts.slice(0, MAX_NEWS).map((draft) => buildEvent(draft, prev, next, record))
 }
 
-function shorten(line: string, max = 96): string {
-  const trimmed = line.replace(/\s+/g, " ").trim()
-  if (trimmed.length <= max) return trimmed
-  return `${trimmed.slice(0, max - 1).trimEnd()}…`
-}
-
-/** One-line Chronicle rows for routine fortnight activity (not headline news). */
-export function routineLog(record: TurnRecord): string[] {
-  const rows: string[] = []
-  for (const line of record.logistics) {
-    if (/collect \d+ manpower/i.test(line)) {
-      rows.push(shorten(line))
-      continue
-    }
-    if (/reinforc/i.test(line) || /refit/i.test(line)) {
-      rows.push(shorten(line))
-      continue
-    }
-    if (/supply|cut off|revolt|exceeds supply capacity|drops below supply/i.test(line)) {
-      rows.push(shorten(line))
-    }
-  }
-  for (const item of record.resolutions) {
-    if (item.status !== "applied") continue
-    if (/income|treasury|raised|arrives|build/i.test(item.summary)) {
-      rows.push(shorten(item.summary))
-    }
-  }
-  return rows.slice(0, 12)
-}
+export { routineLog, routineLogByTurn } from "@/lib/news/routine-copy"
