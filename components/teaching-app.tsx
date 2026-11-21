@@ -17,6 +17,7 @@ import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { CoachHint } from "@/lib/teach/coach"
 import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lessons"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { teachSelectedProvinceIds } from "@/lib/teach/selected-provinces"
 import type { GameState, PlayerOrder, TurnRecord, UnitKind } from "@/lib/types"
 
 type SessionPayload = {
@@ -248,7 +249,7 @@ export function TeachingApp() {
     setBusy(true)
     setError(null)
     const orders: PlayerOrder[] = queuedToPlayerOrders(queue)
-    const selectedProvinceIds = [...new Set([selectedId, ...queue.map((o) => o.from), ...queue.map((o) => o.to)])]
+    const selectedProvinceIds = teachSelectedProvinceIds(selectedId, queue)
     try {
       const response = await fetch("/api/teach/resolve", {
         method: "POST",

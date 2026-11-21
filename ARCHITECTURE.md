@@ -55,7 +55,7 @@ Stack: Next.js App Router, React client components for the game shell, server ro
 | `lib/map/rail-lines.ts` + `shared-border.ts` | Rail paths via shared-border midpoints, not anchor-to-anchor chords |
 | `lib/ui/legal-targets.ts` | `reach` + `canOrder`; Russian provinces get reach hints without orders |
 | `lib/ui/selection.ts` | Click-toggle and Escape deselect in `game-app.tsx` / `teaching-app.tsx` |
-| `public/fonts/` | Self-hosted MapLibre glyph PBFs (Noto Serif, Open Sans) |
+| `public/fonts/` | Self-hosted MapLibre glyph PBFs (Noto Serif, Noto Sans Symbols2 for ★/◆, Open Sans) |
 
 Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints directly (no canvas blit). ADR 009.
 
