@@ -3,11 +3,10 @@ import { describe, expect, it } from "vitest"
 import { PROVINCE_LABEL_FONT, provinceLabelCollection } from "@/lib/map/province-label-layers"
 
 describe("province label glyphs", () => {
-  it("falls back to Noto Sans Symbols2 for ★ and ◆ ranges", () => {
-    expect(PROVINCE_LABEL_FONT).toContain("Noto Serif Regular")
-    expect(PROVINCE_LABEL_FONT).toContain("Noto Sans Symbols2 Regular")
-    expect(existsSync("public/fonts/Noto Sans Symbols2 Regular/9472-9727.pbf")).toBe(true)
-    expect(existsSync("public/fonts/Noto Sans Symbols2 Regular/9728-9983.pbf")).toBe(true)
+  it("bundles ★ and ◆ glyph ranges under the Noto Serif fontstack", () => {
+    expect(PROVINCE_LABEL_FONT).toEqual(["Noto Serif Regular"])
+    expect(existsSync("public/fonts/Noto Serif Regular/9472-9727.pbf")).toBe(true)
+    expect(existsSync("public/fonts/Noto Serif Regular/9728-9983.pbf")).toBe(true)
   })
 
   it("prefixes objective and depot marks in label GeoJSON", () => {

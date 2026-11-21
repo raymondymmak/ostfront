@@ -10,8 +10,12 @@ import type * as maplibregl from "maplibre-gl"
 /** Self-hosted glyph folders under `public/fonts/`. */
 export const MAP_GLYPHS_URL = "/fonts/{fontstack}/{range}.pbf"
 
-/** Noto Serif for names; Symbols2 covers ★ / ◆ (U+2605 / U+25C6) glyph ranges. */
-export const PROVINCE_LABEL_FONT = ["Noto Serif Regular", "Noto Sans Symbols2 Regular"]
+/**
+ * Province names use Noto Serif. ★ / ◆ (U+2605 / U+25C6) live in the same
+ * fontstack folder as extra ranges (`9472-9727.pbf`, `9728-9983.pbf`) because
+ * MapLibre requests `{fontstack}` as a single path, not per-face.
+ */
+export const PROVINCE_LABEL_FONT = ["Noto Serif Regular"]
 export const BACKDROP_LABEL_FONT = ["Open Sans Regular"]
 
 export function provinceLabelOpacityExpression(): maplibregl.ExpressionSpecification {
