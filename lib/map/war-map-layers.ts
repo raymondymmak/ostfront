@@ -41,8 +41,25 @@ function railFade(scale = 1): maplibregl.ExpressionSpecification {
   return ["interpolate", ["linear"], ["zoom"], RAIL_HIDDEN_ZOOM, 0, RAIL_FULL_ZOOM, scale]
 }
 
+/** Zoom interpolate must stay top-level; MapLibre rejects nesting it under `*`. */
 function railWidth(open: number, close: number): maplibregl.ExpressionSpecification {
   return ["interpolate", ["linear"], ["zoom"], RAIL_HIDDEN_ZOOM, 0, RAIL_FULL_ZOOM, open, 8.4, close]
+}
+
+/** Held-side rails: bake hot scale into interpolate stops (zoom stays top-level). */
+function railWidthHot(open: number, close: number): maplibregl.ExpressionSpecification {
+  const scale: maplibregl.ExpressionSpecification = ["coalesce", ["get", "hotWidthScale"], 1]
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    RAIL_HIDDEN_ZOOM,
+    0,
+    RAIL_FULL_ZOOM,
+    ["*", scale, open],
+    8.4,
+    ["*", scale, close],
+  ]
 }
 
 /** MapLibre layers for the campaign theater (after base sources are registered). */
@@ -166,11 +183,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     layout: { "line-cap": "butt", "line-join": "round" },
     paint: {
       "line-color": RAIL_STYLE.sleeper,
-      "line-width": [
-        "*",
-        ["coalesce", ["get", "hotWidthScale"], 1],
-        railWidth(2.2, 3.4),
-      ],
+      "line-width": railWidthHot(2.2, 3.4),
       "line-dasharray": [0.22, 0.65],
       "line-opacity": railFade(),
     },
@@ -191,11 +204,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
         RAIL_STYLE.russia,
         RAIL_STYLE.cut,
       ],
-      "line-width": [
-        "*",
-        ["coalesce", ["get", "hotWidthScale"], 1],
-        railWidth(1.2, 1.85),
-      ],
+      "line-width": railWidthHot(1.2, 1.85),
       "line-opacity": railFade(),
     },
   })

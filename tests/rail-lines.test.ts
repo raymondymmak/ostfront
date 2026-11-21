@@ -149,6 +149,9 @@ describe("rail lines", () => {
     expect(layers).toContain('id: "rail-sleepers"')
     expect(layers).toContain('id: "rail-track"')
     expect(layers).toContain('id: "rail-cut"')
+    expect(layers).toContain("railWidthHot")
+    // Zoom interpolate must be top-level — nesting under `*` rejects the layer.
+    expect(layers).not.toMatch(/\*\s*,\s*\[\s*[\"']coalesce[\"'][\s\S]*?railWidth\(/)
     expect(layers).toContain('id: "province-labels"')
     expect(source).not.toContain("new maplibregl.Marker")
     const railsAt = layers.indexOf('id: "rail-track"')

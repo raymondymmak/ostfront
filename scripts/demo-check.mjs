@@ -176,11 +176,27 @@ async function projectOnMap(page, lon, lat) {
 }
 
 /** @param {import('playwright').Page} page */
+async function krakowIsSelected(page) {
+  return page.evaluate(() => {
+    const map = window.__ostfrontMap
+    if (!map?.getFilter) return false
+    const filter = map.getFilter("selected")
+    return Array.isArray(filter) && filter[2] === "krakow"
+  })
+}
+
+/**
+ * Ensure Kraków is selected without toggling it off.
+ * A second click on an already-selected province clears selection.
+ * @param {import('playwright').Page} page
+ */
 async function selectKrakowOnMap(page) {
-  const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
-  if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
-  await page.mouse.click(point.x, point.y)
-  await page.waitForTimeout(400)
+  if (!(await krakowIsSelected(page))) {
+    const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
+    if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
+    await page.mouse.click(point.x, point.y)
+    await page.waitForTimeout(400)
+  }
   await page.locator("[data-testid=tab-province]").click()
   await page
     .locator("aside h2")

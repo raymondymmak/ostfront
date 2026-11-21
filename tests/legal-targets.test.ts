@@ -34,6 +34,7 @@ describe("legalTargets", () => {
     expect(targets.canOrder).toBe(false)
     expect(targets.move).toEqual([])
     expect(targets.attack).toEqual([])
+    // Reach hints only — do not list neighbors as blocked "Central Powers" refusals.
     expect(targets.blocked).toEqual([])
     expect(targets.reach.move.length + targets.reach.attack.length).toBeGreaterThan(0)
     const lwow = game.state.provinces.find((item) => item.id === "lwow")!
