@@ -19,7 +19,9 @@ import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
 import { provinceHoverNote } from "@/lib/ui/map-hover"
-import { MAP_TARGET_STYLE, mapTargetsActive } from "@/lib/ui/map-target-style"
+import { provincePaintProperties, roleFor } from "@/lib/map/province-paint"
+import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
+import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 
 type SvgMapProps = {
   provinces: MapProvince[]
@@ -29,7 +31,7 @@ type SvgMapProps = {
   flashIds: string[]
   orderMode: boolean
   showRails: boolean
-  targetIds?: { move: string[]; attack: string[] }
+  targetIds?: { move: string[]; attack: string[]; canOrder: boolean }
   targetHoverNote?: (provinceId: string, base: string) => string
   onSelect: (id: string) => void
   onDraw: (from: string, to: string) => void
@@ -77,7 +79,9 @@ export function SvgMap({
     [],
   )
   const origin = originId ? byId.get(originId) : undefined
-  const targetsActive = mapTargetsActive(targetIds)
+  const paintTargets = targetIds
+    ? { move: targetIds.move, attack: targetIds.attack, canOrder: targetIds.canOrder }
+    : undefined
 
   function point(event: ReactMouseEvent<SVGSVGElement>) {
     const svg = svgRef.current
@@ -195,29 +199,30 @@ export function SvgMap({
         if (!geometryValid(province.polygon)) return null
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
-        const moveTint = targetIds?.move.includes(province.id)
-        const attackTint = targetIds?.attack.includes(province.id)
-        const dimmed =
-          targetsActive && !selected && !moveTint && !attackTint
+        const role = roleFor(province.id, paintTargets, selectedId)
+        const paint = provincePaintProperties(province, overlay)
         let stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
         let strokeWidth = selected ? view.label * 0.22 : view.label * 0.08
-        let fill = provinceFill(province, overlay)
+        let fill = paint.fill
         let fillOpacity: number | undefined
-        let hatch: string | undefined
-        if (attackTint) {
-          fill = MAP_TARGET_STYLE.attack.fill
-          stroke = MAP_TARGET_STYLE.attack.outline
-          strokeWidth = view.label * 0.26
-          fillOpacity = MAP_TARGET_STYLE.attack.fillOpacity
-          hatch = "url(#svg-attack-hatch)"
-        } else if (moveTint) {
-          fill = MAP_TARGET_STYLE.move.fill
-          stroke = MAP_TARGET_STYLE.move.outline
-          strokeWidth = view.label * 0.26
-          fillOpacity = MAP_TARGET_STYLE.move.fillOpacity
-          hatch = "url(#svg-move-hatch)"
-        } else if (dimmed) {
-          fillOpacity = MAP_TARGET_STYLE.mutedProvinceOpacity
+        if (role === "attack") {
+          fill = paint.lift
+          stroke = TARGET_OUTLINE.attack.color
+          strokeWidth = view.label * (targetIds?.canOrder ? 0.26 : 0.2)
+          fillOpacity = targetIds?.canOrder ? 0.82 : 0.62
+        } else if (role === "move") {
+          fill = paint.lift
+          stroke = TARGET_OUTLINE.move.color
+          strokeWidth = view.label * (targetIds?.canOrder ? 0.26 : 0.2)
+          fillOpacity = targetIds?.canOrder ? 0.82 : 0.62
+        } else if (role === "reach") {
+          fill = paint.liftSoft
+          stroke = TARGET_OUTLINE.reach.color
+          strokeWidth = view.label * 0.14
+          fillOpacity = 0.68
+        } else if (role === "dim") {
+          fillOpacity = MAP_TARGET_STYLE.dim.opacity
+          fill = MAP_TARGET_STYLE.dim.fill
         }
         const tip = provinceHoverNote(province, targetHoverNote)
         const pathD = geometryPath(province.polygon)
@@ -248,15 +253,6 @@ export function SvgMap({
             >
               <title>{tip}</title>
             </path>
-            {hatch ? (
-              <path
-                d={pathD}
-                fill={hatch}
-                fillOpacity={0.55}
-                fillRule="evenodd"
-                pointerEvents="none"
-              />
-            ) : null}
           </g>
         )
       })}
@@ -274,68 +270,31 @@ export function SvgMap({
           ),
           selectedId,
         ).map((line) => {
-          const [from, to] = line.coordinates
+          const points = line.coordinates.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
           const color =
             line.side === "russia" ? RAIL_STYLE.russia : line.side === "cut" ? RAIL_STYLE.cut : RAIL_STYLE.central
-          const pair = line.side === "cut" ? null : parallelRails(from, to, view.label * 0.045)
+          const width = view.label * 0.048 * (line.hot ? line.hotWidthScale : 1)
+          const sleeperWidth = view.label * 0.09 * (line.hot ? line.hotWidthScale : 1)
           return (
             <g key={`${line.a}-${line.b}`} pointerEvents="none" opacity={line.side === "cut" ? 0.45 : 0.95}>
-              {line.hot && (
-                <line
-                  x1={from[0]}
-                  y1={-from[1]}
-                  x2={to[0]}
-                  y2={-to[1]}
-                  stroke={RAIL_STYLE.hot}
-                  strokeWidth={view.label * 0.28}
-                  strokeLinecap="round"
-                />
-              )}
               {line.side !== "cut" && (
-                <line
-                  x1={from[0]}
-                  y1={-from[1]}
-                  x2={to[0]}
-                  y2={-to[1]}
-                  stroke={RAIL_STYLE.tie}
-                  strokeWidth={view.label * 0.2}
-                  strokeDasharray={`${view.label * 0.07} ${view.label * 0.16}`}
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={RAIL_STYLE.sleeper}
+                  strokeWidth={sleeperWidth}
+                  strokeDasharray={`${view.label * 0.06} ${view.label * 0.2}`}
                   strokeLinecap="butt"
                 />
               )}
-              {pair ? (
-                <>
-                  <line
-                    x1={pair[0][0]}
-                    y1={-pair[0][1]}
-                    x2={pair[1][0]}
-                    y2={-pair[1][1]}
-                    stroke={color}
-                    strokeWidth={view.label * 0.045}
-                    strokeLinecap="butt"
-                  />
-                  <line
-                    x1={pair[2][0]}
-                    y1={-pair[2][1]}
-                    x2={pair[3][0]}
-                    y2={-pair[3][1]}
-                    stroke={color}
-                    strokeWidth={view.label * 0.045}
-                    strokeLinecap="butt"
-                  />
-                </>
-              ) : (
-                <line
-                  x1={from[0]}
-                  y1={-from[1]}
-                  x2={to[0]}
-                  y2={-to[1]}
-                  stroke={color}
-                  strokeWidth={view.label * 0.07}
-                  strokeDasharray={`${view.label * 0.14} ${view.label * 0.12}`}
-                  strokeLinecap="butt"
-                />
-              )}
+              <polyline
+                points={points}
+                fill="none"
+                stroke={color}
+                strokeWidth={width}
+                strokeLinecap="butt"
+                strokeDasharray={line.side === "cut" ? `${view.label * 0.12} ${view.label * 0.1}` : undefined}
+              />
             </g>
           )
         })}
@@ -383,11 +342,16 @@ export function SvgMap({
               x={x + offset[0]}
               y={y + offset[1]}
               textAnchor="middle"
-              fill={province.id === selectedId ? "#6a4b16" : "#241c14"}
+              fill={province.id === selectedId ? "#f6f1e4" : "#241c14"}
               fontSize={view.label}
               fontFamily="Georgia, serif"
               fontWeight={600}
-              style={{ textShadow: "0 1px 0 rgba(255,248,230,0.75)" }}
+              style={{
+                textShadow:
+                  province.id === selectedId
+                    ? "0 0 2px #241c14, 0 0 4px #241c14"
+                    : "0 1px 0 rgba(255,248,230,0.75)",
+              }}
             >
               {province.depot ? "◆ " : ""}
               {shortProvinceName(province.name)}
@@ -434,24 +398,6 @@ function labelOffset(id: string): [number, number] {
   return [Math.cos(angle) * radius, Math.sin(angle) * radius]
 }
 
-function parallelRails(
-  from: [number, number],
-  to: [number, number],
-  gap: number,
-): [[number, number], [number, number], [number, number], [number, number]] {
-  const dx = to[0] - from[0]
-  const dy = to[1] - from[1]
-  const length = Math.hypot(dx, dy) || 1
-  const ox = (-dy / length) * gap
-  const oy = (dx / length) * gap
-  return [
-    [from[0] + ox, from[1] + oy],
-    [to[0] + ox, to[1] + oy],
-    [from[0] - ox, from[1] - oy],
-    [to[0] - ox, to[1] - oy],
-  ]
-}
-
 function geometryOverlapsView(geometry: ProvinceGeometry): boolean {
   let minX = Infinity
   let minY = Infinity
@@ -480,29 +426,3 @@ function lineOverlapsView(line: number[][]): boolean {
   return maxX >= VIEW_BBOX[0] && minX <= VIEW_BBOX[2] && maxY >= VIEW_BBOX[1] && minY <= VIEW_BBOX[3]
 }
 
-function provinceFill(province: MapProvince, overlay: SvgMapProps["overlay"]): string {
-  if (overlay === "supply") return ramp(province.supply, "#7a2e2a", "#c6a15a", "#2d6a45", 45)
-  if (overlay === "unrest") return ramp(province.unrest, "#3e5348", "#d4a24c", "#8e2430", 50)
-  return province.controller === "central" ? "#4a6d90" : "#a85b49"
-}
-
-function ramp(value: number, low: string, mid: string, high: string, pivot: number): string {
-  if (value <= pivot) return mix(low, mid, pivot === 0 ? 1 : value / pivot)
-  return mix(mid, high, (value - pivot) / (100 - pivot))
-}
-
-function mix(from: string, to: string, t: number): string {
-  const amount = Math.min(1, Math.max(0, t))
-  const a = rgb(from)
-  const b = rgb(to)
-  const channel = (index: number) => Math.round(a[index] + (b[index] - a[index]) * amount)
-  return `rgb(${channel(0)} ${channel(1)} ${channel(2)})`
-}
-
-function rgb(hex: string): [number, number, number] {
-  return [
-    Number.parseInt(hex.slice(1, 3), 16),
-    Number.parseInt(hex.slice(3, 5), 16),
-    Number.parseInt(hex.slice(5, 7), 16),
-  ]
-}

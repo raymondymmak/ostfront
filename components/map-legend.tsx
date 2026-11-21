@@ -195,9 +195,8 @@ function RailSwatch({ color, broken = false }: { color: string; broken?: boolean
         />
       ) : (
         <>
-          <line x1="1" y1="5" x2="27" y2="5" stroke={RAIL_STYLE.tie} strokeWidth="5" strokeDasharray="1.2 3.2" />
-          <line x1="1" y1="3.6" x2="27" y2="3.6" stroke={color} strokeWidth="1" />
-          <line x1="1" y1="6.4" x2="27" y2="6.4" stroke={color} strokeWidth="1" />
+          <line x1="1" y1="5" x2="27" y2="5" stroke={RAIL_STYLE.sleeper} strokeWidth="2.4" strokeDasharray="1.4 4.2" />
+          <line x1="1" y1="5" x2="27" y2="5" stroke={color} strokeWidth="1.3" />
         </>
       )}
     </svg>

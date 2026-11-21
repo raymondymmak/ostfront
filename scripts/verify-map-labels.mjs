@@ -28,13 +28,25 @@ await page.screenshot({ path: "/tmp/map-after-pan.png", fullPage: false })
 const overlap = await page.evaluate(() => {
   const map = document.querySelector("[data-testid=war-map]")
   if (!map) return { ok: false, reason: "missing map" }
-  const mapRect = map.getBoundingClientRect()
-  const tags = [...document.querySelectorAll(".map-tag")]
-  const offenders = tags.filter((tag) => {
-    const rect = tag.getBoundingClientRect()
-    return rect.bottom > mapRect.bottom + 1 || rect.top < mapRect.top - 1
+  const markers = document.querySelectorAll(".maplibregl-marker")
+  if (markers.length) {
+    return { ok: false, reason: "html_markers_present", markerCount: markers.length }
+  }
+  const mapgl = window.__ostfrontMap
+  if (!mapgl) return { ok: false, reason: "missing map ref" }
+  const features = mapgl.queryRenderedFeatures(undefined, { layers: ["province-labels"] })
+  const offenders = features.filter((feature) => {
+    const el = mapgl.getCanvas().getBoundingClientRect()
+    const coords = feature.geometry?.coordinates
+    if (!coords) return false
+    const projected = mapgl.project(coords)
+    return projected.y > el.height + 2 || projected.y < -2
   })
-  return { ok: offenders.length === 0, offenders: offenders.length, tagCount: tags.length }
+  return {
+    ok: offenders.length === 0,
+    offenders: offenders.length,
+    labelCount: features.length,
+  }
 })
 console.log(JSON.stringify(overlap))
 await browser.close()

@@ -197,16 +197,6 @@
   overflow: hidden !important;
 }
 
-.map-stage .maplibregl-canvas {
-  opacity: 0 !important;
-}
-
-.map-stage .maplibregl-marker {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
 .maplibregl-ctrl-group {
   background: #f6f1e4 !important;
   border: 1px solid #3d342b !important;

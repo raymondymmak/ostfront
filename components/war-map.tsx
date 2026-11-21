@@ -21,19 +21,16 @@ import {
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
 import { listedStrength } from "@/lib/engine/echelon"
-import { shortProvinceName } from "@/lib/map/labels"
-import { applyMarkerFace, type MarkerFace } from "@/lib/map/marker-face"
-import { applyProvinceLabelOpacity } from "@/lib/map/province-label-zoom"
 import {
-  RAIL_FULL_ZOOM,
-  RAIL_HIDDEN_ZOOM,
-  RAIL_STYLE,
-  railFeatureCollection,
-  type RailEnd,
-} from "@/lib/map/rail-lines"
+  MAP_GLYPHS_URL,
+  provinceCounterCollection,
+  provinceLabelCollection,
+} from "@/lib/map/province-label-layers"
+import { provincePaintProperties } from "@/lib/map/province-paint"
+import { applyProvinceRoles, installWarMapLayers } from "@/lib/map/war-map-layers"
+import { railFeatureCollection, type RailEnd } from "@/lib/map/rail-lines"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
-import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 
 export type MapProvince = Province & {
   polygon: ProvinceGeometry
@@ -59,7 +56,7 @@ type WarMapProps = MapInput & {
   flashIds: string[]
   /** Coach / teaching highlights anchored to province ids (not screen pixels). */
   coachHighlightIds?: string[]
-  targetIds?: { move: string[]; attack: string[] }
+  targetIds?: { move: string[]; attack: string[]; canOrder: boolean }
   targetHoverNote?: (provinceId: string, base: string) => string
   onOverlay: (overlay: Overlay) => void
 }
@@ -84,15 +81,13 @@ export function WarMap({
   onOverlay,
 }: WarMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const blitRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
-  const blitFrameRef = useRef<number | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<string | null>(null)
   const [showRails, setShowRails] = useState(true)
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
+  const targetIdsRef = useRef(targetIds)
   const propsRef = useRef<Snapshot>({
     provinces,
     selectedId,
@@ -128,11 +123,11 @@ export function WarMap({
           [WORLD_BBOX[2], WORLD_BBOX[3]],
         ],
         canvasContextAttributes: {
-          preserveDrawingBuffer: true,
           failIfMajorPerformanceCaveat: false,
         },
         style: {
           version: 8,
+          glyphs: MAP_GLYPHS_URL,
           sources: {},
           layers: [
             {
@@ -172,297 +167,9 @@ export function WarMap({
       map.addSource("order-ends", { type: "geojson", data: emptyCollection() })
       map.addSource("preview", { type: "geojson", data: emptyCollection() })
       map.addSource("rails", { type: "geojson", data: emptyCollection() })
-      map.addLayer({
-        id: "sea",
-        type: "fill",
-        source: "sea",
-        paint: {
-          "fill-color": "#4f7f9d",
-          "fill-opacity": 1,
-        },
-      })
-      map.addLayer({
-        id: "land",
-        type: "fill",
-        source: "land",
-        paint: {
-          "fill-color": "#8f9699",
-          "fill-opacity": 0.98,
-        },
-      })
-      map.addLayer({
-        id: "backdrop",
-        type: "fill",
-        source: "backdrop",
-        paint: {
-          "fill-color": [
-            "match",
-            ["get", "owner"],
-            ...Object.entries(BACKDROP_OWNER_COLOR).flat(),
-            "#b4b2ae",
-          ] as unknown as maplibregl.ExpressionSpecification,
-          "fill-opacity": 0.96,
-        },
-      })
-      map.addLayer({
-        id: "backdrop-border",
-        type: "line",
-        source: "backdrop",
-        paint: {
-          "line-color": "#6a7278",
-          "line-width": 0.55,
-          "line-opacity": 0.9,
-        },
-      })
-      map.addLayer({
-        id: "country-borders",
-        type: "line",
-        source: "country-borders",
-        paint: {
-          "line-color": "#2a3034",
-          "line-width": 1.35,
-          "line-opacity": 0.92,
-        },
-      })
-      map.addLayer({
-        id: "backdrop-labels",
-        type: "symbol",
-        source: "backdrop-label-points",
-        layout: {
-          "text-field": ["get", "name"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 10, 7.5, 13],
-          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
-          "text-letter-spacing": 0.06,
-          "text-allow-overlap": false,
-          "text-optional": true,
-        },
-        paint: {
-          "text-color": "#3f464b",
-          "text-halo-color": "#e2e6e8",
-          "text-halo-width": 1.4,
-          "text-opacity": 0.72,
-        },
-      })
-      map.addLayer({
-        id: "state-labels",
-        type: "symbol",
-        source: "state-labels",
-        minzoom: 7.5,
-        layout: {
-          "text-field": ["get", "name"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 7.5, 9, 10, 13],
-          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
-          "text-padding": 2,
-          "text-allow-overlap": false,
-          "text-optional": true,
-        },
-        paint: {
-          "text-color": "#3a4146",
-          "text-halo-color": "#e4e7e8",
-          "text-halo-width": 1.1,
-          "text-opacity": 0.88,
-        },
-      })
-      map.addLayer({
-        id: "rivers",
-        type: "line",
-        source: "rivers",
-        paint: {
-          "line-color": "#4a7a9a",
-          "line-width": 1.6,
-          "line-opacity": 0.75,
-        },
-      })
-      map.addLayer({
-        id: "provinces",
-        type: "fill",
-        source: "provinces",
-        paint: {
-          "fill-color": controllerColor(),
-          "fill-opacity": [
-            "case",
-            ["boolean", ["feature-state", "hover"], false],
-            0.96,
-            0.9,
-          ],
-        },
-      })
-      map.addLayer({
-        id: "target-dim",
-        type: "fill",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: { "fill-color": MAP_TARGET_STYLE.dim.fill, "fill-opacity": 0 },
-      })
-      map.addLayer({
-        id: "flash",
-        type: "fill",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: { "fill-color": "#f3e2a8", "fill-opacity": 0 },
-      })
-      map.addLayer({
-        id: "coach-highlight",
-        type: "fill",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
-      })
-      map.addLayer({
-        id: "move-target",
-        type: "fill",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: {
-          "fill-color": MAP_TARGET_STYLE.move.fill,
-          "fill-opacity": MAP_TARGET_STYLE.move.fillOpacity,
-        },
-      })
-      map.addLayer({
-        id: "attack-target",
-        type: "fill",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: {
-          "fill-color": MAP_TARGET_STYLE.attack.fill,
-          "fill-opacity": MAP_TARGET_STYLE.attack.fillOpacity,
-        },
-      })
-      map.addLayer({
-        id: "move-target-outline",
-        type: "line",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: {
-          "line-color": MAP_TARGET_STYLE.move.outline,
-          "line-width": MAP_TARGET_STYLE.move.outlineWidth,
-          "line-opacity": 0.95,
-        },
-      })
-      map.addLayer({
-        id: "attack-target-outline",
-        type: "line",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: {
-          "line-color": MAP_TARGET_STYLE.attack.outline,
-          "line-width": MAP_TARGET_STYLE.attack.outlineWidth,
-          "line-opacity": 0.95,
-        },
-      })
-      map.addLayer({
-        id: "borders",
-        type: "line",
-        source: "provinces",
-        paint: {
-          "line-color": [
-            "match",
-            ["get", "controller"],
-            "central",
-            "#1c3348",
-            "russia",
-            "#5c261c",
-            "#2a2118",
-          ],
-          "line-width": 1.3,
-        },
-      })
-      map.addLayer({
-        id: "rail-hot",
-        type: "line",
-        source: "rails",
-        filter: ["==", ["get", "hot"], true],
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: {
-          "line-color": RAIL_STYLE.hot,
-          "line-width": railWidth(7.2, 11),
-          "line-opacity": railFade(),
-        },
-      })
-      map.addLayer({
-        id: "rail-ties",
-        type: "line",
-        source: "rails",
-        filter: ["!=", ["get", "side"], "cut"],
-        layout: { "line-cap": "butt", "line-join": "round" },
-        paint: {
-          "line-color": RAIL_STYLE.tie,
-          "line-width": railWidth(5.2, 8),
-          "line-dasharray": [0.18, 0.85],
-          "line-opacity": railFade(),
-        },
-      })
-      map.addLayer({
-        id: "rail-track",
-        type: "line",
-        source: "rails",
-        filter: ["!=", ["get", "side"], "cut"],
-        layout: { "line-cap": "butt", "line-join": "round" },
-        paint: {
-          "line-color": [
-            "match",
-            ["get", "side"],
-            "central",
-            RAIL_STYLE.central,
-            "russia",
-            RAIL_STYLE.russia,
-            RAIL_STYLE.cut,
-          ],
-          "line-width": railWidth(1.05, 1.7),
-          "line-gap-width": railWidth(2.1, 3.4),
-          "line-opacity": railFade(),
-        },
-      })
-      map.addLayer({
-        id: "rail-cut",
-        type: "line",
-        source: "rails",
-        filter: ["==", ["get", "side"], "cut"],
-        layout: { "line-cap": "butt", "line-join": "round" },
-        paint: {
-          "line-color": RAIL_STYLE.cut,
-          "line-width": railWidth(1.7, 2.6),
-          "line-dasharray": [1.1, 0.85],
-          "line-opacity": railFade(0.45),
-        },
-      })
-      map.addLayer({
-        id: "selected",
-        type: "line",
-        source: "provinces",
-        filter: ["==", ["get", "id"], ""],
-        paint: { "line-color": "#f3e2a8", "line-width": 3.4 },
-      })
-      map.addLayer({
-        id: "orders",
-        type: "line",
-        source: "orders",
-        paint: {
-          "line-color": ["match", ["get", "kind"], "attack", "#8e2a22", "#1d4e79"],
-          "line-width": 3,
-        },
-      })
-      map.addLayer({
-        id: "order-ends",
-        type: "circle",
-        source: "order-ends",
-        paint: {
-          "circle-radius": 5,
-          "circle-color": ["match", ["get", "kind"], "attack", "#8e2a22", "#1d4e79"],
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#f6f1e4",
-        },
-      })
-      map.addLayer({
-        id: "preview",
-        type: "line",
-        source: "preview",
-        paint: {
-          "line-color": "#6a4b16",
-          "line-width": 2.4,
-          "line-dasharray": [1.2, 0.8],
-        },
-      })
+      map.addSource("province-label-points", { type: "geojson", data: emptyCollection() })
+      map.addSource("province-counters", { type: "geojson", data: emptyCollection() })
+      installWarMapLayers(map, BACKDROP_OWNER_COLOR)
       let hovered: string | number | null = null
       map.on("mousemove", "provinces", (event: maplibregl.MapLayerMouseEvent) => {
         map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : "pointer"
@@ -499,15 +206,6 @@ export function WarMap({
           hovered = null
         }
       })
-
-      const scheduleBlit = () => {
-        if (blitFrameRef.current !== null) return
-        blitFrameRef.current = requestAnimationFrame(() => {
-          blitFrameRef.current = null
-          blitMap(map, blitRef.current)
-        })
-      }
-      map.on("render", scheduleBlit)
 
       let startId: string | null = null
       const preview = () => map.getSource("preview") as maplibregl.GeoJSONSource
@@ -577,27 +275,21 @@ export function WarMap({
       }
 
       loadedRef.current = true
-      map.on("zoom", () => paintProvinceLabels(map, markersRef.current))
-      syncMap(map, propsRef.current, markersRef.current, fittedRef)
-      map.once("idle", () => blitMap(map, blitRef.current))
+      syncMap(map, propsRef.current, fittedRef, targetIdsRef.current)
     })
 
     const observer = new ResizeObserver(() => {
       map.resize()
       if (loadedRef.current) {
-        syncMap(map, propsRef.current, markersRef.current, fittedRef)
+        syncMap(map, propsRef.current, fittedRef, targetIdsRef.current)
       }
     })
     observer.observe(container.parentElement ?? container)
 
-    const markers = markersRef.current
     return () => {
       observer.disconnect()
-      if (blitFrameRef.current !== null) cancelAnimationFrame(blitFrameRef.current)
       loadedRef.current = false
       fittedRef.current = false
-      markers.forEach((marker) => marker.remove())
-      markers.clear()
       if (typeof window !== "undefined") {
         delete (window as Window & { __ostfrontMap?: maplibregl.Map }).__ostfrontMap
       }
@@ -614,6 +306,10 @@ export function WarMap({
   }, [failed])
 
   useEffect(() => {
+    targetIdsRef.current = targetIds
+  }, [targetIds])
+
+  useEffect(() => {
     propsRef.current = {
       provinces,
       selectedId,
@@ -627,43 +323,10 @@ export function WarMap({
     }
     const map = mapRef.current
     if (!map || !loadedRef.current) return
-    syncMap(map, propsRef.current, markersRef.current, fittedRef)
-    map.once("idle", () => blitMap(map, blitRef.current))
+    syncMap(map, propsRef.current, fittedRef, targetIds)
     if (orderMode) map.dragPan.disable()
     else map.dragPan.enable()
-  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote])
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !loadedRef.current || !map.getLayer("move-target")) return
-    const move = targetIds?.move ?? []
-    const attack = targetIds?.attack ?? []
-    const active = move.length > 0 || attack.length > 0
-    const moveLit = move.length ? move : ["__none__"]
-    const attackLit = attack.length ? attack : ["__none__"]
-    map.setFilter("move-target", ["in", ["get", "id"], ["literal", moveLit]])
-    map.setFilter("attack-target", ["in", ["get", "id"], ["literal", attackLit]])
-    map.setPaintProperty("move-target", "fill-opacity", move.length ? MAP_TARGET_STYLE.move.fillOpacity : 0)
-    map.setPaintProperty("attack-target", "fill-opacity", attack.length ? MAP_TARGET_STYLE.attack.fillOpacity : 0)
-    if (map.getLayer("move-target-outline")) {
-      map.setFilter("move-target-outline", ["in", ["get", "id"], ["literal", moveLit]])
-      map.setPaintProperty("move-target-outline", "line-opacity", move.length ? 0.95 : 0)
-    }
-    if (map.getLayer("attack-target-outline")) {
-      map.setFilter("attack-target-outline", ["in", ["get", "id"], ["literal", attackLit]])
-      map.setPaintProperty("attack-target-outline", "line-opacity", attack.length ? 0.95 : 0)
-    }
-    if (map.getLayer("target-dim")) {
-      if (active) {
-        const bright = [...new Set([...(selectedId ? [selectedId] : []), ...move, ...attack])]
-        map.setFilter("target-dim", ["!", ["in", ["get", "id"], ["literal", bright]]])
-        map.setPaintProperty("target-dim", "fill-opacity", MAP_TARGET_STYLE.dim.opacity)
-      } else {
-        map.setFilter("target-dim", ["==", ["get", "id"], "__none__"])
-        map.setPaintProperty("target-dim", "fill-opacity", 0)
-      }
-    }
-  }, [targetIds, selectedId])
+  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote, targetIds])
 
   useEffect(() => {
     const map = mapRef.current
@@ -714,7 +377,7 @@ export function WarMap({
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
       data-map-targets={
         targetIds
-          ? `move:${targetIds.move.join(",")};attack:${targetIds.attack.join(",")}`
+          ? `move:${targetIds.move.join(",")};attack:${targetIds.attack.join(",")};order:${targetIds.canOrder}`
           : undefined
       }
     >
@@ -734,10 +397,7 @@ export function WarMap({
         />
       ) : (
         <div className="map-stage absolute inset-0">
-          <canvas ref={blitRef} className="pointer-events-none absolute inset-0 z-0 h-full w-full" />
-          <div className="absolute inset-0 z-10 h-full w-full overflow-hidden">
-            <div ref={containerRef} className="h-full w-full" />
-          </div>
+          <div ref={containerRef} className="h-full w-full" />
         </div>
       )}
       {hoverTip && !failed && (
@@ -767,15 +427,17 @@ export function WarMap({
 function syncMap(
   map: maplibregl.Map,
   snapshot: Snapshot,
-  markers: Map<string, maplibregl.Marker>,
   fitted: { current: boolean },
+  targetIds: WarMapProps["targetIds"],
 ) {
   const rivers = map.getSource("rivers") as maplibregl.GeoJSONSource | undefined
   const provinces = map.getSource("provinces") as maplibregl.GeoJSONSource | undefined
   const orders = map.getSource("orders") as maplibregl.GeoJSONSource | undefined
   const ends = map.getSource("order-ends") as maplibregl.GeoJSONSource | undefined
   const rails = map.getSource("rails") as maplibregl.GeoJSONSource | undefined
-  if (!rivers || !provinces || !orders || !ends || !rails) return
+  const labelPoints = map.getSource("province-label-points") as maplibregl.GeoJSONSource | undefined
+  const counters = map.getSource("province-counters") as maplibregl.GeoJSONSource | undefined
+  if (!rivers || !provinces || !orders || !ends || !rails || !labelPoints || !counters) return
 
   rivers.setData({
     type: "FeatureCollection",
@@ -796,6 +458,7 @@ function syncMap(
     hasGeometry = true
     const strength = listedStrength(province.units)
     eachCoord(province.polygon, (coord) => bounds.extend(coord))
+    const paint = provincePaintProperties(province, snapshot.overlay)
     features.push({
       type: "Feature",
       id: province.id,
@@ -806,35 +469,15 @@ function syncMap(
         supply: province.supply,
         unrest: province.unrest,
         strength,
+        ...paint,
       },
       geometry: province.polygon,
     })
   }
   provinces.setData({ type: "FeatureCollection", features })
 
-  const seen = new Set<string>()
-  for (const province of snapshot.provinces) {
-    if (!geometryValid(province.polygon)) continue
-    seen.add(province.id)
-    const face = markerFace(province, snapshot.selectedId)
-    const existing = markers.get(province.id)
-    if (existing) {
-      applyMarkerFace(existing.getElement(), face)
-      existing.setLngLat(province.centroid)
-    } else {
-      const element = document.createElement("div")
-      applyMarkerFace(element, face)
-      markers.set(
-        province.id,
-        new maplibregl.Marker({ element, anchor: "center" }).setLngLat(province.centroid).addTo(map),
-      )
-    }
-  }
-  for (const [id, marker] of markers) {
-    if (seen.has(id)) continue
-    marker.remove()
-    markers.delete(id)
-  }
+  labelPoints.setData(provinceLabelCollection(snapshot.provinces, snapshot.selectedId))
+  counters.setData(provinceCounterCollection(snapshot.provinces))
 
   const byId = new Map(snapshot.provinces.map((province) => [province.id, province]))
   const lines: GeoJSON.Feature[] = []
@@ -868,20 +511,15 @@ function syncMap(
   }))
   rails.setData(railFeatureCollection(railEnds, snapshot.selectedId))
   const railVisibility = snapshot.showRails ? "visible" : "none"
-  for (const id of ["rail-hot", "rail-ties", "rail-track", "rail-cut"]) {
+  for (const id of ["rail-sleepers", "rail-track", "rail-cut"]) {
     if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", railVisibility)
   }
 
-  if (map.getLayer("provinces")) {
-    map.setPaintProperty(
-      "provinces",
-      "fill-color",
-      snapshot.overlay === "none" ? controllerColor() : heatColor(snapshot.overlay),
-    )
-  }
   if (map.getLayer("selected")) {
-    map.setFilter("selected", ["==", ["get", "id"], snapshot.selectedId ?? ""])
+    map.setFilter("selected", ["==", ["get", "id"], snapshot.selectedId ?? "__none__"])
   }
+
+  applyProvinceRoles(map, snapshot.provinces, targetIds, snapshot.selectedId)
 
   if (hasGeometry && !fitted.current) {
     map.resize()
@@ -894,9 +532,6 @@ function syncMap(
         zoom: urlView.zoom ?? 6.5,
       })
     } else {
-      // Fit the playable frame, then apply the same maxBounds clamp main uses
-      // so the opening center and zoom match. World bounds go back afterwards
-      // so the player can still pan out to the rest of the map.
       map.fitBounds(bounds, { padding: 28, animate: false, maxZoom: 8.2 })
       map.setMaxBounds([
         [VIEW_BBOX[0], VIEW_BBOX[1]],
@@ -913,7 +548,6 @@ function syncMap(
     fitted.current = true
     map.resize()
   }
-  paintProvinceLabels(map, markers)
 }
 
 function readMapViewFromUrl(): {
@@ -946,66 +580,12 @@ function readMapViewFromUrl(): {
   return {}
 }
 
-function paintProvinceLabels(map: maplibregl.Map, markers: Map<string, maplibregl.Marker>) {
-  const zoom = map.getZoom()
-  for (const marker of markers.values()) applyProvinceLabelOpacity(marker, zoom)
-}
-
-function markerFace(province: MapProvince, selectedId: string | null): MarkerFace {
-  const strength = listedStrength(province.units)
-  const faction = province.controller === "central" ? "Central Powers" : "Russia"
-  const badge = strength
-    ? `<div class="map-badge ${province.controller}" title="Total unit strength: ${strength} (${faction})">${strength}</div>`
-    : ""
-  return {
-    className: ["map-tag", province.id === selectedId ? "is-selected" : "", province.depot ? "is-depot" : ""]
-      .filter(Boolean)
-      .join(" "),
-    innerHTML: `<div class="map-tag-name">${province.vp ? "★ " : ""}${escapeHtml(shortProvinceName(province.name))}</div>${badge}`,
-    provinceId: province.id,
-    lng: province.centroid[0],
-    lat: province.centroid[1],
-  }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-}
-
-function blitMap(map: maplibregl.Map, target: HTMLCanvasElement | null) {
-  if (!target) return
-  const source = map.getCanvas()
-  const gl = source.getContext("webgl2") || source.getContext("webgl")
-  if (!gl || source.width < 2 || source.height < 2) return
-  const width = source.width
-  const height = source.height
-  const pixels = new Uint8Array(width * height * 4)
-  gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
-  const center = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4
-  if (pixels[center + 3] < 16) return
-  if (target.width !== width) target.width = width
-  if (target.height !== height) target.height = height
-  const context = target.getContext("2d")
-  if (!context) return
-  const image = context.createImageData(width, height)
-  for (let y = 0; y < height; y++) {
-    const row = (height - 1 - y) * width * 4
-    image.data.set(pixels.subarray(row, row + width * 4), y * width * 4)
-  }
-  context.putImageData(image, 0, 0)
-}
-
 function webglPaints(): boolean {
   try {
     const canvas = document.createElement("canvas")
     canvas.width = 16
     canvas.height = 16
-    const gl =
-      canvas.getContext("webgl2", { preserveDrawingBuffer: true }) ||
-      canvas.getContext("webgl", { preserveDrawingBuffer: true })
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl")
     if (!gl) return false
     gl.clearColor(0.43, 0.56, 0.64, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
@@ -1079,61 +659,3 @@ function stateLabelCollection(): GeoJSON.FeatureCollection {
 function emptyCollection(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] }
 }
-
-function railFade(scale = 1): maplibregl.ExpressionSpecification {
-  return [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    RAIL_HIDDEN_ZOOM,
-    0,
-    RAIL_FULL_ZOOM,
-    scale,
-  ]
-}
-
-function railWidth(atOpening: number, atClose: number): maplibregl.ExpressionSpecification {
-  return [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    RAIL_HIDDEN_ZOOM,
-    0,
-    RAIL_FULL_ZOOM,
-    atOpening,
-    8.4,
-    atClose,
-  ]
-}
-
-function controllerColor(): maplibregl.ExpressionSpecification {
-  return ["match", ["get", "controller"], "central", "#4a6d90", "russia", "#a85b49", "#888888"]
-}
-
-function heatColor(field: "supply" | "unrest"): maplibregl.ExpressionSpecification {
-  if (field === "supply") {
-    return [
-      "interpolate",
-      ["linear"],
-      ["get", "supply"],
-      0,
-      "#7a2e2a",
-      45,
-      "#c6a15a",
-      100,
-      "#2d6a45",
-    ]
-  }
-  return [
-    "interpolate",
-    ["linear"],
-    ["get", "unrest"],
-    0,
-    "#3e5348",
-    50,
-    "#d4a24c",
-    100,
-    "#8e2430",
-  ]
-}
-

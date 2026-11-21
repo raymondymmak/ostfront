@@ -44,6 +44,20 @@ Browser updates map, optional Log drawer chronicle, clears order queue
 
 Stack: Next.js App Router, React client components for the game shell, server routes for adjudication. Map rendering uses MapLibre (`components/war-map.tsx`, worker in `public/maplibre-gl-worker.mjs`).
 
+### Map rendering (`components/war-map.tsx`)
+
+| Piece | Role |
+| --- | --- |
+| `lib/map/province-label-layers.ts` | GeoJSON for `province-labels` / `province-counters`, glyph URL, counter pill image |
+| `lib/map/war-map-layers.ts` | Layer stack: rails under borders, symbol labels above selection outline, feature-state `role` fills |
+| `lib/map/province-paint.ts` | Shared fill/lift/`roleFor` for MapLibre and `components/svg-map.tsx` fallback |
+| `lib/map/rail-lines.ts` + `shared-border.ts` | Rail paths via shared-border midpoints, not anchor-to-anchor chords |
+| `lib/ui/legal-targets.ts` | `reach` + `canOrder`; Russian provinces get reach hints without orders |
+| `lib/ui/selection.ts` | Click-toggle and Escape deselect in `game-app.tsx` / `teaching-app.tsx` |
+| `public/fonts/` | Self-hosted MapLibre glyph PBFs (Noto Serif, Open Sans) |
+
+Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints directly (no canvas blit). ADR 009.
+
 ---
 
 ## Turn flow (campaign)

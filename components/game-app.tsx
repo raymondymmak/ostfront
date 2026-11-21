@@ -27,6 +27,7 @@ import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { applyAdvisorToQueue, leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
+import { toggleSelection } from "@/lib/ui/selection"
 import { selectNewsEvents } from "@/lib/news/select"
 import type { NewsEvent } from "@/lib/news/types"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
@@ -37,7 +38,7 @@ export function GameApp() {
   const [game, setGame] = useState<SaveGame>(() => loadGame() ?? freshGame())
   const [setupOpen, setSetupOpen] = useState(() => loadGame() === null)
   const [difficulty, setDifficulty] = useState<Difficulty>("normal")
-  const [selectedId, setSelectedId] = useState("krakow")
+  const [selectedId, setSelectedId] = useState<string | null>("krakow")
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
   const [orderMode, setOrderMode] = useState(false)
   const [directive, setDirective] = useState("")
@@ -139,9 +140,25 @@ export function GameApp() {
   const finished = ordersLocked(Boolean(game.state.result))
   const phase = finalePhase(finished, resultOpen)
   const mapTargets = useMemo(() => {
-    if (finished || !selected || selected.controller !== "central") return null
+    if (finished || !selected) return null
     return legalTargets(game.state, selected.id, queue)
   }, [finished, selected, game.state, queue])
+
+  const selectProvince = useCallback((id: string) => {
+    setSelectedId((current) => toggleSelection(current, id))
+  }, [])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      if (newsQueue.length > 0) return
+      if (logOpen) return
+      if (setupOpen || advisorOpen || resultOpen) return
+      setSelectedId(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [newsQueue.length, logOpen, setupOpen, advisorOpen, resultOpen])
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
     if (ordersLocked(Boolean(game.state.result))) return
@@ -489,8 +506,15 @@ export function GameApp() {
             flashIds={flash}
             orderMode={orderMode && !finished}
             targetIds={
-              mapTargets && (mapTargets.move.length || mapTargets.attack.length)
-                ? { move: mapTargets.move, attack: mapTargets.attack }
+              mapTargets &&
+              (mapTargets.canOrder
+                ? mapTargets.move.length + mapTargets.attack.length > 0
+                : mapTargets.reach.move.length + mapTargets.reach.attack.length > 0)
+                ? {
+                    move: mapTargets.canOrder ? mapTargets.move : mapTargets.reach.move,
+                    attack: mapTargets.canOrder ? mapTargets.attack : mapTargets.reach.attack,
+                    canOrder: mapTargets.canOrder,
+                  }
                 : undefined
             }
             targetHoverNote={
@@ -501,7 +525,7 @@ export function GameApp() {
                   }
                 : undefined
             }
-            onSelect={setSelectedId}
+            onSelect={selectProvince}
             onDraw={addArrow}
             onOverlay={setOverlay}
           />
@@ -576,7 +600,7 @@ export function GameApp() {
                   if (newsQueue.length) return
                   void endTurn()
                 }}
-                onSelect={setSelectedId}
+                onSelect={selectProvince}
               />
             </TabsContent>
             <TabsContent value="front" className="min-h-0 flex-1">
@@ -584,7 +608,7 @@ export function GameApp() {
                 state={game.state}
                 province={selected}
                 budget={budget}
-                onSelect={setSelectedId}
+                onSelect={selectProvince}
                 onOrder={addArrow}
                 onFortify={fortify}
                 onRecruit={recruit}

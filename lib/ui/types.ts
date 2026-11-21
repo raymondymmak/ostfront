@@ -7,8 +7,14 @@ export type LegalTargetBlock = {
 
 export type LegalTargets = {
   from: string
+  /** Legal march targets when `canOrder`; otherwise empty. */
   move: string[]
+  /** Legal assault targets when `canOrder`; otherwise empty. */
   attack: string[]
+  /** Neighbor highlights when orders are not available (reach preview). */
+  reach: { move: string[]; attack: string[] }
+  /** Central-held province with supply, formations, and permission to queue arrows. */
+  canOrder: boolean
   blocked: LegalTargetBlock[]
   /** Legal targets that would empty a depot garrison without Ctrl+commit-all. */
   depotWarn: LegalTargetBlock[]

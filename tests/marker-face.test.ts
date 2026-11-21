@@ -56,9 +56,9 @@ describe("province marker faces", () => {
     expect(marker.style.position).toBe("absolute")
   })
 
-  it("does not assign marker className in the map component", () => {
+  it("is legacy DOM support only; the live map uses MapLibre symbol layers", () => {
     const source = readFileSync("components/war-map.tsx", "utf8")
-    expect(source).toContain("applyMarkerFace")
-    expect(source).not.toMatch(/\.className\s*=/)
+    expect(source).not.toContain("applyMarkerFace")
+    expect(source).toContain("province-label-points")
   })
 })

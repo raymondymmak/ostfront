@@ -9,6 +9,7 @@ import { TeachPanel } from "@/components/teach-panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { WarMap, type MapProvince } from "@/components/war-map"
+import { toggleSelection } from "@/lib/ui/selection"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { spendable } from "@/lib/engine/economy"
@@ -35,7 +36,7 @@ export function TeachingApp() {
   const [priorAttemptId, setPriorAttemptId] = useState<string | null>(null)
   const [beliefRecall, setBeliefRecall] = useState<{ summary: string; question: string } | null>(null)
   const [state, setState] = useState<GameState | null>(null)
-  const [selectedId, setSelectedId] = useState("lublin")
+  const [selectedId, setSelectedId] = useState<string | null>("lublin")
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
   const [orderMode, setOrderMode] = useState(true)
   const [queue, setQueue] = useState<QueuedOrder[]>([])
@@ -362,7 +363,7 @@ export function TeachingApp() {
             flashIds={flash}
             coachHighlightIds={coachHighlightIds}
             orderMode={orderMode && !feedback}
-            onSelect={setSelectedId}
+            onSelect={(id) => setSelectedId((current) => toggleSelection(current, id))}
             onDraw={addArrow}
             onOverlay={setOverlay}
           />
