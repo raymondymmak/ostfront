@@ -10,20 +10,24 @@ import {
   RAIL_STYLE,
 } from "@/lib/map/rail-lines"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
-import { roleFor } from "@/lib/map/province-paint"
 import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 import type * as maplibregl from "maplibre-gl"
 
+/**
+ * Target role is a GeoJSON property (`role`), not feature-state.
+ * Feature-state is cleared / raced by `GeoJSONSource.setData`; hover still uses feature-state.
+ */
 export function provinceFillColor(): maplibregl.ExpressionSpecification {
   return [
-    "case",
-    ["==", ["feature-state", "role"], "dim"],
+    "match",
+    ["get", "role"],
+    "dim",
     MAP_TARGET_STYLE.dim.fill,
-    ["==", ["feature-state", "role"], "reach"],
+    "reach",
     ["get", "liftSoft"],
-    ["==", ["feature-state", "role"], "move"],
+    "move",
     ["get", "lift"],
-    ["==", ["feature-state", "role"], "attack"],
+    "attack",
     ["get", "lift"],
     ["get", "fill"],
   ]
@@ -34,10 +38,12 @@ export function provinceFillOpacity(): maplibregl.ExpressionSpecification {
     "case",
     ["boolean", ["feature-state", "hover"], false],
     0.96,
-    ["==", ["feature-state", "role"], "dim"],
+    ["==", ["get", "role"], "dim"],
     MAP_TARGET_STYLE.dim.opacity,
-    ["==", ["feature-state", "role"], "reach"],
-    0.68,
+    ["==", ["get", "role"], "reach"],
+    0.72,
+    ["any", ["==", ["get", "role"], "move"], ["==", ["get", "role"], "attack"]],
+    0.94,
     0.9,
   ]
 }
@@ -237,7 +243,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     paint: {
       "line-color": [
         "match",
-        ["feature-state", "role"],
+        ["get", "role"],
         "attack",
         TARGET_OUTLINE.attack.color,
         "move",
@@ -248,7 +254,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
       ],
       "line-width": [
         "match",
-        ["feature-state", "role"],
+        ["get", "role"],
         "attack",
         TARGET_OUTLINE.attack.width,
         "move",
@@ -259,7 +265,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
       ],
       "line-opacity": [
         "match",
-        ["feature-state", "role"],
+        ["get", "role"],
         "attack",
         TARGET_OUTLINE.attack.opacity,
         "move",
@@ -368,21 +374,5 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
 
   if (!map.hasImage("counter-pill")) {
     map.addImage("counter-pill", createCounterPillImage(), { pixelRatio: 1 })
-  }
-}
-
-/** Write feature-state roles for province target painting. */
-export function applyProvinceRoles(
-  map: maplibregl.Map,
-  provinces: { id: string }[],
-  targetIds: { move: string[]; attack: string[]; canOrder: boolean } | undefined,
-  selectedId: string | null,
-) {
-  const paintInput = targetIds
-    ? { move: targetIds.move, attack: targetIds.attack, canOrder: targetIds.canOrder }
-    : undefined
-  for (const province of provinces) {
-    const role = roleFor(province.id, paintInput, selectedId)
-    map.setFeatureState({ source: "provinces", id: province.id }, { role })
   }
 }

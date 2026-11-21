@@ -19,7 +19,7 @@ import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
 import { provinceHoverNote } from "@/lib/ui/map-hover"
-import { provincePaintProperties, roleFor } from "@/lib/map/province-paint"
+import { provincePaintProperties, resolvedFill, roleFor } from "@/lib/map/province-paint"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
 import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 
@@ -200,29 +200,25 @@ export function SvgMap({
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
         const role = roleFor(province.id, paintTargets, selectedId)
-        const paint = provincePaintProperties(province, overlay)
+        const paint = provincePaintProperties(province, overlay, role)
         let stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
         let strokeWidth = selected ? view.label * 0.22 : view.label * 0.08
-        let fill = paint.fill
+        const fill = resolvedFill(paint, role)
         let fillOpacity: number | undefined
         if (role === "attack") {
-          fill = paint.lift
           stroke = TARGET_OUTLINE.attack.color
           strokeWidth = view.label * (targetIds?.canOrder ? 0.26 : 0.2)
-          fillOpacity = targetIds?.canOrder ? 0.82 : 0.62
+          fillOpacity = 0.94
         } else if (role === "move") {
-          fill = paint.lift
           stroke = TARGET_OUTLINE.move.color
           strokeWidth = view.label * (targetIds?.canOrder ? 0.26 : 0.2)
-          fillOpacity = targetIds?.canOrder ? 0.82 : 0.62
+          fillOpacity = 0.94
         } else if (role === "reach") {
-          fill = paint.liftSoft
           stroke = TARGET_OUTLINE.reach.color
           strokeWidth = view.label * 0.14
-          fillOpacity = 0.68
+          fillOpacity = 0.72
         } else if (role === "dim") {
           fillOpacity = MAP_TARGET_STYLE.dim.opacity
-          fill = MAP_TARGET_STYLE.dim.fill
         }
         const tip = provinceHoverNote(province, targetHoverNote)
         const pathD = geometryPath(province.polygon)

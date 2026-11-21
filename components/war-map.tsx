@@ -26,8 +26,8 @@ import {
   provinceCounterCollection,
   provinceLabelCollection,
 } from "@/lib/map/province-label-layers"
-import { provincePaintProperties } from "@/lib/map/province-paint"
-import { applyProvinceRoles, installWarMapLayers } from "@/lib/map/war-map-layers"
+import { provincePaintProperties, roleFor } from "@/lib/map/province-paint"
+import { installWarMapLayers } from "@/lib/map/war-map-layers"
 import { railFeatureCollection, type RailEnd } from "@/lib/map/rail-lines"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
@@ -162,7 +162,7 @@ export function WarMap({
       map.addSource("backdrop-label-points", { type: "geojson", data: countryLabelCollection() })
       map.addSource("state-labels", { type: "geojson", data: stateLabelCollection() })
       map.addSource("rivers", { type: "geojson", data: emptyCollection() })
-      map.addSource("provinces", { type: "geojson", data: emptyCollection() })
+      map.addSource("provinces", { type: "geojson", data: emptyCollection(), promoteId: "id" })
       map.addSource("orders", { type: "geojson", data: emptyCollection() })
       map.addSource("order-ends", { type: "geojson", data: emptyCollection() })
       map.addSource("preview", { type: "geojson", data: emptyCollection() })
@@ -448,6 +448,9 @@ function syncMap(
     })),
   })
 
+  const paintInput = targetIds
+    ? { move: targetIds.move, attack: targetIds.attack, canOrder: targetIds.canOrder }
+    : undefined
   const features: GeoJSON.Feature[] = []
   const bounds = new maplibregl.LngLatBounds()
   bounds.extend([THEATER_BBOX[0], THEATER_BBOX[1]])
@@ -458,7 +461,8 @@ function syncMap(
     hasGeometry = true
     const strength = listedStrength(province.units)
     eachCoord(province.polygon, (coord) => bounds.extend(coord))
-    const paint = provincePaintProperties(province, snapshot.overlay)
+    const role = roleFor(province.id, paintInput, snapshot.selectedId)
+    const paint = provincePaintProperties(province, snapshot.overlay, role)
     features.push({
       type: "Feature",
       id: province.id,
@@ -518,8 +522,6 @@ function syncMap(
   if (map.getLayer("selected")) {
     map.setFilter("selected", ["==", ["get", "id"], snapshot.selectedId ?? "__none__"])
   }
-
-  applyProvinceRoles(map, snapshot.provinces, targetIds, snapshot.selectedId)
 
   if (hasGeometry && !fitted.current) {
     map.resize()
