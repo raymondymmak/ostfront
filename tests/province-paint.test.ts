@@ -69,17 +69,16 @@ describe("province paint", () => {
     expect(source).not.toContain("#0c0a12")
   })
 
-  it("drives MapLibre fill from the role property, not feature-state", () => {
+  it("keeps base fill on provinces; lifts use feature-state role on target-fill", () => {
     const layers = readFileSync("lib/map/war-map-layers.ts", "utf8")
     const map = readFileSync("components/war-map.tsx", "utf8")
-    expect(layers).toContain('["get", "role"]')
+    expect(layers).toContain('["get", "fill"]')
     expect(layers).toContain('["get", "lift"]')
     expect(layers).toContain('["get", "liftSoft"]')
-    expect(layers).not.toMatch(/\["feature-state", "role"\]/)
+    expect(layers).toContain('["feature-state", "role"]')
     expect(layers).not.toContain('"dim"')
-    expect(map).toContain("roleFor(")
     expect(map).toContain("provincePaintProperties(")
-    expect(map).not.toContain("applyProvinceRoles")
+    expect(map).toContain("applyProvinceRoleStates")
     expect(map).toContain('promoteId: "id"')
   })
 })

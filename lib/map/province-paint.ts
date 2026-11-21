@@ -66,8 +66,10 @@ export function reachFill(province: ProvincePaintFields): string {
 }
 
 /**
- * Paint properties written onto each province GeoJSON feature before `provinces.setData`.
- * `role` is a data property (not feature-state) so fill updates atomically with `setData`.
+ * Paint properties on each province GeoJSON feature (`fill` / `lift` / `liftSoft`).
+ * MapLibre reads lifts from these properties; highlight *role* is feature-state
+ * (see `target-highlight.ts`) so selection can fade without `setData`.
+ * `role` here is for the SVG fallback / tests only.
  */
 export function provincePaintProperties(
   province: ProvincePaintFields,

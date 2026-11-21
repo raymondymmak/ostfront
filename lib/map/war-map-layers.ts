@@ -9,37 +9,31 @@ import {
   RAIL_HIDDEN_ZOOM,
   RAIL_STYLE,
 } from "@/lib/map/rail-lines"
+import { TARGET_HIGHLIGHT_FADE_MS, TARGET_HIGHLIGHT_LAYER } from "@/lib/map/target-highlight"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
 import type * as maplibregl from "maplibre-gl"
 
-/**
- * Target role is a GeoJSON property (`role`), not feature-state.
- * Feature-state is cleared / raced by `GeoJSONSource.setData`; hover still uses feature-state.
- */
+/** Base province fill — always the mode colour; lifts live on `target-fill`. */
 export function provinceFillColor(): maplibregl.ExpressionSpecification {
+  return ["get", "fill"]
+}
+
+export function provinceFillOpacity(): maplibregl.ExpressionSpecification {
+  return ["case", ["boolean", ["feature-state", "hover"], false], 0.96, 0.9]
+}
+
+/** Neighbour lift colours; opacity is pulsed via `pulseTargetHighlight` (rAF lerp). */
+export function targetFillColor(): maplibregl.ExpressionSpecification {
   return [
     "match",
-    ["get", "role"],
+    ["feature-state", "role"],
     "reach",
     ["get", "liftSoft"],
     "move",
     ["get", "lift"],
     "attack",
     ["get", "lift"],
-    ["get", "fill"],
-  ]
-}
-
-export function provinceFillOpacity(): maplibregl.ExpressionSpecification {
-  return [
-    "case",
-    ["boolean", ["feature-state", "hover"], false],
-    0.96,
-    ["==", ["get", "role"], "reach"],
-    0.72,
-    ["any", ["==", ["get", "role"], "move"], ["==", ["get", "role"], "attack"]],
-    0.94,
-    0.9,
+    "rgba(0,0,0,0)",
   ]
 }
 
@@ -141,6 +135,16 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     },
   })
   map.addLayer({
+    id: TARGET_HIGHLIGHT_LAYER,
+    type: "fill",
+    source: "provinces",
+    paint: {
+      "fill-color": targetFillColor(),
+      "fill-opacity": 0,
+      "fill-opacity-transition": { duration: TARGET_HIGHLIGHT_FADE_MS, delay: 0 },
+    },
+  })
+  map.addLayer({
     id: "flash",
     type: "fill",
     source: "provinces",
@@ -238,7 +242,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     paint: {
       "line-color": [
         "match",
-        ["get", "role"],
+        ["feature-state", "role"],
         "attack",
         TARGET_OUTLINE.attack.color,
         "move",
@@ -249,7 +253,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
       ],
       "line-width": [
         "match",
-        ["get", "role"],
+        ["feature-state", "role"],
         "attack",
         TARGET_OUTLINE.attack.width,
         "move",
@@ -260,7 +264,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
       ],
       "line-opacity": [
         "match",
-        ["get", "role"],
+        ["feature-state", "role"],
         "attack",
         TARGET_OUTLINE.attack.opacity,
         "move",

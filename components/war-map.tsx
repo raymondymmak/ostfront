@@ -26,7 +26,12 @@ import {
   provinceCounterCollection,
   provinceLabelCollection,
 } from "@/lib/map/province-label-layers"
-import { provincePaintProperties, roleFor } from "@/lib/map/province-paint"
+import { provincePaintProperties } from "@/lib/map/province-paint"
+import {
+  applyProvinceRoleStates,
+  pulseTargetHighlight,
+  targetsActive,
+} from "@/lib/map/target-highlight"
 import { installWarMapLayers } from "@/lib/map/war-map-layers"
 import { railFeatureCollection, type RailEnd } from "@/lib/map/rail-lines"
 import type { QueuedOrder } from "@/lib/orders"
@@ -88,6 +93,8 @@ export function WarMap({
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
   const targetIdsRef = useRef(targetIds)
+  const provinceDataKeyRef = useRef<string>("")
+  const highlightKeyRef = useRef<string>("")
   const propsRef = useRef<Snapshot>({
     provinces,
     selectedId,
@@ -275,13 +282,20 @@ export function WarMap({
       }
 
       loadedRef.current = true
-      syncMap(map, propsRef.current, fittedRef, targetIdsRef.current)
+      syncMap(map, propsRef.current, fittedRef, targetIdsRef.current, provinceDataKeyRef, highlightKeyRef)
     })
 
     const observer = new ResizeObserver(() => {
       map.resize()
       if (loadedRef.current) {
-        syncMap(map, propsRef.current, fittedRef, targetIdsRef.current)
+        syncMap(
+          map,
+          propsRef.current,
+          fittedRef,
+          targetIdsRef.current,
+          provinceDataKeyRef,
+          highlightKeyRef,
+        )
       }
     })
     observer.observe(container.parentElement ?? container)
@@ -323,7 +337,7 @@ export function WarMap({
     }
     const map = mapRef.current
     if (!map || !loadedRef.current) return
-    syncMap(map, propsRef.current, fittedRef, targetIds)
+    syncMap(map, propsRef.current, fittedRef, targetIds, provinceDataKeyRef, highlightKeyRef)
     if (orderMode) map.dragPan.disable()
     else map.dragPan.enable()
   }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote, targetIds])
@@ -429,6 +443,8 @@ function syncMap(
   snapshot: Snapshot,
   fitted: { current: boolean },
   targetIds: WarMapProps["targetIds"],
+  provinceDataKey: { current: string },
+  highlightKey: { current: string },
 ) {
   const rivers = map.getSource("rivers") as maplibregl.GeoJSONSource | undefined
   const provinces = map.getSource("provinces") as maplibregl.GeoJSONSource | undefined
@@ -451,6 +467,8 @@ function syncMap(
   const paintInput = targetIds
     ? { move: targetIds.move, attack: targetIds.attack, canOrder: targetIds.canOrder }
     : undefined
+  const nextDataKey = `${snapshot.overlay}:${snapshot.provinces.map((p) => `${p.id}:${p.controller}:${p.supply}:${p.unrest}:${listedStrength(p.units)}`).join("|")}`
+  const dataChanged = nextDataKey !== provinceDataKey.current
   const features: GeoJSON.Feature[] = []
   const bounds = new maplibregl.LngLatBounds()
   bounds.extend([THEATER_BBOX[0], THEATER_BBOX[1]])
@@ -461,8 +479,8 @@ function syncMap(
     hasGeometry = true
     const strength = listedStrength(province.units)
     eachCoord(province.polygon, (coord) => bounds.extend(coord))
-    const role = roleFor(province.id, paintInput, snapshot.selectedId)
-    const paint = provincePaintProperties(province, snapshot.overlay, role)
+    // Base fills/lifts only — highlight role is feature-state (fade without setData).
+    const paint = provincePaintProperties(province, snapshot.overlay, "none")
     features.push({
       type: "Feature",
       id: province.id,
@@ -478,7 +496,10 @@ function syncMap(
       geometry: province.polygon,
     })
   }
-  provinces.setData({ type: "FeatureCollection", features })
+  if (dataChanged) {
+    provinces.setData({ type: "FeatureCollection", features })
+    provinceDataKey.current = nextDataKey
+  }
 
   labelPoints.setData(provinceLabelCollection(snapshot.provinces, snapshot.selectedId))
   counters.setData(provinceCounterCollection(snapshot.provinces))
@@ -521,6 +542,14 @@ function syncMap(
 
   if (map.getLayer("selected")) {
     map.setFilter("selected", ["==", ["get", "id"], snapshot.selectedId ?? "__none__"])
+  }
+
+  // Re-apply after any setData (clears feature-state); pulse opacity when selection changes.
+  applyProvinceRoleStates(map, snapshot.provinces, paintInput, snapshot.selectedId)
+  const nextHighlightKey = `${snapshot.selectedId ?? ""}:${targetIds?.move.join(",") ?? ""}:${targetIds?.attack.join(",") ?? ""}:${targetIds?.canOrder ? 1 : 0}`
+  if (nextHighlightKey !== highlightKey.current) {
+    highlightKey.current = nextHighlightKey
+    pulseTargetHighlight(map, targetsActive(targetIds))
   }
 
   if (hasGeometry && !fitted.current) {

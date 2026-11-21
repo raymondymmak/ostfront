@@ -20,6 +20,7 @@ import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
 import { provinceHoverNote } from "@/lib/ui/map-hover"
 import { provincePaintProperties, resolvedFill, roleFor } from "@/lib/map/province-paint"
+import { TARGET_HIGHLIGHT_FADE_MS } from "@/lib/map/target-highlight"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
 
 type SvgMapProps = {
@@ -207,7 +208,10 @@ export function SvgMap({
               stroke={stroke}
               strokeWidth={strokeWidth}
               className={flashing ? "animate-pulse" : undefined}
-              style={{ cursor: orderMode ? "crosshair" : "pointer" }}
+              style={{
+                cursor: orderMode ? "crosshair" : "pointer",
+                transition: `fill ${TARGET_HIGHLIGHT_FADE_MS}ms ease, fill-opacity ${TARGET_HIGHLIGHT_FADE_MS}ms ease`,
+              }}
               onMouseEnter={() => setHoverTip(tip)}
               onMouseLeave={() => setHoverTip(null)}
               onMouseDown={(event) => {
