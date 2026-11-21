@@ -52,12 +52,21 @@ describe("province paint", () => {
     expect(reachFill(central)).toBe(liftFill(MAP_FACTION_FILL.central, LIFT_REACH))
   })
 
-  it("assigns move, attack, reach, and dim roles", () => {
+  it("assigns move, attack, and reach roles; non-targets stay none", () => {
     expect(roleFor("katowice", { move: ["katowice"], attack: [], canOrder: true }, "krakow")).toBe("move")
     expect(roleFor("kielce", { move: [], attack: ["kielce"], canOrder: true }, "krakow")).toBe("attack")
     expect(roleFor("katowice", { move: ["katowice"], attack: [], canOrder: false }, "krakow")).toBe("reach")
-    expect(roleFor("poznan", { move: ["katowice"], attack: [], canOrder: true }, "krakow")).toBe("dim")
+    expect(roleFor("poznan", { move: ["katowice"], attack: [], canOrder: true }, "krakow")).toBe("none")
     expect(roleFor("krakow", { move: ["katowice"], attack: [], canOrder: true }, "krakow")).toBe("none")
+  })
+
+  it("never resolves non-targets to a navy dim fill", () => {
+    const paint = provincePaintProperties(central, "none", "none")
+    expect(resolvedFill(paint, "none")).toBe(paint.fill)
+    expect(resolvedFill(paint, "none")).not.toBe("#0c0a12")
+    const source = readFileSync("lib/map/province-paint.ts", "utf8")
+    expect(source).not.toMatch(/"dim"/)
+    expect(source).not.toContain("#0c0a12")
   })
 
   it("drives MapLibre fill from the role property, not feature-state", () => {
@@ -67,6 +76,7 @@ describe("province paint", () => {
     expect(layers).toContain('["get", "lift"]')
     expect(layers).toContain('["get", "liftSoft"]')
     expect(layers).not.toMatch(/\["feature-state", "role"\]/)
+    expect(layers).not.toContain('"dim"')
     expect(map).toContain("roleFor(")
     expect(map).toContain("provincePaintProperties(")
     expect(map).not.toContain("applyProvinceRoles")

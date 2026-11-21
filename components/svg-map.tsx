@@ -21,7 +21,6 @@ import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
 import { provinceHoverNote } from "@/lib/ui/map-hover"
 import { provincePaintProperties, resolvedFill, roleFor } from "@/lib/map/province-paint"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
-import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 
 type SvgMapProps = {
   provinces: MapProvince[]
@@ -123,28 +122,6 @@ export function SvgMap({
           setPreview(null)
         }}
       >
-      <defs>
-        <pattern
-          id="svg-move-hatch"
-          patternUnits="userSpaceOnUse"
-          width="0.22"
-          height="0.22"
-          patternTransform="rotate(35)"
-        >
-          <rect width="0.22" height="0.22" fill={MAP_TARGET_STYLE.move.fill} fillOpacity={0.35} />
-          <line x1="0" y1="0.22" x2="0.22" y2="0" stroke={MAP_TARGET_STYLE.move.outline} strokeWidth={0.018} />
-        </pattern>
-        <pattern
-          id="svg-attack-hatch"
-          patternUnits="userSpaceOnUse"
-          width="0.22"
-          height="0.22"
-          patternTransform="rotate(35)"
-        >
-          <rect width="0.22" height="0.22" fill={MAP_TARGET_STYLE.attack.fill} fillOpacity={0.35} />
-          <line x1="0" y1="0.22" x2="0.22" y2="0" stroke={MAP_TARGET_STYLE.attack.outline} strokeWidth={0.018} />
-        </pattern>
-      </defs>
       {visibleStates.map((region) => (
         <path
           key={region.id}
@@ -217,8 +194,6 @@ export function SvgMap({
           stroke = TARGET_OUTLINE.reach.color
           strokeWidth = view.label * 0.14
           fillOpacity = 0.72
-        } else if (role === "dim") {
-          fillOpacity = MAP_TARGET_STYLE.dim.opacity
         }
         const tip = provinceHoverNote(province, targetHoverNote)
         const pathD = geometryPath(province.polygon)

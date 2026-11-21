@@ -9,7 +9,7 @@ export type ProvincePaintFields = {
 
 export type PaintOverlayMode = "none" | "supply" | "unrest"
 
-export type TargetPaintRole = "none" | "move" | "attack" | "reach" | "dim"
+export type TargetPaintRole = "none" | "move" | "attack" | "reach"
 
 export type TargetPaintInput = {
   move: string[]
@@ -56,8 +56,8 @@ export function roleFor(
   } else if (inMove || inAttack) {
     return "reach"
   }
-  const active = targets.move.length > 0 || targets.attack.length > 0
-  return active ? "dim" : "none"
+  // Non-targets keep their normal base fill (no dim overlay).
+  return "none"
 }
 
 /** Reach highlight: a lifted tint of the province's own control color. */
@@ -90,7 +90,6 @@ export function resolvedFill(
 ): string {
   if (role === "move" || role === "attack") return paint.lift
   if (role === "reach") return paint.liftSoft
-  if (role === "dim") return "#0c0a12"
   return paint.fill
 }
 

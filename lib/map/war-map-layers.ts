@@ -10,7 +10,6 @@ import {
   RAIL_STYLE,
 } from "@/lib/map/rail-lines"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
-import { MAP_TARGET_STYLE } from "@/lib/ui/map-target-style"
 import type * as maplibregl from "maplibre-gl"
 
 /**
@@ -21,8 +20,6 @@ export function provinceFillColor(): maplibregl.ExpressionSpecification {
   return [
     "match",
     ["get", "role"],
-    "dim",
-    MAP_TARGET_STYLE.dim.fill,
     "reach",
     ["get", "liftSoft"],
     "move",
@@ -38,8 +35,6 @@ export function provinceFillOpacity(): maplibregl.ExpressionSpecification {
     "case",
     ["boolean", ["feature-state", "hover"], false],
     0.96,
-    ["==", ["get", "role"], "dim"],
-    MAP_TARGET_STYLE.dim.opacity,
     ["==", ["get", "role"], "reach"],
     0.72,
     ["any", ["==", ["get", "role"], "move"], ["==", ["get", "role"], "attack"]],
