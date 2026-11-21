@@ -51,7 +51,7 @@ Stack: Next.js App Router, React client components for the game shell, server ro
 | `lib/map/province-label-layers.ts` | GeoJSON for `province-labels` / `province-counters`, glyph URL, counter pill image |
 | `lib/map/war-map-layers.ts` | Layer stack: rails under borders, symbol labels above selection outline, feature-state `role` fills |
 | `lib/map/province-paint.ts` | Shared fill/lift/`roleFor` for MapLibre and `components/svg-map.tsx` fallback |
-| `lib/map/target-highlight.ts` | Feature-state roles + rAF opacity lerp on `target-fill` so selection switches fade like first select |
+| `lib/map/target-highlight.ts` | Feature-state roles + `target-fill` opacity pulse (snap + MapLibre paint transition) so selection switches fade like first select |
 | `lib/map/rail-lines.ts` + `shared-border.ts` | Rail paths via shared-border midpoints, not anchor-to-anchor chords |
 | `lib/ui/legal-targets.ts` | `reach` + `canOrder`; Russian provinces get reach hints without orders |
 | `lib/ui/selection.ts` | Click-toggle and Escape deselect in `game-app.tsx` / `teaching-app.tsx` |

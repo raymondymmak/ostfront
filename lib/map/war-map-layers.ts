@@ -22,7 +22,7 @@ export function provinceFillOpacity(): maplibregl.ExpressionSpecification {
   return ["case", ["boolean", ["feature-state", "hover"], false], 0.96, 0.9]
 }
 
-/** Neighbour lift colours; opacity is pulsed via `pulseTargetHighlight` (rAF lerp). */
+/** Neighbour lift colours; opacity is pulsed via `pulseTargetHighlight` (paint transition). */
 export function targetFillColor(): maplibregl.ExpressionSpecification {
   return [
     "match",
