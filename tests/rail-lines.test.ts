@@ -6,7 +6,6 @@ import {
   RAIL_FULL_ZOOM,
   RAIL_HIDDEN_ZOOM,
   RAIL_HOT_WIDTH_SCALE,
-  RAIL_STYLE,
   railLineOpacity,
   railLines,
   type RailEnd,
@@ -119,10 +118,9 @@ describe("rail lines", () => {
     expect(railLines(endsFrom(), null).every((line) => !line.hot)).toBe(true)
   })
 
-  it("uses dark sleeper fill and optional hot widening", () => {
-    expect(RAIL_STYLE.sleeper).toBe("#241c14")
-    expect(RAIL_STYLE.tie).toBe(RAIL_STYLE.sleeper)
+  it("keeps hot widening mild for selected-province rails", () => {
     expect(RAIL_HOT_WIDTH_SCALE).toBeGreaterThan(1)
+    expect(RAIL_HOT_WIDTH_SCALE).toBeLessThanOrEqual(1.2)
   })
 
   it("fades with the province labels so a zoomed-out map stays readable", () => {
@@ -146,7 +144,7 @@ describe("rail lines", () => {
     expect(source).toContain("railFeatureCollection")
     expect(source).toContain("useState(true)")
     const layers = readFileSync("lib/map/war-map-layers.ts", "utf8")
-    expect(layers).toContain('id: "rail-sleepers"')
+    expect(layers).not.toContain('id: "rail-sleepers"')
     expect(layers).toContain('id: "rail-track"')
     expect(layers).toContain('id: "rail-cut"')
     expect(layers).toContain("railWidthHot")

@@ -248,27 +248,16 @@ export function SvgMap({
           const points = line.coordinates.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
           const color =
             line.side === "russia" ? RAIL_STYLE.russia : line.side === "cut" ? RAIL_STYLE.cut : RAIL_STYLE.central
-          const width = view.label * 0.048 * (line.hot ? line.hotWidthScale : 1)
-          const sleeperWidth = view.label * 0.09 * (line.hot ? line.hotWidthScale : 1)
+          const width = view.label * 0.032 * (line.hot ? line.hotWidthScale : 1)
           return (
-            <g key={`${line.a}-${line.b}`} pointerEvents="none" opacity={line.side === "cut" ? 0.45 : 0.95}>
-              {line.side !== "cut" && (
-                <polyline
-                  points={points}
-                  fill="none"
-                  stroke={RAIL_STYLE.sleeper}
-                  strokeWidth={sleeperWidth}
-                  strokeDasharray={`${view.label * 0.06} ${view.label * 0.2}`}
-                  strokeLinecap="butt"
-                />
-              )}
+            <g key={`${line.a}-${line.b}`} pointerEvents="none" opacity={line.side === "cut" ? 0.38 : 0.62}>
               <polyline
                 points={points}
                 fill="none"
                 stroke={color}
                 strokeWidth={width}
-                strokeLinecap="butt"
-                strokeDasharray={line.side === "cut" ? `${view.label * 0.12} ${view.label * 0.1}` : undefined}
+                strokeLinecap="round"
+                strokeDasharray={line.side === "cut" ? `${view.label * 0.14} ${view.label * 0.16}` : undefined}
               />
             </g>
           )

@@ -11,8 +11,8 @@ import type { Faction, GameState } from "@/lib/types"
 export const RAIL_FULL_ZOOM = 6.35
 export const RAIL_HIDDEN_ZOOM = 5.45
 
-/** Width multiplier for rails touching the selected province (ties + track). */
-export const RAIL_HOT_WIDTH_SCALE = 1.22
+/** Mild width bump for rails touching the selected province. */
+export const RAIL_HOT_WIDTH_SCALE = 1.12
 
 export type RailSide = "central" | "russia" | "cut"
 
@@ -32,14 +32,14 @@ export type RailLine = {
   coordinates: [number, number][]
   side: RailSide
   hot: boolean
-  /** Apply when `hot` to widen sleeper and rail strokes in the renderer. */
+  /** Apply when `hot` to widen rail strokes in the renderer. */
   hotWidthScale: number
 }
 
-/** Dark sleepers and paired rails, tinted by the side that can use them. */
+/** Thin staff-map rail strokes, tinted by the side that can use them. */
 export const RAIL_STYLE = {
+  /** Kept for legend / SVG fallbacks; sleepers are no longer drawn on the map. */
   sleeper: "#241c14",
-  /** @deprecated Use `sleeper`; kept for existing MapLibre / SVG layers. */
   tie: "#241c14",
   central: "#10283c",
   russia: "#4a1c16",

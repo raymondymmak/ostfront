@@ -536,7 +536,7 @@ function syncMap(
   }))
   rails.setData(railFeatureCollection(railEnds, snapshot.selectedId))
   const railVisibility = snapshot.showRails ? "visible" : "none"
-  for (const id of ["rail-sleepers", "rail-track", "rail-cut"]) {
+  for (const id of ["rail-track", "rail-cut"]) {
     if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", railVisibility)
   }
 

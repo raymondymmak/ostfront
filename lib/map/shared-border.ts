@@ -23,6 +23,8 @@ export function outerRing(polygon: ProvinceGeometry | null | undefined): [number
 
 /**
  * Rail / march routing between two label anchors via the shared land border.
+ * Uses a single border gate (median shared-edge midpoint). Walking every shared
+ * edge produced zigzag "barbed wire" polylines across province interiors.
  * Ends are trimmed short of the anchor so labels stay readable.
  */
 export function routeBetweenProvinces(
@@ -39,15 +41,10 @@ export function routeBetweenProvinces(
   if (!shared.length) return [start, end]
 
   const ordered = orderAlongAxis(shared, start, end)
-  const entry = ordered[0] ?? midpoint(start, end)
-  const exit = ordered[ordered.length - 1] ?? entry
-  const trimmedStart = trimToward(start, entry, LABEL_TRIM_DEG)
-  const trimmedEnd = trimToward(end, exit, LABEL_TRIM_DEG)
-
-  if (ordered.length === 1) {
-    return [trimmedStart, ordered[0], trimmedEnd]
-  }
-  return [trimmedStart, ...ordered, trimmedEnd]
+  const gate = ordered[Math.floor((ordered.length - 1) / 2)] ?? midpoint(start, end)
+  const trimmedStart = trimToward(start, gate, LABEL_TRIM_DEG)
+  const trimmedEnd = trimToward(end, gate, LABEL_TRIM_DEG)
+  return [trimmedStart, gate, trimmedEnd]
 }
 
 function sharedEdgeMidpoints(a: [number, number][], b: [number, number][]): [number, number][] {

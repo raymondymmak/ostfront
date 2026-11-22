@@ -176,24 +176,11 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
   })
   map.addLayer({
-    id: "rail-sleepers",
-    type: "line",
-    source: "rails",
-    filter: ["!=", ["get", "side"], "cut"],
-    layout: { "line-cap": "butt", "line-join": "round" },
-    paint: {
-      "line-color": RAIL_STYLE.sleeper,
-      "line-width": railWidthHot(2.2, 3.4),
-      "line-dasharray": [0.22, 0.65],
-      "line-opacity": railFade(),
-    },
-  })
-  map.addLayer({
     id: "rail-track",
     type: "line",
     source: "rails",
     filter: ["!=", ["get", "side"], "cut"],
-    layout: { "line-cap": "butt", "line-join": "round" },
+    layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": [
         "match",
@@ -204,8 +191,9 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
         RAIL_STYLE.russia,
         RAIL_STYLE.cut,
       ],
-      "line-width": railWidthHot(1.2, 1.85),
-      "line-opacity": railFade(),
+      // Subtle staff-map strokes; cap growth so zoom-in stays thin.
+      "line-width": railWidthHot(0.7, 1.05),
+      "line-opacity": railFade(0.62),
     },
   })
   map.addLayer({
@@ -213,12 +201,12 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     type: "line",
     source: "rails",
     filter: ["==", ["get", "side"], "cut"],
-    layout: { "line-cap": "butt", "line-join": "round" },
+    layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": RAIL_STYLE.cut,
-      "line-width": railWidth(1.2, 1.7),
-      "line-dasharray": [0.35, 0.75],
-      "line-opacity": railFade(0.45),
+      "line-width": railWidth(0.65, 0.95),
+      "line-dasharray": [1.1, 1.4],
+      "line-opacity": railFade(0.38),
     },
   })
   map.addLayer({
