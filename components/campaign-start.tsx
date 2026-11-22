@@ -90,87 +90,90 @@ export function CampaignStart({
         </svg>
       </div>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 py-6 text-center sm:max-w-lg sm:px-8 lg:max-h-dvh lg:py-8">
-        <div className="w-full rounded-sm border border-leather/45 bg-paper/95 px-5 py-6 text-ink shadow-[0_16px_36px_rgba(20,14,8,0.35)] sm:px-8 sm:py-8">
-        <h1 className="font-display text-5xl font-normal italic leading-none tracking-wide text-primary sm:text-6xl md:text-7xl">
-          Ostfront
-        </h1>
-        <p className="mt-4 font-display text-xl leading-tight text-ink sm:text-2xl">Gorlice–Tarnów</p>
-        <p className="mt-1 text-sm text-muted-foreground">2 May 1915</p>
-
-        <p
-          className="mt-6 max-w-sm text-base font-medium leading-snug text-ink sm:text-[1.05rem]"
-          data-testid="briefing-task"
-        >
-          {goal}
-        </p>
-
+      <main className="relative z-10 mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto pt-[calc(1.5rem+env(safe-area-inset-top,0px))] pr-[calc(1.25rem+env(safe-area-inset-right,0px))] pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pl-[calc(1.25rem+env(safe-area-inset-left,0px))] text-center sm:max-w-lg sm:pr-[calc(2rem+env(safe-area-inset-right,0px))] sm:pl-[calc(2rem+env(safe-area-inset-left,0px))] lg:max-h-dvh lg:pt-[calc(2rem+env(safe-area-inset-top,0px))] lg:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
         <div
-          className="mt-8 flex w-full max-w-xs rounded-sm border border-leather/40 bg-paper-deep p-1 shadow-sm sm:max-w-sm"
-          data-testid="difficulty"
-          role="group"
-          aria-label="Difficulty"
+          className="flex w-full flex-col items-stretch rounded-sm border border-leather/45 bg-paper/95 px-5 py-6 text-ink shadow-[0_16px_36px_rgba(20,14,8,0.35)] sm:px-8 sm:py-8"
+          data-testid="campaign-start-card"
         >
-          {difficulties.map(([id, title]) => {
-            const selected = difficulty === id
-            return (
-              <button
-                key={id}
-                type="button"
-                data-testid={`difficulty-${id}`}
-                onClick={() => onDifficulty(id)}
-                className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-colors ${
-                  selected
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                }`}
-              >
-                {title}
-              </button>
-            )
-          })}
-        </div>
+          <h1 className="font-display text-5xl font-normal italic leading-none tracking-wide text-primary sm:text-6xl md:text-7xl">
+            Ostfront
+          </h1>
+          <p className="mt-4 font-display text-xl leading-tight text-ink sm:text-2xl">Gorlice–Tarnów</p>
+          <p className="mt-1 text-sm text-muted-foreground">2 May 1915</p>
 
-        <div className="mt-6 flex w-full max-w-xs flex-col gap-2.5 sm:max-w-sm">
-          <Button
-            type="button"
-            data-testid="begin-scenario"
-            disabled={beginBusy}
-            size="lg"
-            className="h-11 w-full text-base font-semibold"
-            onClick={onBegin}
+          <p
+            className="mx-auto mt-6 w-full max-w-sm text-base font-medium leading-snug text-ink sm:text-[1.05rem]"
+            data-testid="briefing-task"
           >
-            {beginBusy ? "Opening…" : "Begin"}
-          </Button>
-          <a
-            href="/teach"
-            data-testid="begin-teach"
-            className="group/button inline-flex h-10 w-full shrink-0 items-center justify-center rounded-lg border border-transparent bg-secondary px-2.5 text-base font-medium text-secondary-foreground transition-all hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]"
-          >
-            Teaching drill
-          </a>
-        </div>
+            {goal}
+          </p>
 
-        <button
-          type="button"
-          className="mt-5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          onClick={() => setMoreOpen((value) => !value)}
-        >
-          {moreOpen ? "Less briefing" : "More briefing"}
-        </button>
-
-        {moreOpen ? (
           <div
-            className="mt-3 max-h-[min(32vh,14rem)] w-full max-w-sm shrink-0 overflow-y-auto overscroll-contain rounded-sm border border-leather/35 bg-paper p-4 text-left text-xs leading-5 text-muted-foreground shadow-sm"
-            data-testid="campaign-more-briefing"
+            className="mt-8 flex w-full rounded-sm border border-leather/40 bg-paper-deep p-1 shadow-sm"
+            data-testid="difficulty"
+            role="group"
+            aria-label="Difficulty"
           >
-            {BRIEFING.map((paragraph) => (
-              <p key={paragraph.slice(0, 32)} className="mt-2 first:mt-0">
-                {paragraph}
-              </p>
-            ))}
+            {difficulties.map(([id, title]) => {
+              const selected = difficulty === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`difficulty-${id}`}
+                  onClick={() => onDifficulty(id)}
+                  className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-colors ${
+                    selected
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                >
+                  {title}
+                </button>
+              )
+            })}
           </div>
-        ) : null}
+
+          <div className="mt-6 flex w-full flex-col gap-2.5" data-testid="campaign-start-actions">
+            <Button
+              type="button"
+              data-testid="begin-scenario"
+              disabled={beginBusy}
+              size="lg"
+              className="h-11 w-full text-base font-semibold"
+              onClick={onBegin}
+            >
+              {beginBusy ? "Opening…" : "Begin"}
+            </Button>
+            <a
+              href="/teach"
+              data-testid="begin-teach"
+              className="group/button inline-flex h-10 w-full shrink-0 items-center justify-center rounded-lg border border-transparent bg-secondary px-2.5 text-base font-medium text-secondary-foreground transition-all hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]"
+            >
+              Teaching drill
+            </a>
+          </div>
+
+          <button
+            type="button"
+            className="mt-5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            onClick={() => setMoreOpen((value) => !value)}
+          >
+            {moreOpen ? "Less briefing" : "More briefing"}
+          </button>
+
+          {moreOpen ? (
+            <div
+              className="mx-auto mt-3 max-h-[min(32vh,14rem)] w-full max-w-sm shrink-0 overflow-y-auto overscroll-contain rounded-sm border border-leather/35 bg-paper p-4 text-left text-xs leading-5 text-muted-foreground shadow-sm"
+              data-testid="campaign-more-briefing"
+            >
+              {BRIEFING.map((paragraph) => (
+                <p key={paragraph.slice(0, 32)} className="mt-2 first:mt-0">
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </div>
       </main>
     </div>
