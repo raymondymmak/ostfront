@@ -1,0 +1,338 @@
+[
+  {
+    "a": "plock",
+    "b": "warszawa",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        -0.0844,
+        0.05949
+      ],
+      [
+        -0.0271,
+        0.01497
+      ],
+      [
+        -0.03254,
+        -0.02431
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "warszawa",
+    "b": "lublin",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.02625,
+        -0.14269
+      ],
+      [
+        0.15759,
+        -0.21637
+      ],
+      [
+        0.26824,
+        -0.25513
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "krakow",
+    "b": "stanislawow",
+    "side": "central",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.05116,
+        -0.66336
+      ],
+      [
+        0.35135,
+        -0.7925
+      ],
+      [
+        0.64096,
+        -0.92266
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "wolyn",
+    "b": "polesie",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.96503,
+        -0.40077
+      ],
+      [
+        1.23123,
+        -0.24476
+      ],
+      [
+        0.94065,
+        -0.09682
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "konigsberg",
+    "b": "ermland_masuren",
+    "side": "central",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.06457,
+        0.55884
+      ],
+      [
+        0.05765,
+        0.49687
+      ],
+      [
+        0.00839,
+        0.44795
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "kielce",
+    "b": "krakow",
+    "side": "cut",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        -0.03743,
+        -0.41034
+      ],
+      [
+        0.11081,
+        -0.45973
+      ],
+      [
+        0.02664,
+        -0.56848
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "lwow",
+    "b": "stanislawow",
+    "side": "cut",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.76306,
+        -0.79302
+      ],
+      [
+        0.73548,
+        -0.83195
+      ],
+      [
+        0.72768,
+        -0.87664
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "poznan",
+    "b": "lodz",
+    "side": "cut",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        -0.74475,
+        -0.05177
+      ],
+      [
+        -0.6095,
+        -0.09833
+      ],
+      [
+        -0.48561,
+        -0.13457
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "bialystok",
+    "b": "nowogrodek",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.43037,
+        0.24127
+      ],
+      [
+        0.5343,
+        0.24685
+      ],
+      [
+        0.7543,
+        0.27155
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "ermland_masuren",
+    "b": "bialystok",
+    "side": "cut",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.02807,
+        0.41519
+      ],
+      [
+        0.30477,
+        0.50069
+      ],
+      [
+        0.33682,
+        0.3158
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "gdynia",
+    "b": "plock",
+    "side": "cut",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        -0.48816,
+        0.31144
+      ],
+      [
+        -0.32521,
+        0.20142
+      ],
+      [
+        -0.21848,
+        0.14563
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "lwow",
+    "b": "wolyn",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.81938,
+        -0.64838
+      ],
+      [
+        0.83157,
+        -0.55217
+      ],
+      [
+        0.85583,
+        -0.5104
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "warszawa",
+    "b": "kielce",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        -0.02069,
+        -0.18022
+      ],
+      [
+        0.00334,
+        -0.26092
+      ],
+      [
+        -0.05854,
+        -0.32676
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "lwow",
+    "b": "proskuriv",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.87662,
+        -0.771
+      ],
+      [
+        1.02907,
+        -0.86897
+      ],
+      [
+        1.10958,
+        -0.80012
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "nowogrodek",
+    "b": "wilno",
+    "side": "russia",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.79694,
+        0.35148
+      ],
+      [
+        0.74832,
+        0.44515
+      ],
+      [
+        0.80586,
+        0.55251
+      ]
+    ],
+    "hotWidthScale": 1
+  },
+  {
+    "a": "krakow",
+    "b": "lwow",
+    "side": "cut",
+    "pointCount": 3,
+    "coordinates": [
+      [
+        0.05767,
+        -0.63148
+      ],
+      [
+        0.41591,
+        -0.63025
+      ],
+      [
+        0.73167,
+        -0.70851
+      ]
+    ],
+    "hotWidthScale": 1
+  }
+]

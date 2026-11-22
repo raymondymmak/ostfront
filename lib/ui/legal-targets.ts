@@ -1,7 +1,7 @@
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { findProvince } from "@/lib/engine/turn"
 import { leaveDepotGarrison, type QueuedOrder } from "@/lib/orders"
-import type { GameState } from "@/lib/types"
+import type { GameState, Province } from "@/lib/types"
 import type { LegalTargets } from "@/lib/ui/types"
 
 /**
@@ -10,17 +10,23 @@ import type { LegalTargets } from "@/lib/ui/types"
  * duplicating combat math.
  */
 export function legalTargets(state: GameState, provinceId: string, queue: QueuedOrder[]): LegalTargets {
-  const empty: LegalTargets = { from: provinceId, move: [], attack: [], blocked: [], depotWarn: [] }
+  const empty: LegalTargets = {
+    from: provinceId,
+    move: [],
+    attack: [],
+    reach: { move: [], attack: [] },
+    canOrder: false,
+    blocked: [],
+    depotWarn: [],
+  }
   const from = findProvince(state, provinceId)
   if (!from) return empty
+
+  const reach = neighborReach(state, from)
+  const base = { ...empty, reach }
+
   if (from.controller !== "central") {
-    return {
-      ...empty,
-      blocked: from.neighbors.map((id) => ({
-        id,
-        reason: "Stavka does not take your arrows. Start in a Central Powers province.",
-      })),
-    }
+    return base
   }
 
   const claimed = new Set(queue.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)))
@@ -29,7 +35,7 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
   )
   if (!available.length) {
     return {
-      ...empty,
+      ...base,
       blocked: from.neighbors.map((id) => ({
         id,
         reason: `${from.name} has no unassigned formation.`,
@@ -37,6 +43,17 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
     }
   }
 
+  if (from.supply < 30) {
+    return {
+      ...base,
+      blocked: from.neighbors.map((id) => ({
+        id,
+        reason: `${from.name} is below supply 30. The engine will refuse the advance.`,
+      })),
+    }
+  }
+
+  const canOrder = true
   const move: string[] = []
   const attack: string[] = []
   const blocked: LegalTargets["blocked"] = []
@@ -49,13 +66,6 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
       blocked.push({
         id: toId,
         reason: `${from.name} and ${to.name} do not share a border. The engine will reject the order so you can see why.`,
-      })
-      continue
-    }
-    if (from.supply < 30) {
-      blocked.push({
-        id: toId,
-        reason: `${from.name} is below supply 30. The engine will refuse the advance.`,
       })
       continue
     }
@@ -78,7 +88,7 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
     }
   }
 
-  return { from: provinceId, move, attack, blocked, depotWarn }
+  return { from: provinceId, move, attack, reach, canOrder, blocked, depotWarn }
 }
 
 export function legalTargetHoverNote(targets: LegalTargets, provinceId: string): string | null {
@@ -86,4 +96,16 @@ export function legalTargetHoverNote(targets: LegalTargets, provinceId: string):
   if (blocked) return blocked.reason
   const warn = targets.depotWarn.find((item) => item.id === provinceId)
   return warn?.reason ?? null
+}
+
+function neighborReach(state: GameState, from: Province): { move: string[]; attack: string[] } {
+  const move: string[] = []
+  const attack: string[] = []
+  for (const toId of from.neighbors) {
+    const to = findProvince(state, toId)
+    if (!to) continue
+    if (to.controller === from.controller) move.push(toId)
+    else attack.push(toId)
+  }
+  return { move, attack }
 }

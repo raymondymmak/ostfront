@@ -45,10 +45,13 @@ describe("province label zoom", () => {
     expect(set.opacity).toBe(1)
   })
 
-  it("gates labels from the map without replacing marker className", () => {
+  it("drives label fade from MapLibre symbol layers, not HTML markers", () => {
+    const layers = readFileSync("lib/map/war-map-layers.ts", "utf8")
+    const labels = readFileSync("lib/map/province-label-layers.ts", "utf8")
     const source = readFileSync("components/war-map.tsx", "utf8")
-    expect(source).toContain("applyProvinceLabelOpacity")
-    expect(source).toContain("applyMarkerFace")
-    expect(source).not.toMatch(/\.className\s*=/)
+    expect(labels).toContain("provinceLabelOpacityExpression")
+    expect(layers).toContain('id: "province-labels"')
+    expect(source).not.toContain("new maplibregl.Marker")
+    expect(source).not.toContain("blitMap")
   })
 })

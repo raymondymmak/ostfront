@@ -5,6 +5,7 @@ import { createInitialState, linksOf } from "@/lib/data/scenario"
 import {
   RAIL_FULL_ZOOM,
   RAIL_HIDDEN_ZOOM,
+  RAIL_HOT_WIDTH_SCALE,
   railLineOpacity,
   railLines,
   type RailEnd,
@@ -13,6 +14,15 @@ import { PROVINCE_LABEL_FULL_ZOOM, PROVINCE_LABEL_HIDDEN_ZOOM } from "@/lib/map/
 
 const OPENING_ZOOM = 6.833576
 const EUROPE_ZOOM = 5.3172
+
+const ROUTE_FIXTURE = JSON.parse(readFileSync("tests/fixtures/rail-routes.json", "utf8")) as Array<{
+  a: string
+  b: string
+  side: string
+  pointCount: number
+  coordinates: [number, number][]
+  hotWidthScale: number
+}>
 
 function endsFrom(state = createInitialState()): RailEnd[] {
   return state.provinces.map((province) => ({
@@ -27,6 +37,10 @@ function endsFrom(state = createInitialState()): RailEnd[] {
 
 function pair(lines: ReturnType<typeof railLines>, a: string, b: string) {
   return lines.find((line) => (line.a === a && line.b === b) || (line.a === b && line.b === a))
+}
+
+function snapCoord([lon, lat]: [number, number]): [number, number] {
+  return [Number(lon.toFixed(5)), Number(lat.toFixed(5))]
 }
 
 describe("rail lines", () => {
@@ -59,17 +73,30 @@ describe("rail lines", () => {
     expect(pair(lines, "lwow", "wolyn")?.side).toBe("cut")
   })
 
-  it("joins label anchors, and falls back to an interior point", () => {
+  it("matches stable routed coordinates for key pairs", () => {
+    const lines = railLines(endsFrom())
+    for (const sample of ROUTE_FIXTURE) {
+      const line = pair(lines, sample.a, sample.b)
+      expect(line).toBeDefined()
+      expect(line!.coordinates.length).toBe(sample.pointCount)
+      expect(line!.coordinates.map(snapCoord)).toEqual(sample.coordinates)
+      expect(line!.hotWidthScale).toBe(sample.hotWidthScale)
+    }
+  })
+
+  it("routes along the shared border instead of centroids", () => {
     const lines = railLines(endsFrom())
     const flank = pair(lines, "krakow", "stanislawow")
-    expect(flank?.coordinates[0]).toEqual(CATALOG_BY_ID.krakow.centroid)
-    expect(flank?.coordinates[1]).toEqual(CATALOG_BY_ID.stanislawow.centroid)
+    expect(flank?.coordinates.length).toBeGreaterThan(2)
+    expect(flank?.coordinates[0]).not.toEqual(CATALOG_BY_ID.krakow.centroid)
+    const last = flank!.coordinates[flank!.coordinates.length - 1]
+    expect(last).not.toEqual(CATALOG_BY_ID.stanislawow.centroid)
 
     const provinces = endsFrom().map((province) =>
       province.id === "krakow" ? { ...province, anchor: null } : province,
     )
     const fallback = pair(railLines(provinces), "krakow", "stanislawow")
-    expect(fallback?.coordinates[0]).not.toEqual(CATALOG_BY_ID.krakow.centroid)
+    expect(fallback?.coordinates.length).toBeGreaterThan(2)
     const [lon, lat] = fallback!.coordinates[0]
     const ring = CATALOG_BY_ID.krakow.polygon.type === "Polygon"
       ? CATALOG_BY_ID.krakow.polygon.coordinates[0]
@@ -86,8 +113,14 @@ describe("rail lines", () => {
     const lines = railLines(endsFrom(), "krakow")
     expect(pair(lines, "krakow", "lwow")?.hot).toBe(true)
     expect(pair(lines, "krakow", "stanislawow")?.hot).toBe(true)
+    expect(pair(lines, "krakow", "stanislawow")?.hotWidthScale).toBe(RAIL_HOT_WIDTH_SCALE)
     expect(pair(lines, "warszawa", "lublin")?.hot).toBe(false)
     expect(railLines(endsFrom(), null).every((line) => !line.hot)).toBe(true)
+  })
+
+  it("keeps hot widening mild for selected-province rails", () => {
+    expect(RAIL_HOT_WIDTH_SCALE).toBeGreaterThan(1)
+    expect(RAIL_HOT_WIDTH_SCALE).toBeLessThanOrEqual(1.2)
   })
 
   it("fades with the province labels so a zoomed-out map stays readable", () => {
@@ -95,12 +128,12 @@ describe("rail lines", () => {
     expect(RAIL_HIDDEN_ZOOM).toBe(PROVINCE_LABEL_HIDDEN_ZOOM)
     expect(railLineOpacity(OPENING_ZOOM)).toBe(1)
     expect(railLineOpacity(EUROPE_ZOOM)).toBe(0)
-    expect(railLineOpacity(OPENING_ZOOM, "cut")).toBeCloseTo(0.45)
+    expect(railLineOpacity(OPENING_ZOOM, "cut")).toBe(1)
     expect(railLineOpacity(EUROPE_ZOOM, "cut")).toBe(0)
     const mid = (RAIL_FULL_ZOOM + RAIL_HIDDEN_ZOOM) / 2
     expect(railLineOpacity(mid)).toBeGreaterThan(0.4)
     expect(railLineOpacity(mid)).toBeLessThan(0.6)
-    expect(railLineOpacity(mid, "cut")).toBeCloseTo(railLineOpacity(mid) * 0.45)
+    expect(railLineOpacity(mid, "cut")).toBe(railLineOpacity(mid))
   })
 
   it("feeds the map from the supply links, under the counters", () => {
@@ -110,13 +143,40 @@ describe("rail lines", () => {
     expect(lines).toContain("linksOf")
     expect(source).toContain("railFeatureCollection")
     expect(source).toContain("useState(true)")
-    expect(source).toContain('id: "rail-ties"')
-    expect(source).toContain('id: "rail-track"')
-    expect(source).toContain('id: "rail-cut"')
-    const ties = source.indexOf('id: "rail-ties"')
-    const markers = source.indexOf("new maplibregl.Marker")
-    expect(ties).toBeGreaterThan(0)
-    expect(markers).toBeGreaterThan(ties)
+    const layers = readFileSync("lib/map/war-map-layers.ts", "utf8")
+    expect(layers).not.toContain('id: "rail-sleepers"')
+    expect(layers).toContain('id: "rail-casing"')
+    expect(layers).toContain('id: "rail-track"')
+    expect(layers).toContain('id: "rail-cut"')
+    expect(layers).toContain("railWidthHot")
+    expect(layers).toContain("RAIL_STYLE.casing")
+    expect(layers).toContain("RAIL_STYLE.track")
+    // Soft but readable at open zoom (not the old 0.62 / 0.38 fade caps).
+    expect(layers).toContain("railFade(0.85)")
+    expect(layers).not.toContain("railFade(0.62)")
+    expect(layers).not.toContain("railFade(0.38)")
+    expect(layers).toContain("railWidthHot(2.0, 3.0)")
+    expect(layers).toContain("railWidthHot(3.1, 4.1)")
+    // Zoom interpolate must be top-level — nesting under `*` rejects the layer.
+    expect(layers).not.toMatch(/\*\s*,\s*\[\s*[\"']coalesce[\"'][\s\S]*?railWidth\(/)
+    expect(layers).toContain('id: "province-labels"')
+    expect(source).not.toContain("new maplibregl.Marker")
+    expect(source).toContain('"rail-casing"')
+    const casingAt = layers.indexOf('id: "rail-casing"')
+    const railsAt = layers.indexOf('id: "rail-track"')
+    const cutAt = layers.indexOf('id: "rail-cut"')
+    const provincesAt = layers.indexOf('id: "provinces"')
+    const bordersAt = layers.indexOf('id: "borders"')
+    const labelsAt = layers.indexOf('id: "province-labels"')
+    const countersAt = layers.indexOf('id: "province-counters"')
+    expect(casingAt).toBeGreaterThan(provincesAt)
+    expect(casingAt).toBeGreaterThan(bordersAt)
+    expect(railsAt).toBeGreaterThan(casingAt)
+    expect(cutAt).toBeGreaterThan(railsAt)
+    expect(labelsAt).toBeGreaterThan(cutAt)
+    expect(countersAt).toBeGreaterThan(labelsAt)
+    const labelLayers = readFileSync("lib/map/province-label-layers.ts", "utf8")
+    expect(labelLayers).toContain("provinceLabelCollection")
     const openAt = legend.indexOf("{open &&")
     const toggleAt = legend.indexOf('data-testid="rail-toggle"')
     expect(openAt).toBeGreaterThan(0)

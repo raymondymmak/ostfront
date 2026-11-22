@@ -1,6 +1,7 @@
 import type { ProvinceGeometry } from "@/lib/data/geometry"
 import { linksOf } from "@/lib/data/scenario"
 import { provinceLabelOpacity } from "@/lib/map/province-label-zoom"
+import { outerRing, routeBetweenProvinces } from "@/lib/map/shared-border"
 import type { Faction, GameState } from "@/lib/types"
 
 /**
@@ -9,6 +10,9 @@ import type { Faction, GameState } from "@/lib/types"
  */
 export const RAIL_FULL_ZOOM = 6.35
 export const RAIL_HIDDEN_ZOOM = 5.45
+
+/** Mild width bump for rails touching the selected province. */
+export const RAIL_HOT_WIDTH_SCALE = 1.12
 
 export type RailSide = "central" | "russia" | "cut"
 
@@ -25,18 +29,29 @@ export type RailEnd = {
 export type RailLine = {
   a: string
   b: string
-  coordinates: [[number, number], [number, number]]
+  coordinates: [number, number][]
   side: RailSide
   hot: boolean
+  /** Apply when `hot` to widen rail strokes in the renderer. */
+  hotWidthScale: number
 }
 
-/** Cream sleepers, a dark pair of rails, tinted by the side that can use them. */
+/**
+ * Staff-map rails: near-black track with a thin light casing so the line reads
+ * on both Central (blue) and Russian (red) fills. No sleeper ticks.
+ */
 export const RAIL_STYLE = {
-  tie: "#f3ead7",
-  central: "#10283c",
-  russia: "#4a1c16",
-  cut: "#6d675f",
+  /** Light casing under the track — reads on blue and red fills. */
+  casing: "#fff6e4",
+  /** Held-side track (both factions share the same high-contrast ink). */
+  track: "#14100c",
+  central: "#14100c",
+  russia: "#14100c",
+  cut: "#1c1612",
   hot: "#f3e2a8",
+  /** Kept for SVG/legend aliases; sleepers are not drawn on the map. */
+  sleeper: "#14100c",
+  tie: "#14100c",
 } as const
 
 /** Same pairs the supply engine walks. Only the rail edges are drawn. */
@@ -51,12 +66,20 @@ export function railLines(provinces: RailEnd[], selectedId: string | null = null
     const start = anchorOf(from)
     const end = anchorOf(to)
     if (!start || !end) continue
+    const fromPoly = from.polygon
+    const toPoly = to.polygon
+    const coordinates =
+      fromPoly && toPoly
+        ? routeBetweenProvinces(fromPoly, toPoly, start, end)
+        : ([start, end] as [number, number][])
+    const hot = selectedId !== null && (from.id === selectedId || to.id === selectedId)
     lines.push({
       a: link.a,
       b: link.b,
-      coordinates: [start, end],
+      coordinates,
       side: from.controller === to.controller ? from.controller : "cut",
-      hot: selectedId !== null && (from.id === selectedId || to.id === selectedId),
+      hot,
+      hotWidthScale: hot ? RAIL_HOT_WIDTH_SCALE : 1,
     })
   }
   return lines
@@ -67,15 +90,22 @@ export function railFeatureCollection(provinces: RailEnd[], selectedId: string |
     type: "FeatureCollection" as const,
     features: railLines(provinces, selectedId).map((line) => ({
       type: "Feature" as const,
-      properties: { side: line.side, hot: line.hot, a: line.a, b: line.b },
+      properties: {
+        side: line.side,
+        hot: line.hot,
+        hotWidthScale: line.hotWidthScale,
+        a: line.a,
+        b: line.b,
+      },
       geometry: { type: "LineString" as const, coordinates: line.coordinates },
     })),
   }
 }
 
 export function railLineOpacity(zoom: number, side: RailSide = "central"): number {
-  const fade = provinceLabelOpacity(zoom)
-  return side === "cut" ? fade * 0.45 : fade
+  // Full opacity once labels are fully visible; cut rails stay dashed, not dimmed.
+  void side
+  return provinceLabelOpacity(zoom)
 }
 
 function anchorOf(province: RailEnd): [number, number] | null {
@@ -99,32 +129,4 @@ function interiorPoint(polygon: ProvinceGeometry | null | undefined): [number, n
   }
   if (count === 0) return null
   return [x / count, y / count]
-}
-
-function outerRing(polygon: ProvinceGeometry | null | undefined): [number, number][] | null {
-  if (!polygon) return null
-  if (polygon.type === "Polygon") return polygon.coordinates[0] as [number, number][]
-  const rings = polygon.coordinates
-  if (!rings?.length) return null
-  let best = rings[0][0] as [number, number][]
-  let bestArea = Math.abs(ringArea(best))
-  for (const polygonRings of rings) {
-    const ring = polygonRings[0] as [number, number][]
-    const area = Math.abs(ringArea(ring))
-    if (area > bestArea) {
-      best = ring
-      bestArea = area
-    }
-  }
-  return best
-}
-
-function ringArea(ring: [number, number][]): number {
-  let sum = 0
-  for (let index = 0; index < ring.length; index += 1) {
-    const [x1, y1] = ring[index]
-    const [x2, y2] = ring[(index + 1) % ring.length]
-    sum += x1 * y2 - x2 * y1
-  }
-  return sum / 2
 }
