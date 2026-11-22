@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
-import { clampWindowPosition, TABLE_DRAG_HINT_KEY, TABLE_WINDOW_MARGIN } from "@/lib/ui/table-windows"
+import { clampWindowPosition, TABLE_WINDOW_MARGIN } from "@/lib/ui/table-windows"
 
 type FloatingWindowProps = {
   title: string
@@ -18,17 +18,6 @@ type FloatingWindowProps = {
   onClose: () => void
   onMove: (x: number, y: number) => void
   children: ReactNode
-}
-
-const DRAG_HINT_EVENT = "ostfront-table-drag-hint-dismissed"
-
-function readDragHintSeen(): boolean {
-  if (typeof window === "undefined") return true
-  try {
-    return Boolean(window.sessionStorage.getItem(TABLE_DRAG_HINT_KEY))
-  } catch {
-    return false
-  }
 }
 
 function measureStage(node: HTMLElement | null): { width: number; height: number } {
@@ -67,7 +56,6 @@ export function FloatingWindow({
     origY: number
   } | null>(null)
   const [dragging, setDragging] = useState(false)
-  const [showHint, setShowHint] = useState(() => !readDragHintSeen())
   const [stageMaxHeight, setStageMaxHeight] = useState<number | undefined>(undefined)
 
   useEffect(() => {
@@ -97,22 +85,6 @@ export function FloatingWindow({
       window.removeEventListener("resize", sync)
     }
   }, [open, x, y, onMove])
-
-  useEffect(() => {
-    const hide = () => setShowHint(false)
-    window.addEventListener(DRAG_HINT_EVENT, hide)
-    return () => window.removeEventListener(DRAG_HINT_EVENT, hide)
-  }, [])
-
-  function dismissHint() {
-    setShowHint(false)
-    try {
-      window.sessionStorage.setItem(TABLE_DRAG_HINT_KEY, "1")
-    } catch {
-      /* private mode */
-    }
-    window.dispatchEvent(new Event(DRAG_HINT_EVENT))
-  }
 
   if (!open) return null
 
@@ -150,7 +122,6 @@ export function FloatingWindow({
           event.stopPropagation()
           onFocus()
           setDragging(true)
-          dismissHint()
           drag.current = {
             pointerId: event.pointerId,
             startX: event.clientX,
@@ -191,23 +162,12 @@ export function FloatingWindow({
         }}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden
-            className="grid h-5 w-3.5 shrink-0 grid-cols-2 content-center gap-x-[3px] gap-y-[3px]"
-            title="Drag to move"
-          >
+          <span aria-hidden className="grid h-5 w-3.5 shrink-0 grid-cols-2 content-center gap-x-[3px] gap-y-[3px]">
             {Array.from({ length: 6 }).map((_, i) => (
               <span key={i} className="size-[3px] rounded-full bg-[#5c5144]/75" />
             ))}
           </span>
-          <div className="min-w-0">
-            <p className="font-display text-base leading-none text-[#241c14] select-none">{title}</p>
-            {showHint && (
-              <p className="mt-0.5 text-[10px] leading-none text-[#5c5144] select-none" data-testid="table-drag-hint">
-                Drag to move
-              </p>
-            )}
-          </div>
+          <p className="min-w-0 truncate font-display text-base leading-none text-[#241c14] select-none">{title}</p>
         </div>
         <Button
           type="button"

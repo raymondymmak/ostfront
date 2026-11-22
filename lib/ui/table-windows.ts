@@ -179,5 +179,3 @@ export const TABLE_WINDOW_TITLES: Record<TableWindowId, string> = {
   advisor: "Chief of Staff",
   ohl: "Orders from OHL",
 }
-
-export const TABLE_DRAG_HINT_KEY = "ostfront-table-drag-hint-seen"
