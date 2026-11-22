@@ -951,6 +951,16 @@ function buildSteps(cli, targets) {
         if (resolveCount !== 1) {
           throw new Error(`Expected exactly one teach-resolve control, got ${resolveCount}`)
         }
+        const resolveLabelCount = await page
+          .locator("button")
+          .evaluateAll((els) =>
+            els.filter((el) => /resolve this fortnight/i.test(el.textContent || "")).length,
+          )
+        if (resolveLabelCount !== 1) {
+          throw new Error(
+            `Expected exactly one "Resolve this fortnight" button on /teach, got ${resolveLabelCount}`,
+          )
+        }
         if (await page.locator("[data-testid=end-turn]").count()) {
           throw new Error("Orders end-turn control should be absent on /teach")
         }
@@ -981,6 +991,29 @@ function buildSteps(cli, targets) {
         }
         if ((await map.getAttribute("data-lesson-focus")) !== "true") {
           throw new Error("Expected data-lesson-focus=true on teach map")
+        }
+        // Wait until MapLibre has applied source filters (lessonFocus can race map load).
+        await page.waitForFunction(
+          () => {
+            const m = window.__ostfrontMap
+            if (!m?.getLayer?.("lesson-source-outline")) return false
+            const filter = JSON.stringify(m.getFilter("lesson-source-outline") || [])
+            return filter.includes("krakow") && filter.includes("kielce")
+          },
+          null,
+          { timeout: 15_000 },
+        )
+        const sourceFilter = await page.evaluate(() =>
+          JSON.stringify(window.__ostfrontMap?.getFilter?.("lesson-source-outline") || []),
+        )
+        if (!sourceFilter.includes("krakow") || !sourceFilter.includes("kielce")) {
+          throw new Error(`Expected source outline filter for krakow/kielce, got: ${sourceFilter}`)
+        }
+        const targetFilter = await page.evaluate(() =>
+          JSON.stringify(window.__ostfrontMap?.getFilter?.("lesson-target-outline") || []),
+        )
+        if (!targetFilter.includes("lublin")) {
+          throw new Error(`Expected target outline filter for lublin, got: ${targetFilter}`)
         }
       },
     },
@@ -1132,9 +1165,29 @@ function buildSteps(cli, targets) {
         if ((await page.locator("[data-testid=teach-resolve]").count()) !== 1) {
           throw new Error("Expected exactly one teach-resolve on supply lesson")
         }
+        const supplyResolveLabels = await page
+          .locator("button")
+          .evaluateAll((els) =>
+            els.filter((el) => /resolve this fortnight/i.test(el.textContent || "")).length,
+          )
+        if (supplyResolveLabels !== 1) {
+          throw new Error(
+            `Expected exactly one Resolve button on supply lesson, got ${supplyResolveLabels}`,
+          )
+        }
         if (await page.locator("[data-testid=end-turn]").count()) {
           throw new Error("Orders end-turn should stay absent on supply lesson")
         }
+        await page.waitForFunction(
+          () => {
+            const m = window.__ostfrontMap
+            if (!m?.getLayer?.("lesson-source-outline")) return false
+            const filter = JSON.stringify(m.getFilter("lesson-source-outline") || [])
+            return filter.includes("katowice") && filter.includes("krakow")
+          },
+          null,
+          { timeout: 15_000 },
+        )
         await selectKrakowOnMap(page)
         await page.getByRole("button").filter({ hasText: /Kielce/ }).first().click()
         await page.locator("[data-testid=tab-orders]").click()

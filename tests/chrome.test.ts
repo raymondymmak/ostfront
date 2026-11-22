@@ -72,7 +72,8 @@ describe("top bar and map chrome", () => {
     expect(panel).toContain("hideEndTurn")
     expect(map).toContain("data-lesson-highlights")
     expect(map).toContain("LESSON_TARGET_OUTLINE_LAYER")
-    expect(map).toContain("LESSON_SOURCE_OUTLINE_LAYER")
+    expect(map).toContain("applyLessonFocusLayers")
+    expect(map).toContain("mapReady")
   })
 
   it("keeps start-card controls full-width inside the parchment card (no left-flush max-w)", () => {

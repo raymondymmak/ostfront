@@ -28,9 +28,8 @@ import {
 } from "@/lib/map/province-label-layers"
 import { provincePaintProperties } from "@/lib/map/province-paint"
 import {
-  LESSON_FOCUS_FILL_LAYER,
-  LESSON_SOURCE_OUTLINE_LAYER,
   LESSON_TARGET_OUTLINE_LAYER,
+  applyLessonFocusLayers,
   lessonFocusActive,
   lessonFocusAttribute,
   startLessonTargetPulse,
@@ -117,7 +116,9 @@ export function WarMap({
   }
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
+  const [mapReady, setMapReady] = useState(false)
   const targetIdsRef = useRef(targetIds)
+  const lessonFocusRef = useRef(lessonFocus)
   const provinceDataKeyRef = useRef<string>("")
   const highlightKeyRef = useRef<string>("")
   const propsRef = useRef<Snapshot>({
@@ -307,7 +308,13 @@ export function WarMap({
       }
 
       loadedRef.current = true
+      setMapReady(true)
       syncMap(map, propsRef.current, fittedRef, targetIdsRef.current, provinceDataKeyRef, highlightKeyRef)
+      // Lesson focus may have been set before the map finished loading — apply now.
+      applyLessonFocusLayers(
+        map as Parameters<typeof applyLessonFocusLayers>[0],
+        lessonFocusRef.current,
+      )
     })
 
     const observer = new ResizeObserver(() => {
@@ -328,6 +335,7 @@ export function WarMap({
     return () => {
       observer.disconnect()
       loadedRef.current = false
+      setMapReady(false)
       fittedRef.current = false
       if (typeof window !== "undefined") {
         delete (window as Window & { __ostfrontMap?: maplibregl.Map }).__ostfrontMap
@@ -342,11 +350,16 @@ export function WarMap({
     mapRef.current.remove()
     mapRef.current = null
     loadedRef.current = false
+    setMapReady(false)
   }, [failed])
 
   useEffect(() => {
     targetIdsRef.current = targetIds
   }, [targetIds])
+
+  useEffect(() => {
+    lessonFocusRef.current = lessonFocus
+  }, [lessonFocus])
 
   useEffect(() => {
     propsRef.current = {
@@ -411,56 +424,16 @@ export function WarMap({
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !loadedRef.current) return
+    if (!map || !mapReady || !loadedRef.current) return
+    applyLessonFocusLayers(map as Parameters<typeof applyLessonFocusLayers>[0], lessonFocus)
     const targets = lessonFocus?.targets ?? []
-    const sources = lessonFocus?.sources ?? []
-    const focusIds = [...new Set([...targets, ...sources])]
-    const none = ["__none__"] as string[]
-
-    if (map.getLayer(LESSON_FOCUS_FILL_LAYER)) {
-      map.setFilter(LESSON_FOCUS_FILL_LAYER, [
-        "in",
-        ["get", "id"],
-        ["literal", focusIds.length ? focusIds : none],
-      ])
-      map.setPaintProperty(
-        LESSON_FOCUS_FILL_LAYER,
-        "fill-opacity",
-        focusIds.length ? 0.18 : 0,
-      )
-    }
-    if (map.getLayer(LESSON_SOURCE_OUTLINE_LAYER)) {
-      map.setFilter(LESSON_SOURCE_OUTLINE_LAYER, [
-        "in",
-        ["get", "id"],
-        ["literal", sources.length ? sources : none],
-      ])
-      map.setPaintProperty(
-        LESSON_SOURCE_OUTLINE_LAYER,
-        "line-opacity",
-        sources.length ? 0.95 : 0,
-      )
-    }
-    if (map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) {
-      map.setFilter(LESSON_TARGET_OUTLINE_LAYER, [
-        "in",
-        ["get", "id"],
-        ["literal", targets.length ? targets : none],
-      ])
-    }
-
-    if (!targets.length || !map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) {
-      if (map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) {
-        map.setPaintProperty(LESSON_TARGET_OUTLINE_LAYER, "line-opacity", 0)
-      }
-      return
-    }
+    if (!targets.length || !map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) return
 
     return startLessonTargetPulse((opacity) => {
       if (!map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) return
       map.setPaintProperty(LESSON_TARGET_OUTLINE_LAYER, "line-opacity", opacity)
     })
-  }, [lessonFocus])
+  }, [lessonFocus, mapReady])
 
   return (
     <div

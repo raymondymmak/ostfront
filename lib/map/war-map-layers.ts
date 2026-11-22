@@ -11,8 +11,10 @@ import {
 } from "@/lib/map/rail-lines"
 import {
   LESSON_FOCUS_FILL_LAYER,
-  LESSON_FOCUS_FILL_OPACITY,
   LESSON_HIGHLIGHT_BRASS,
+  LESSON_HIGHLIGHT_BRASS_DEEP,
+  LESSON_SOURCE_DASH,
+  LESSON_SOURCE_FILL_OPACITY,
   LESSON_SOURCE_LINE_WIDTH,
   LESSON_SOURCE_OUTLINE_LAYER,
   LESSON_TARGET_LINE_WIDTH,
@@ -184,7 +186,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     filter: ["==", ["get", "id"], ""],
     paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
   })
-  // Lesson focus sits under borders so faction colours stay readable through the tint.
+  // Source wash under borders (stronger than the target wash) so dashed outlines read on blue fills.
   map.addLayer({
     id: LESSON_FOCUS_FILL_LAYER,
     type: "fill",
@@ -192,7 +194,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     filter: ["==", ["get", "id"], ""],
     paint: {
       "fill-color": LESSON_HIGHLIGHT_BRASS,
-      "fill-opacity": LESSON_FOCUS_FILL_OPACITY,
+      "fill-opacity": LESSON_SOURCE_FILL_OPACITY,
     },
   })
   map.addLayer({
@@ -312,10 +314,10 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     source: "provinces",
     filter: ["==", ["get", "id"], ""],
     paint: {
-      "line-color": LESSON_HIGHLIGHT_BRASS,
+      "line-color": LESSON_HIGHLIGHT_BRASS_DEEP,
       "line-width": LESSON_SOURCE_LINE_WIDTH,
-      "line-opacity": 0.95,
-      "line-dasharray": [2.2, 1.6],
+      "line-opacity": 1,
+      "line-dasharray": LESSON_SOURCE_DASH,
     },
   })
   map.addLayer({
