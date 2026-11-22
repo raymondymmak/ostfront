@@ -438,7 +438,7 @@ export function WarMap({
       map.setPaintProperty(
         LESSON_SOURCE_OUTLINE_LAYER,
         "line-opacity",
-        sources.length ? 0.75 : 0,
+        sources.length ? 0.95 : 0,
       )
     }
     if (map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) {

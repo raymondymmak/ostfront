@@ -11,10 +11,13 @@ export const LESSON_FOCUS_FILL_LAYER = "lesson-focus-fill"
 export const LESSON_HIGHLIGHT_BRASS = "#c6a15a"
 export const LESSON_HIGHLIGHT_BRASS_DEEP = "#8a6a32"
 
-export const LESSON_TARGET_LINE_WIDTH = 3.2
-export const LESSON_SOURCE_LINE_WIDTH = 2.2
-export const LESSON_FOCUS_FILL_OPACITY = 0.18
+export const LESSON_TARGET_LINE_WIDTH = 3.4
+/** Thinner than the solid target ring; paired with a dasharray on the source layer. */
+export const LESSON_SOURCE_LINE_WIDTH = 2.6
+export const LESSON_FOCUS_FILL_OPACITY = 0.14
+export const LESSON_SOURCE_FILL_OPACITY = 0.12
 export const LESSON_PULSE_MS = 1600
+export const LESSON_SOURCE_DASH: [number, number] = [2.2, 1.6]
 
 export type LessonFocus = {
   targets: string[]

@@ -27,6 +27,7 @@ import {
   focusTeachWindow,
   isTeachWindowOpen,
   moveTeachWindow,
+  teachLessonHeightCap,
   TEACH_WINDOW_TITLES,
   type TeachWindowId,
   type TeachWindowState,
@@ -48,6 +49,7 @@ export function TeachingApp() {
   const desktopShell = useDesktopShell()
   const mapStageRef = useRef<HTMLDivElement>(null)
   const [windows, setWindows] = useState<TeachWindowState[]>(() => createDefaultTeachWindows())
+  const [lessonHeightCap, setLessonHeightCap] = useState(() => teachLessonHeightCap(820))
   const [lessonId, setLessonId] = useState<TeachLessonId>("converging-lublin")
   const [variant, setVariant] = useState<TeachVariant>("guided")
   const [session, setSession] = useState<SessionPayload | null>(null)
@@ -154,6 +156,7 @@ export function TeachingApp() {
       node?.clientHeight ||
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
     setWindows(createDefaultTeachWindows(width, height))
+    setLessonHeightCap(teachLessonHeightCap(height))
   }
 
   useEffect(() => {
@@ -425,10 +428,10 @@ export function TeachingApp() {
       onOrderMode={setOrderMode}
       hint={hint}
       busy={busy}
-      onEndTurn={() => void resolveDrill()}
+      onEndTurn={() => {}}
       onSelect={setSelectedId}
-      endTurnLabel="Resolve this fortnight"
       ordersLocked={Boolean(feedback)}
+      hideEndTurn
     />
   )
 
@@ -495,6 +498,7 @@ export function TeachingApp() {
         advisorOpen={false}
         onAdvisor={() => {}}
         teachMode
+        teachGoal={session.meta.title}
         tableShell={desktopShell}
         teachWindowOpen={teachWindowOpen}
         onToggleTeachWindow={onToggleTeachWindow}
@@ -555,8 +559,9 @@ export function TeachingApp() {
                     x={win.x}
                     y={win.y}
                     z={win.z}
-                    widthClassName="w-[min(22.5rem,calc(100%-1.5rem))]"
-                    maxHeightClassName="max-h-[min(70dvh,34rem)]"
+                    widthClassName="w-[min(21.25rem,calc(100%-1.5rem))]"
+                    maxHeightClassName="max-h-[min(48dvh,22.5rem)]"
+                    heightCap={lessonHeightCap}
                     testId="teach-lesson-window"
                     onFocus={focus}
                     onClose={close}

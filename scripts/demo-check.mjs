@@ -932,14 +932,52 @@ function buildSteps(cli, targets) {
         if (shell !== "desktop") {
           throw new Error(`Expected desktop teach shell at 1440×900, got: ${shell ?? "(none)"}`)
         }
+        const teachGoal = page.locator("[data-testid=teach-goal]")
+        await teachGoal.waitFor({ state: "visible", timeout: 5_000 })
+        const goalText = (await teachGoal.innerText()).trim()
+        if (!/converging attacks on lublin/i.test(goalText)) {
+          throw new Error(`Expected lesson goal in HUD, got: ${goalText || "(empty)"}`)
+        }
+        if (await page.locator("[data-testid=campaign-goal]").count()) {
+          throw new Error("Campaign goal still shown on /teach HUD")
+        }
+        if (await page.locator("[data-testid=treasury]").count()) {
+          throw new Error("Campaign treasury scoring still shown on /teach HUD")
+        }
         await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 10_000 })
         await page.locator("[data-testid=teach-orders-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
+        const resolveCount = await page.locator("[data-testid=teach-resolve]").count()
+        if (resolveCount !== 1) {
+          throw new Error(`Expected exactly one teach-resolve control, got ${resolveCount}`)
+        }
+        if (await page.locator("[data-testid=end-turn]").count()) {
+          throw new Error("Orders end-turn control should be absent on /teach")
+        }
+        const lessonBox = await page.locator("[data-testid=teach-lesson-window]").boundingBox()
+        const legendBox = await page.locator("[data-testid=legend-window]").boundingBox()
+        const ordersBox = await page.locator("[data-testid=teach-orders-window]").boundingBox()
+        if (!lessonBox || !legendBox || !ordersBox) {
+          throw new Error("Missing teach window bounding boxes for overlap check")
+        }
+        const overlap = (a, b) =>
+          !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y)
+        if (overlap(lessonBox, legendBox) || overlap(lessonBox, ordersBox) || overlap(legendBox, ordersBox)) {
+          throw new Error(
+            `Teach windows overlap at 1440×900: lesson=${JSON.stringify(lessonBox)} legend=${JSON.stringify(legendBox)} orders=${JSON.stringify(ordersBox)}`,
+          )
+        }
         const map = page.locator("[data-testid=war-map]")
         await map.waitFor({ state: "visible", timeout: 15_000 })
         const lessonHighlights = await map.getAttribute("data-lesson-highlights")
-        if (!lessonHighlights?.includes("target:lublin") || !lessonHighlights.includes("source:")) {
-          throw new Error(`Expected lesson target highlight on lublin, got: ${lessonHighlights ?? "(none)"}`)
+        if (
+          !lessonHighlights?.includes("target:lublin") ||
+          !lessonHighlights.includes("source:krakow") ||
+          !lessonHighlights.includes("kielce")
+        ) {
+          throw new Error(
+            `Expected lesson target+source highlights (lublin / krakow,kielce), got: ${lessonHighlights ?? "(none)"}`,
+          )
         }
         if ((await map.getAttribute("data-lesson-focus")) !== "true") {
           throw new Error("Expected data-lesson-focus=true on teach map")
@@ -1075,7 +1113,28 @@ function buildSteps(cli, targets) {
         await gotoChecked(page, `${base}/teach`)
         await page.locator("[data-testid=teach-begin-supply]").click()
         await page.locator("[data-testid=teach-app]").waitFor({ state: "visible", timeout: 60_000 })
+        await page.locator("[data-testid=teach-goal]").getByText(/supply vs headcount/i).waitFor({
+          state: "visible",
+          timeout: 10_000,
+        })
         await page.waitForTimeout(MAP_SETTLE_MS)
+        const map = page.locator("[data-testid=war-map]")
+        const supplyHighlights = await map.getAttribute("data-lesson-highlights")
+        if (
+          !supplyHighlights?.includes("target:kielce") ||
+          !supplyHighlights.includes("source:katowice") ||
+          !supplyHighlights.includes("krakow")
+        ) {
+          throw new Error(
+            `Expected supply lesson highlights (kielce / katowice,krakow), got: ${supplyHighlights ?? "(none)"}`,
+          )
+        }
+        if ((await page.locator("[data-testid=teach-resolve]").count()) !== 1) {
+          throw new Error("Expected exactly one teach-resolve on supply lesson")
+        }
+        if (await page.locator("[data-testid=end-turn]").count()) {
+          throw new Error("Orders end-turn should stay absent on supply lesson")
+        }
         await selectKrakowOnMap(page)
         await page.getByRole("button").filter({ hasText: /Kielce/ }).first().click()
         await page.locator("[data-testid=tab-orders]").click()

@@ -6,7 +6,6 @@ import { projectIncome } from "@/lib/engine/economy"
 import { standing } from "@/lib/engine/victory"
 import { statusLabel } from "@/lib/finale"
 import { scenarioSpec } from "@/lib/data/objectives"
-import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import { FACTION_LABEL } from "@/lib/format"
 import type { TableWindowId } from "@/lib/ui/table-windows"
 import type { TeachWindowId } from "@/lib/ui/teach-windows"
@@ -19,6 +18,8 @@ type HudProps = {
   advisorOpen: boolean
   onAdvisor: () => void
   teachMode?: boolean
+  /** Short lesson goal shown instead of the campaign objective on /teach. */
+  teachGoal?: string
   /** Desktop general's-table: window toggle buttons (campaign or /teach). */
   tableShell?: boolean
   windowOpen?: Partial<Record<TableWindowId, boolean>>
@@ -34,6 +35,7 @@ export function Hud({
   advisorOpen,
   onAdvisor,
   teachMode,
+  teachGoal,
   tableShell = false,
   windowOpen = {},
   onToggleWindow,
@@ -66,96 +68,108 @@ export function Hud({
           data-testid="objectives"
           className="order-3 w-full min-w-0 md:order-none md:w-auto md:flex-1"
         >
-          {teachMode && (
+          {teachMode ? (
             <p
-              data-testid="campaign-goal"
-              className="mb-1.5 text-center text-xs font-medium leading-snug text-foreground md:text-left"
+              data-testid="teach-goal"
+              className="text-center text-sm font-medium leading-snug text-foreground md:text-left"
             >
-              {campaignGoalLine(state.scenario)}
+              {teachGoal ?? "Teaching drill"}
             </p>
-          )}
-          <div
-            className="flex h-3 w-full overflow-hidden rounded-full border border-leather/25 bg-paper shadow-inner"
-            role="img"
-            aria-label={`Listed strength. ${FACTION_LABEL.central} ${central} versus ${FACTION_LABEL.russia} ${russia}.`}
-          >
-            <div
-              className={`h-full bg-faction-central ${central > 0 && russia > 0 ? "shadow-[inset_-1px_0_0_rgba(246,241,228,0.85)]" : ""}`}
-              style={{ width: `${centralShare}%` }}
-              title={`${FACTION_LABEL.central} listed strength ${central}`}
-            />
-            <div
-              className="h-full bg-faction-russia"
-              style={{ width: `${russiaShare}%` }}
-              title={`${FACTION_LABEL.russia} listed strength ${russia}`}
-            />
-          </div>
-          <p className="mt-1 text-center text-xs text-muted-foreground">
-            <span title={`${FACTION_LABEL.central} listed strength versus ${FACTION_LABEL.russia}`}>
-              Strength{" "}
-              <span className="font-semibold text-faction-central" title={`${FACTION_LABEL.central} listed strength`}>
-                <span className="sr-only">{FACTION_LABEL.central} </span>
-                {central}
-              </span>
-              {" vs "}
-              <span className="font-semibold text-faction-russia" title={`${FACTION_LABEL.russia} listed strength`}>
-                <span className="sr-only">{FACTION_LABEL.russia} </span>
-                {russia}
-              </span>
-            </span>
-            <span aria-hidden="true"> · </span>
-            <span title={`Provinces held, ${FACTION_LABEL.central} versus ${FACTION_LABEL.russia}`}>
-              Provinces{" "}
-              <span title={`Provinces held by the ${FACTION_LABEL.central}`}>
-                <span className="sr-only">{FACTION_LABEL.central} </span>
-                {held.central}
-              </span>
-              {" vs "}
-              <span title={`Provinces held by ${FACTION_LABEL.russia}`}>
-                <span className="sr-only">{FACTION_LABEL.russia} </span>
-                {held.russia}
-              </span>
-            </span>
-          </p>
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-muted-foreground">
-            <span data-testid="treasury">
-              Manpower{" "}
-              <span title="Manpower in the treasury">{purse.mp}</span>{" "}
-              <span title="Manpower income this fortnight">(+{income.mp})</span>
-              <span aria-hidden="true"> · </span>
-              Industry{" "}
-              <span title="Industry in the treasury">{purse.ip}</span>{" "}
-              <span title="Industry income this fortnight">(+{income.ip})</span>
-            </span>
-            <span title="Eastern victory points you hold, of those on the map">
-              ★ VP <span title="Eastern victory points you hold">{board.captured}</span>
-              /<span title="Eastern victory points available">{board.available}</span>
-            </span>
-            {state.result ? (
-              <span data-testid="grade" title="The campaign is over">
-                {shown}
-              </span>
-            ) : (
-              <span>
-                Grade{" "}
-                <span data-testid="grade" title="Grade if the campaign ended this fortnight">
-                  {shown}
+          ) : null}
+          {!teachMode && (
+            <>
+              <div
+                className="flex h-3 w-full overflow-hidden rounded-full border border-leather/25 bg-paper shadow-inner"
+                role="img"
+                aria-label={`Listed strength. ${FACTION_LABEL.central} ${central} versus ${FACTION_LABEL.russia} ${russia}.`}
+              >
+                <div
+                  className={`h-full bg-faction-central ${central > 0 && russia > 0 ? "shadow-[inset_-1px_0_0_rgba(246,241,228,0.85)]" : ""}`}
+                  style={{ width: `${centralShare}%` }}
+                  title={`${FACTION_LABEL.central} listed strength ${central}`}
+                />
+                <div
+                  className="h-full bg-faction-russia"
+                  style={{ width: `${russiaShare}%` }}
+                  title={`${FACTION_LABEL.russia} listed strength ${russia}`}
+                />
+              </div>
+              <p className="mt-1 text-center text-xs text-muted-foreground">
+                <span title={`${FACTION_LABEL.central} listed strength versus ${FACTION_LABEL.russia}`}>
+                  Strength{" "}
+                  <span
+                    className="font-semibold text-faction-central"
+                    title={`${FACTION_LABEL.central} listed strength`}
+                  >
+                    <span className="sr-only">{FACTION_LABEL.central} </span>
+                    {central}
+                  </span>
+                  {" vs "}
+                  <span
+                    className="font-semibold text-faction-russia"
+                    title={`${FACTION_LABEL.russia} listed strength`}
+                  >
+                    <span className="sr-only">{FACTION_LABEL.russia} </span>
+                    {russia}
+                  </span>
                 </span>
-              </span>
-            )}
-          </div>
+                <span aria-hidden="true"> · </span>
+                <span title={`Provinces held, ${FACTION_LABEL.central} versus ${FACTION_LABEL.russia}`}>
+                  Provinces{" "}
+                  <span title={`Provinces held by the ${FACTION_LABEL.central}`}>
+                    <span className="sr-only">{FACTION_LABEL.central} </span>
+                    {held.central}
+                  </span>
+                  {" vs "}
+                  <span title={`Provinces held by ${FACTION_LABEL.russia}`}>
+                    <span className="sr-only">{FACTION_LABEL.russia} </span>
+                    {held.russia}
+                  </span>
+                </span>
+              </p>
+              <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-muted-foreground">
+                <span data-testid="treasury">
+                  Manpower{" "}
+                  <span title="Manpower in the treasury">{purse.mp}</span>{" "}
+                  <span title="Manpower income this fortnight">(+{income.mp})</span>
+                  <span aria-hidden="true"> · </span>
+                  Industry{" "}
+                  <span title="Industry in the treasury">{purse.ip}</span>{" "}
+                  <span title="Industry income this fortnight">(+{income.ip})</span>
+                </span>
+                <span title="Eastern victory points you hold, of those on the map">
+                  ★ VP <span title="Eastern victory points you hold">{board.captured}</span>
+                  /<span title="Eastern victory points available">{board.available}</span>
+                </span>
+                {state.result ? (
+                  <span data-testid="grade" title="The campaign is over">
+                    {shown}
+                  </span>
+                ) : (
+                  <span>
+                    Grade{" "}
+                    <span data-testid="grade" title="Grade if the campaign ended this fortnight">
+                      {shown}
+                    </span>
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
         <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
           <div className="text-right">
             <p className="font-display text-xl leading-none" title="Date of this fortnight">
               {state.date}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Fortnight{" "}
-              <span title="This fortnight, counting from the start of the campaign">{fortnight}</span>
-              {" / "}
-              <span title="Fortnights in the campaign">{spec.length}</span>
-            </p>
+            {!teachMode && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Fortnight{" "}
+                <span title="This fortnight, counting from the start of the campaign">{fortnight}</span>
+                {" / "}
+                <span title="Fortnights in the campaign">{spec.length}</span>
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             {teachMode && tableShell ? (

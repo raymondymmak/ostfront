@@ -265,28 +265,6 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     filter: ["==", ["get", "id"], ""],
     paint: { "line-color": "#f3e2a8", "line-width": 3.4 },
   })
-  map.addLayer({
-    id: LESSON_SOURCE_OUTLINE_LAYER,
-    type: "line",
-    source: "provinces",
-    filter: ["==", ["get", "id"], ""],
-    paint: {
-      "line-color": LESSON_HIGHLIGHT_BRASS,
-      "line-width": LESSON_SOURCE_LINE_WIDTH,
-      "line-opacity": 0.75,
-    },
-  })
-  map.addLayer({
-    id: LESSON_TARGET_OUTLINE_LAYER,
-    type: "line",
-    source: "provinces",
-    filter: ["==", ["get", "id"], ""],
-    paint: {
-      "line-color": LESSON_HIGHLIGHT_BRASS,
-      "line-width": LESSON_TARGET_LINE_WIDTH,
-      "line-opacity": 0.95,
-    },
-  })
   // Rails above fills+borders (gate sits on the shared border), under labels/counters.
   // Mid weight ~2.0–3.0px track + casing; ~0.85 opacity; modest zoom growth; no sleeper ticks.
   map.addLayer({
@@ -325,6 +303,30 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
       "line-width": railWidth(2.0, 3.0),
       "line-dasharray": [1.4, 1.6],
       "line-opacity": railFade(0.85),
+    },
+  })
+  // Lesson focus outlines sit above rails so dashed sources stay readable on the map.
+  map.addLayer({
+    id: LESSON_SOURCE_OUTLINE_LAYER,
+    type: "line",
+    source: "provinces",
+    filter: ["==", ["get", "id"], ""],
+    paint: {
+      "line-color": LESSON_HIGHLIGHT_BRASS,
+      "line-width": LESSON_SOURCE_LINE_WIDTH,
+      "line-opacity": 0.95,
+      "line-dasharray": [2.2, 1.6],
+    },
+  })
+  map.addLayer({
+    id: LESSON_TARGET_OUTLINE_LAYER,
+    type: "line",
+    source: "provinces",
+    filter: ["==", ["get", "id"], ""],
+    paint: {
+      "line-color": LESSON_HIGHLIGHT_BRASS,
+      "line-width": LESSON_TARGET_LINE_WIDTH,
+      "line-opacity": 0.95,
     },
   })
   map.addLayer({

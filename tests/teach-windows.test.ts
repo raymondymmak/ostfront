@@ -4,6 +4,8 @@ import {
   createDefaultTeachWindows,
   focusTeachWindow,
   isTeachWindowOpen,
+  openTeachWindowsOverlap,
+  teachLessonHeightCap,
   topmostTeachWindow,
   toggleTeachWindow,
 } from "@/lib/ui/teach-windows"
@@ -17,12 +19,19 @@ describe("teach-windows", () => {
     expect(isTeachWindowOpen(windows, "province")).toBe(false)
   })
 
-  it("keeps Lesson above Legend on a common desktop stage", () => {
-    const windows = createDefaultTeachWindows(1440, 820)
-    const lesson = windows.find((item) => item.id === "lesson")!
-    const legend = windows.find((item) => item.id === "legend")!
-    expect(lesson.y).toBeLessThan(legend.y)
-    expect(lesson.y + 200).toBeLessThanOrEqual(legend.y + 8)
+  it("keeps open windows from overlapping at common desktop sizes", () => {
+    for (const [w, h] of [
+      [1440, 820],
+      [1440, 900 - 80],
+      [1280, 800 - 80],
+      [1024, 700],
+    ] as const) {
+      const windows = createDefaultTeachWindows(w, h)
+      expect(openTeachWindowsOverlap(windows, w, h)).toBe(false)
+      const lesson = windows.find((item) => item.id === "lesson")!
+      const legend = windows.find((item) => item.id === "legend")!
+      expect(lesson.y + teachLessonHeightCap(h)).toBeLessThanOrEqual(legend.y)
+    }
   })
 
   it("Escape helper closes the topmost open teach window", () => {

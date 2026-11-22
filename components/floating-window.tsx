@@ -13,6 +13,8 @@ type FloatingWindowProps = {
   widthClassName?: string
   /** Preferred max height; actual height is also capped to remaining stage space. */
   maxHeightClassName?: string
+  /** Hard pixel cap (e.g. keep Lesson above Legend on /teach). */
+  heightCap?: number
   testId?: string
   onFocus: () => void
   onClose: () => void
@@ -41,6 +43,7 @@ export function FloatingWindow({
   z,
   widthClassName = "w-[min(23rem,calc(100%-1.5rem))]",
   maxHeightClassName = "max-h-[min(70dvh,36rem)]",
+  heightCap,
   testId,
   onFocus,
   onClose,
@@ -66,7 +69,9 @@ export function FloatingWindow({
     const sync = () => {
       const { width: stageW, height: stageH } = measureStage(node)
       const remaining = Math.max(120, stageH - y - TABLE_WINDOW_MARGIN)
-      setStageMaxHeight(remaining)
+      setStageMaxHeight(
+        heightCap !== undefined ? Math.min(remaining, Math.max(120, heightCap)) : remaining,
+      )
       const ww = node.offsetWidth || 320
       const wh = node.offsetHeight || 200
       const next = clampWindowPosition(x, y, ww, wh, stageW, stageH)
@@ -84,7 +89,7 @@ export function FloatingWindow({
       ro?.disconnect()
       window.removeEventListener("resize", sync)
     }
-  }, [open, x, y, onMove])
+  }, [open, x, y, heightCap, onMove])
 
   if (!open) return null
 
