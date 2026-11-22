@@ -20,17 +20,19 @@ export function createDefaultTableWindows(
   mapWidth = 1440,
   mapHeight = 820,
 ): TableWindowState[] {
-  const right = Math.max(12, mapWidth - 380)
+  // Leave the top-right MapMode + zoom strip clear (≈7rem wide, ≈6rem tall).
+  const right = Math.max(12, mapWidth - 400)
+  const belowMapMode = 100
   const bottomLegend = Math.max(12, mapHeight - 280)
   return [
     { id: "ohl", open: true, x: Math.min(200, Math.max(12, mapWidth * 0.12)), y: 12, z: BASE_Z + 2 },
-    { id: "orders", open: true, x: right, y: 48, z: BASE_Z + 3 },
+    { id: "orders", open: true, x: right, y: belowMapMode, z: BASE_Z + 3 },
     { id: "legend", open: true, x: 12, y: bottomLegend, z: BASE_Z + 1 },
     {
       id: "province",
       open: false,
-      x: Math.max(12, mapWidth - 760),
-      y: 48,
+      x: Math.max(12, mapWidth - 780),
+      y: belowMapMode,
       z: BASE_Z + 4,
     },
     {
