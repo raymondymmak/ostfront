@@ -248,11 +248,11 @@ export function SvgMap({
           const points = line.coordinates.map(([lon, lat]) => `${lon},${-lat}`).join(" ")
           const color = line.side === "cut" ? RAIL_STYLE.cut : RAIL_STYLE.track
           const scale = line.hot ? line.hotWidthScale : 1
-          const trackWidth = view.label * 0.098 * scale
-          const casingWidth = view.label * 0.147 * scale
+          const trackWidth = view.label * 0.082 * scale
+          const casingWidth = view.label * 0.126 * scale
           const isCut = line.side === "cut"
           return (
-            <g key={`${line.a}-${line.b}`} pointerEvents="none" opacity={1}>
+            <g key={`${line.a}-${line.b}`} pointerEvents="none" opacity={0.85}>
               {!isCut && (
                 <polyline
                   points={points}

@@ -151,10 +151,12 @@ describe("rail lines", () => {
     expect(layers).toContain("railWidthHot")
     expect(layers).toContain("RAIL_STYLE.casing")
     expect(layers).toContain("RAIL_STYLE.track")
-    // Full opacity at open zoom (not the old 0.62 / 0.38 fade caps).
-    expect(layers).toContain("railFade(1)")
+    // Soft but readable at open zoom (not the old 0.62 / 0.38 fade caps).
+    expect(layers).toContain("railFade(0.85)")
     expect(layers).not.toContain("railFade(0.62)")
     expect(layers).not.toContain("railFade(0.38)")
+    expect(layers).toContain("railWidthHot(2.0, 3.0)")
+    expect(layers).toContain("railWidthHot(3.1, 4.1)")
     // Zoom interpolate must be top-level — nesting under `*` rejects the layer.
     expect(layers).not.toMatch(/\*\s*,\s*\[\s*[\"']coalesce[\"'][\s\S]*?railWidth\(/)
     expect(layers).toContain('id: "province-labels"')
