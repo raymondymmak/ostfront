@@ -5,7 +5,7 @@ import {
   focusTeachWindow,
   isTeachWindowOpen,
   openTeachWindowsOverlap,
-  teachLessonHeightCap,
+  TEACH_WINDOW_SIZE_HINTS,
   topmostTeachWindow,
   toggleTeachWindow,
 } from "@/lib/ui/teach-windows"
@@ -30,7 +30,10 @@ describe("teach-windows", () => {
       expect(openTeachWindowsOverlap(windows, w, h)).toBe(false)
       const lesson = windows.find((item) => item.id === "lesson")!
       const legend = windows.find((item) => item.id === "legend")!
-      expect(lesson.y + teachLessonHeightCap(h)).toBeLessThanOrEqual(legend.y)
+      // Legend sits to the right of the Lesson column, not under it.
+      expect(legend.x).toBeGreaterThanOrEqual(
+        lesson.x + TEACH_WINDOW_SIZE_HINTS.lesson.w,
+      )
     }
   })
 

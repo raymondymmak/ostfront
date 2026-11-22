@@ -27,6 +27,7 @@ import {
   focusTeachWindow,
   isTeachWindowOpen,
   moveTeachWindow,
+  teachLegendHeightCap,
   teachLessonHeightCap,
   TEACH_WINDOW_TITLES,
   type TeachWindowId,
@@ -50,6 +51,7 @@ export function TeachingApp() {
   const mapStageRef = useRef<HTMLDivElement>(null)
   const [windows, setWindows] = useState<TeachWindowState[]>(() => createDefaultTeachWindows())
   const [lessonHeightCap, setLessonHeightCap] = useState(() => teachLessonHeightCap(820))
+  const [legendHeightCap, setLegendHeightCap] = useState(() => teachLegendHeightCap(820))
   const [lessonId, setLessonId] = useState<TeachLessonId>("converging-lublin")
   const [variant, setVariant] = useState<TeachVariant>("guided")
   const [session, setSession] = useState<SessionPayload | null>(null)
@@ -157,6 +159,7 @@ export function TeachingApp() {
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
     setWindows(createDefaultTeachWindows(width, height))
     setLessonHeightCap(teachLessonHeightCap(height))
+    setLegendHeightCap(teachLegendHeightCap(height))
   }
 
   useEffect(() => {
@@ -618,8 +621,9 @@ export function TeachingApp() {
                     x={win.x}
                     y={win.y}
                     z={win.z}
-                    widthClassName="w-[min(18rem,calc(100%-1.5rem))]"
-                    maxHeightClassName="max-h-[min(60dvh,28rem)]"
+                    widthClassName="w-[min(17.5rem,calc(100%-1.5rem))]"
+                    maxHeightClassName="max-h-[min(40dvh,18.75rem)]"
+                    heightCap={legendHeightCap}
                     testId="legend-window"
                     onFocus={focus}
                     onClose={close}

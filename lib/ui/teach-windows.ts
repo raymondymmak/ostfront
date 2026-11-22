@@ -14,7 +14,7 @@ const BASE_Z = 20
 const GAP = 12
 
 export const TEACH_WINDOW_SIZE_HINTS: Record<TeachWindowId, { w: number; h: number }> = {
-  lesson: { w: 340, h: 360 },
+  lesson: { w: 340, h: 380 },
   orders: { w: 360, h: 480 },
   province: { w: 360, h: 480 },
   legend: { w: 280, h: 300 },
@@ -29,7 +29,7 @@ export type TeachWindowRect = {
   h: number
 }
 
-/** Axis-aligned overlap (inclusive edges with zero gap count as overlap). */
+/** Axis-aligned overlap (zero gap counts as overlap). */
 export function rectsOverlap(
   a: { x: number; y: number; w: number; h: number },
   b: { x: number; y: number; w: number; h: number },
@@ -48,13 +48,14 @@ export function teachWindowHeights(mapWidth: number, mapHeight: number): Record<
   void mapWidth
   const m = TABLE_WINDOW_MARGIN
   const belowMapMode = 100
+  const lessonH = Math.min(
+    TEACH_WINDOW_SIZE_HINTS.lesson.h,
+    Math.max(200, mapHeight - belowMapMode - m),
+  )
   const legendH = Math.min(
     TEACH_WINDOW_SIZE_HINTS.legend.h,
-    Math.max(180, Math.floor(mapHeight * 0.36)),
+    Math.max(180, Math.floor(mapHeight * 0.38)),
   )
-  const legendY = Math.max(m, mapHeight - legendH - m)
-  const lessonMaxH = Math.max(160, legendY - belowMapMode - GAP)
-  const lessonH = Math.min(TEACH_WINDOW_SIZE_HINTS.lesson.h, lessonMaxH)
   const ordersH = Math.min(
     TEACH_WINDOW_SIZE_HINTS.orders.h,
     Math.max(220, mapHeight - belowMapMode - m),
@@ -67,9 +68,14 @@ export function teachWindowHeights(mapWidth: number, mapHeight: number): Record<
   }
 }
 
-/** Lesson FloatingWindow heightCap so it cannot grow over Legend. */
+/** Lesson FloatingWindow heightCap — leave map chrome room under the window. */
 export function teachLessonHeightCap(mapHeight: number): number {
   return teachWindowHeights(1440, mapHeight).lesson
+}
+
+/** Legend FloatingWindow heightCap so it stays a compact bottom panel. */
+export function teachLegendHeightCap(mapHeight: number): number {
+  return teachWindowHeights(1440, mapHeight).legend
 }
 
 /** Open-window bounding boxes using placement-budgeted heights. */
@@ -110,71 +116,51 @@ export function openTeachWindowsOverlap(
   return false
 }
 
-/** Default /teach desktop layout: Lesson + Orders + Legend open; Province closed. */
+/**
+ * Default /teach desktop layout: Lesson top-left, Orders top-right,
+ * Legend bottom-left but to the right of the Lesson column (never under it).
+ */
 export function createDefaultTeachWindows(
   mapWidth = 1440,
   mapHeight = 820,
 ): TeachWindowState[] {
   const m = TABLE_WINDOW_MARGIN
   const belowMapMode = 100
+  const heights = teachWindowHeights(mapWidth, mapHeight)
   const lessonHint = TEACH_WINDOW_SIZE_HINTS.lesson
   const ordersHint = TEACH_WINDOW_SIZE_HINTS.orders
   const legendHint = TEACH_WINDOW_SIZE_HINTS.legend
 
-  // Legend anchors bottom-left; Lesson sits above it with a hard vertical gap.
-  const legendH = Math.min(legendHint.h, Math.max(180, Math.floor(mapHeight * 0.36)))
-  const legendY = Math.max(m, mapHeight - legendH - m)
-  const lessonMaxH = Math.max(160, legendY - belowMapMode - GAP)
-  const lessonH = Math.min(lessonHint.h, lessonMaxH)
-  const ordersH = Math.min(ordersHint.h, Math.max(220, mapHeight - belowMapMode - m))
+  const lessonX = m
+  const lessonY = belowMapMode
+  // Sit Legend beside the Lesson column so a tall Lesson cannot cover it.
+  const legendX = Math.min(
+    mapWidth - legendHint.w - m,
+    Math.max(m, lessonX + lessonHint.w + GAP),
+  )
+  const legendY = Math.max(m, mapHeight - heights.legend - m)
 
-  // On narrow stages, keep Orders clear of the left Lesson/Legend column.
-  const leftColumnRight = m + Math.max(lessonHint.w, legendHint.w)
   const ordersX = Math.max(
-    leftColumnRight + GAP,
+    legendX + legendHint.w + GAP,
     mapWidth - ordersHint.w - m - 24,
   )
+  // If the stage is too narrow for Orders right of Legend, keep Orders at the
+  // right edge (Legend stays left-of-center; Orders/Province share the right).
+  const ordersXFinal =
+    ordersX + ordersHint.w + m <= mapWidth
+      ? ordersX
+      : Math.max(m, mapWidth - ordersHint.w - m)
 
   const raw: TeachWindowState[] = [
-    {
-      id: "lesson",
-      open: true,
-      x: m,
-      y: belowMapMode,
-      z: BASE_Z + 4,
-    },
-    {
-      id: "orders",
-      open: true,
-      x: ordersX,
-      y: belowMapMode,
-      z: BASE_Z + 3,
-    },
-    {
-      id: "legend",
-      open: true,
-      x: m,
-      y: legendY,
-      z: BASE_Z + 1,
-    },
-    {
-      id: "province",
-      open: false,
-      x: ordersX,
-      y: belowMapMode,
-      z: BASE_Z + 2,
-    },
+    { id: "lesson", open: true, x: lessonX, y: lessonY, z: BASE_Z + 4 },
+    { id: "orders", open: true, x: ordersXFinal, y: belowMapMode, z: BASE_Z + 3 },
+    { id: "legend", open: true, x: legendX, y: legendY, z: BASE_Z + 1 },
+    { id: "province", open: false, x: ordersXFinal, y: belowMapMode, z: BASE_Z + 2 },
   ]
 
   return raw.map((item) => {
     const hint = TEACH_WINDOW_SIZE_HINTS[item.id]
-    const h =
-      item.id === "orders" || item.id === "province"
-        ? ordersH
-        : item.id === "legend"
-          ? legendH
-          : lessonH
-    // Persist the height we budgeted into placement by clamping with that height.
+    const h = heights[item.id]
     const clamped = clampWindowPosition(item.x, item.y, hint.w, h, mapWidth, mapHeight)
     return { ...item, ...clamped }
   })
