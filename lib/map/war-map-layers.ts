@@ -175,46 +175,6 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     filter: ["==", ["get", "id"], ""],
     paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
   })
-  // Rails: light casing + near-black track above fills, under borders/labels.
-  // Width ~1.5–2.5px with modest zoom growth (no sleeper ticks).
-  map.addLayer({
-    id: "rail-casing",
-    type: "line",
-    source: "rails",
-    filter: ["!=", ["get", "side"], "cut"],
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": RAIL_STYLE.casing,
-      "line-width": railWidthHot(2.35, 3.15),
-      "line-opacity": railFade(1),
-    },
-  })
-  map.addLayer({
-    id: "rail-track",
-    type: "line",
-    source: "rails",
-    filter: ["!=", ["get", "side"], "cut"],
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": RAIL_STYLE.track,
-      "line-width": railWidthHot(1.55, 2.35),
-      "line-opacity": railFade(1),
-    },
-  })
-  // Cut edges: same weight as held track, dashed (light casing would fill the gaps).
-  map.addLayer({
-    id: "rail-cut",
-    type: "line",
-    source: "rails",
-    filter: ["==", ["get", "side"], "cut"],
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": RAIL_STYLE.cut,
-      "line-width": railWidth(1.55, 2.35),
-      "line-dasharray": [1.4, 1.6],
-      "line-opacity": railFade(1),
-    },
-  })
   map.addLayer({
     id: "country-borders",
     type: "line",
@@ -284,6 +244,46 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     source: "provinces",
     filter: ["==", ["get", "id"], ""],
     paint: { "line-color": "#f3e2a8", "line-width": 3.4 },
+  })
+  // Rails above fills+borders (gate sits on the shared border), under labels/counters.
+  // ~1.5–2.5px track + light casing; modest zoom growth; no sleeper ticks.
+  map.addLayer({
+    id: "rail-casing",
+    type: "line",
+    source: "rails",
+    filter: ["!=", ["get", "side"], "cut"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": RAIL_STYLE.casing,
+      "line-width": railWidthHot(2.6, 3.4),
+      "line-opacity": railFade(1),
+    },
+  })
+  map.addLayer({
+    id: "rail-track",
+    type: "line",
+    source: "rails",
+    filter: ["!=", ["get", "side"], "cut"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": RAIL_STYLE.track,
+      "line-width": railWidthHot(1.7, 2.5),
+      "line-opacity": railFade(1),
+    },
+  })
+  // Cut edges: same weight as held track, dashed (casing would fill the gaps).
+  map.addLayer({
+    id: "rail-cut",
+    type: "line",
+    source: "rails",
+    filter: ["==", ["get", "side"], "cut"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": RAIL_STYLE.cut,
+      "line-width": railWidth(1.7, 2.5),
+      "line-dasharray": [1.4, 1.6],
+      "line-opacity": railFade(1),
+    },
   })
   map.addLayer({
     id: "province-labels",

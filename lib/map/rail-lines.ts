@@ -41,17 +41,17 @@ export type RailLine = {
  * on both Central (blue) and Russian (red) fills. No sleeper ticks.
  */
 export const RAIL_STYLE = {
-  /** Light casing under the track. */
-  casing: "#f4efe4",
+  /** Light casing under the track — reads on blue and red fills. */
+  casing: "#fff6e4",
   /** Held-side track (both factions share the same high-contrast ink). */
-  track: "#1a1410",
-  central: "#1a1410",
-  russia: "#1a1410",
-  cut: "#2a241c",
+  track: "#14100c",
+  central: "#14100c",
+  russia: "#14100c",
+  cut: "#1c1612",
   hot: "#f3e2a8",
   /** Kept for SVG/legend aliases; sleepers are not drawn on the map. */
-  sleeper: "#1a1410",
-  tie: "#1a1410",
+  sleeper: "#14100c",
+  tie: "#14100c",
 } as const
 
 /** Same pairs the supply engine walks. Only the rail edges are drawn. */
