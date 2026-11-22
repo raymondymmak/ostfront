@@ -28,8 +28,8 @@ Browser updates map, optional Log drawer chronicle, clears order queue
 | Layer | Role | Search here |
 | --- | --- | --- |
 | `app/` | Pages and HTTP routes | `app/api/*/route.ts` |
-| `components/` | Map, HUD, panels | `game-app.tsx` (branches to `campaign-start.tsx` pre-Begin), `war-map.tsx`, `odds-bar.tsx` |
-| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `map-hover.ts`, `map-target-style.ts`, `types.ts` |
+| `components/` | Map, HUD, panels | `game-app.tsx` (branches to `campaign-start.tsx` pre-Begin), `war-map.tsx`, `floating-window.tsx`, `ohl-orders-window.tsx`, `odds-bar.tsx` |
+| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `table-windows.ts`, `use-desktop-shell.ts`, `map-hover.ts`, `map-target-style.ts`, `types.ts` |
 | `lib/engine/` | Rules of war (ground truth) | `turn.ts`, `simultaneous.ts`, `combat.ts` |
 | `lib/gm/` | Orders → proposals, LLM cascade, advisor | `index.ts`, `interpret.ts`, `cascade.ts`, `advisor.ts` |
 | `lib/ai/` | Rule-based Stavka | `stavka.ts` |
@@ -58,6 +58,18 @@ Stack: Next.js App Router, React client components for the game shell, server ro
 | `public/fonts/` | Self-hosted MapLibre glyph PBFs (Noto Serif incl. ★/◆ ranges, Open Sans) |
 
 Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints directly (no canvas blit). ADR 009.
+
+### Campaign shell (general's table)
+
+| Viewport | Layout |
+| --- | --- |
+| Desktop (`lg+`, ≥1024px) | Full-width map; no fixed 23rem right dock. Slim HUD toggles parchment-document floating windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`): Orders, Province, Log, Legend, Chief of Staff, Orders from OHL. Header-only drag with grip + grab cursor; positions clamp to the map stage; bodies scroll under max-height. Default-open after Begin: Orders, Legend, OHL. Escape: news → topmost window → deselect. |
+| Below `lg` | Stacked map + Orders/Province `<aside>` tabs (unchanged). Map-corner Log stays above the legend through tablet widths (640–1023px). Campaign goal is a dismissible OHL strip, not the HUD strength block. |
+| `/teach` | Shared `Hud` keeps the goal line in the header (`teachMode`); no campaign window buttons; teaching-app three-column dock unchanged (Part 6). |
+
+**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`; faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`), paper-tab buttons, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
+
+ADR 010.
 
 ---
 
@@ -309,6 +321,7 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog` (battle rows show compact loss lines from `Resolution.battle`), full summaries behind **Details** |
 | **BattleFacts** | Optional `Resolution.battle` set in `resolveManeuvers` for assaults and meeting engagements that already log losses; includes sorted `origins` for news map arrows |
 | **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); priority objective → encirclement → city → depot; wins over Log for Escape |
+| **General's table** | Desktop (`lg+`) parchment floating windows for Orders / Province / Log / Legend / Advisor / OHL (clamped + scrollable); mobile keeps stacked aside (ADR 010) |
 
 ---
 

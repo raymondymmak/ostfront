@@ -15,4 +15,6 @@ Short notes on choices that shape Ostfront. Each ADR is one file in this folder.
 
 Keep ADRs small. Link to `ARCHITECTURE.md` and code paths instead of pasting implementation detail.
 
+Recent: **010** — desktop floating-window general’s-table shell vs mobile stacked layout.
+
 When you change architecture, routes, storage, trust boundaries, or game rules, update `ARCHITECTURE.md` and add or revise an ADR in the same pull request (see `AGENTS.md`).

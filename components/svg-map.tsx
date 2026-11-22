@@ -353,7 +353,7 @@ export function SvgMap({
       </svg>
       {hoverTip ? (
         <div
-          className={`pointer-events-none absolute left-2 z-20 max-w-[min(14rem,calc(100%-1rem))] rounded-md bg-[#241c14]/92 px-2.5 py-2 text-xs whitespace-pre-line text-[#f3e2a8] shadow-sm ${orderMode ? "top-12" : "top-2"}`}
+          className={`pointer-events-none absolute left-2 z-20 max-w-[min(14rem,calc(100%-1rem))] rounded-sm border border-leather/40 bg-paper/95 px-2.5 py-2 text-xs whitespace-pre-line text-ink shadow-[0_6px_14px_rgba(36,28,20,0.18)] ${orderMode ? "top-12" : "top-2"}`}
           role="tooltip"
           data-testid="svg-map-hover-tip"
         >

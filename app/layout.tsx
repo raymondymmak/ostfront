@@ -1,18 +1,28 @@
 import type { Metadata } from "next"
-import { Fraunces, Source_Sans_3 } from "next/font/google"
+import localFont from "next/font/local"
 import "./globals.css"
 
-const sourceSans = Source_Sans_3({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const sourceSans = localFont({
+  src: [
+    { path: "../public/fonts/ui/source-sans-3-latin.woff2", weight: "400", style: "normal" },
+    { path: "../public/fonts/ui/source-sans-3-latin-500.woff2", weight: "500", style: "normal" },
+    { path: "../public/fonts/ui/source-sans-3-latin-600.woff2", weight: "600", style: "normal" },
+    { path: "../public/fonts/ui/source-sans-3-latin-700.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-source",
+  display: "swap",
 })
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  style: ["normal", "italic"],
+const fraunces = localFont({
+  src: [
+    { path: "../public/fonts/ui/fraunces-latin.woff2", weight: "500", style: "normal" },
+    { path: "../public/fonts/ui/fraunces-latin-italic.woff2", weight: "500", style: "italic" },
+    { path: "../public/fonts/ui/fraunces-latin-600.woff2", weight: "600", style: "normal" },
+    { path: "../public/fonts/ui/fraunces-latin-600-italic.woff2", weight: "600", style: "italic" },
+    { path: "../public/fonts/ui/fraunces-latin-700.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-display",
+  display: "swap",
 })
 
 export const metadata: Metadata = {

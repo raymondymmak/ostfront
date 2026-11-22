@@ -83,30 +83,30 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
   const overlay = (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[250] flex items-center justify-center bg-[#0a0806]/78 p-3 backdrop-blur-sm sm:p-4"
+      className="fixed inset-0 z-[250] flex items-center justify-center bg-leather/55 p-3 backdrop-blur-[2px] sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="news-card-headline"
       data-testid="news-card-overlay"
     >
       <article
-        className="flex max-h-[min(92dvh,760px)] w-full max-w-[min(100%,22rem)] flex-col overflow-hidden rounded-lg border border-[#c6a15a]/40 bg-[#221c17] shadow-2xl sm:max-w-md"
+        className="flex max-h-[min(92dvh,760px)] w-full max-w-[min(100%,22rem)] flex-col overflow-hidden rounded-sm border border-leather/50 bg-paper text-ink shadow-[0_18px_40px_rgba(36,28,20,0.35)] sm:max-w-md"
         data-testid="news-card"
       >
-        <header className="shrink-0 border-b border-[#c6a15a]/25 bg-[#1a140e]/90 px-3 py-2 sm:px-4">
+        <header className="shrink-0 border-b border-leather/25 bg-paper-deep px-3 py-2 sm:px-4">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="text-[10px] tracking-[0.2em] text-[#c6a15a] uppercase">Front communiqué</p>
+              <p className="text-[10px] tracking-[0.2em] text-primary uppercase">Front communiqué</p>
               <p className="text-xs text-muted-foreground">
                 {FACTION_LABEL[event.faction]} · Fortnight {event.turn + 1}
               </p>
             </div>
-            <p className="text-xs font-medium text-[#c6a15a]" data-testid="news-card-counter">
+            <p className="text-xs font-medium text-primary" data-testid="news-card-counter">
               {ordinal} of {total}
             </p>
           </div>
         </header>
-        <div className="relative h-[min(32dvh,11.5rem)] w-full shrink-0 overflow-hidden border-b border-border bg-[#14110e] sm:h-[min(34dvh,12.5rem)]">
+        <div className="relative h-[min(32dvh,11.5rem)] w-full shrink-0 overflow-hidden border-b border-border bg-muted sm:h-[min(34dvh,12.5rem)]">
           {event.image.type === "photo" ? (
             <Image
               src={photoSrc(event.image.key)}
@@ -126,14 +126,14 @@ export function NewsCardQueue({ events, onDone }: NewsCardQueueProps) {
         <div className="shrink-0 space-y-1.5 px-3 py-2.5 sm:space-y-2 sm:px-4 sm:py-3">
           <h2
             id="news-card-headline"
-            className="font-display text-xl leading-tight text-[#f3e2a8] sm:text-2xl"
+            className="font-display text-xl leading-tight text-ink sm:text-2xl"
           >
             {event.headline}
           </h2>
-          <p className="text-xs leading-snug text-[#ebe4d4]/85 sm:text-sm">{event.lore}</p>
+          <p className="text-xs leading-snug text-ink/85 sm:text-sm">{event.lore}</p>
           {event.lossesLine ? (
             <p
-              className="text-[11px] font-medium tracking-wide text-[#c6a15a]/90 sm:text-xs"
+              className="text-[11px] font-medium tracking-wide text-primary sm:text-xs"
               data-testid="news-card-losses"
             >
               {event.lossesLine}

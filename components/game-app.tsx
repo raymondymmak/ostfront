@@ -1,11 +1,15 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AdvisorPanel } from "@/components/advisor-panel"
 import { Hud } from "@/components/hud"
 import { OrderPanel } from "@/components/order-panel"
 import { ProvincePanel } from "@/components/province-panel"
 import { ChronicleDrawer } from "@/components/chronicle-drawer"
+import { FloatingWindow } from "@/components/floating-window"
+import { MapLegend } from "@/components/map-legend"
+import { OhlOrdersWindow } from "@/components/ohl-orders-window"
+import { TimelinePanel } from "@/components/timeline-panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
@@ -26,8 +30,22 @@ import type { AdvisorOrder } from "@/lib/gm/advisor-types"
 import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { applyAdvisorToQueue, leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
 import { toggleSelection } from "@/lib/ui/selection"
+import {
+  closeTopmostWindow,
+  closeWindow,
+  createDefaultTableWindows,
+  focusWindow,
+  isWindowOpen,
+  moveWindow,
+  toggleWindow,
+  type TableWindowId,
+  type TableWindowState,
+  TABLE_WINDOW_TITLES,
+} from "@/lib/ui/table-windows"
+import { useDesktopShell } from "@/lib/ui/use-desktop-shell"
 import { selectNewsEvents } from "@/lib/news/select"
 import type { NewsEvent } from "@/lib/news/types"
 import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
@@ -52,11 +70,16 @@ export function GameApp() {
   const [logIndex, setLogIndex] = useState<number | null>(null)
   const [armReset, setArmReset] = useState(false)
   const [resultOpen, setResultOpen] = useState(false)
-  const [advisorOpen, setAdvisorOpen] = useState(false)
   const [sideTab, setSideTab] = useState("orders")
   const [chatEpoch, setChatEpoch] = useState(0)
   const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
-  const [logOpen, setLogOpen] = useState(false)
+  const [windows, setWindows] = useState<TableWindowState[]>(() => createDefaultTableWindows())
+  const [showRails, setShowRails] = useState(true)
+  const desktopShell = useDesktopShell()
+  const mapStageRef = useRef<HTMLDivElement>(null)
+  const advisorOpen = isWindowOpen(windows, "advisor")
+  const logOpen = isWindowOpen(windows, "log")
+  const ohlOpen = isWindowOpen(windows, "ohl")
 
   useEffect(() => {
     if (!setupOpen && game.gameId) saveGame(game)
@@ -152,13 +175,51 @@ export function GameApp() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       if (newsQueue.length > 0) return
+      if (resultOpen || setupOpen) return
+      if (desktopShell) {
+        if (windows.some((item) => item.open)) {
+          setWindows((current) => closeTopmostWindow(current))
+          return
+        }
+        setSelectedId(null)
+        return
+      }
       if (logOpen) return
-      if (setupOpen || advisorOpen || resultOpen) return
+      if (advisorOpen) return
       setSelectedId(null)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [newsQueue.length, logOpen, setupOpen, advisorOpen, resultOpen])
+  }, [newsQueue.length, logOpen, setupOpen, advisorOpen, resultOpen, desktopShell, windows])
+
+  function resetTableWindows() {
+    const node = mapStageRef.current
+    const width = node?.clientWidth || (typeof window !== "undefined" ? window.innerWidth : 1440)
+    const height =
+      node?.clientHeight ||
+      Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
+    setWindows(createDefaultTableWindows(width, height))
+  }
+
+  useEffect(() => {
+    if (setupOpen) return
+    const frame = window.requestAnimationFrame(() => resetTableWindows())
+    return () => window.cancelAnimationFrame(frame)
+  }, [setupOpen, desktopShell])
+
+  function setWindowOpen(id: TableWindowId, open: boolean) {
+    setWindows((current) => (open ? focusWindow(current, id) : closeWindow(current, id)))
+  }
+
+  function onToggleTableWindow(id: TableWindowId) {
+    // Orders/Province/Legend/OHL: open or focus only (demo-check re-clicks tab-orders).
+    // Log + Advisor: true toggle (openChronicleDrawer / ensureAdvisorPanelOpen / step 18).
+    if (id === "log" || id === "advisor") {
+      setWindows((current) => toggleWindow(current, id))
+      return
+    }
+    setWindows((current) => focusWindow(current, id))
+  }
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
     if (ordersLocked(Boolean(game.state.result))) return
@@ -267,7 +328,6 @@ export function GameApp() {
       setOrderMode(false)
       setArmReset(false)
       setResultOpen(false)
-      setAdvisorOpen(false)
       setSideTab("orders")
       setChatEpoch((value) => value + 1)
       setSetupOpen(false)
@@ -348,7 +408,7 @@ export function GameApp() {
         state: payload.state!,
         log: [...current.log, record],
       }))
-      if (events.length) setLogOpen(false)
+      if (events.length) setWindowOpen("log", false)
       setNewsQueue(events)
       setQueue([])
       setDirective("")
@@ -367,7 +427,7 @@ export function GameApp() {
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault()
         if (newsQueue.length) return
-        setLogOpen(false)
+        setWindowOpen("log", false)
         void endTurn()
       }
     }
@@ -389,11 +449,10 @@ export function GameApp() {
     setLogIndex(null)
     setSelectedId("krakow")
     setArmReset(false)
-    setAdvisorOpen(false)
     setSideTab("orders")
     setChatEpoch((value) => value + 1)
     setNewsQueue([])
-    setLogOpen(false)
+    resetTableWindows()
   }
 
   function acceptAdvisorOrders(
@@ -418,11 +477,56 @@ export function GameApp() {
         : "Filed in the queue. The engine resolves it when the fortnight closes.",
     )
     setSideTab("orders")
+    if (desktopShell) setWindowOpen("orders", true)
     return { ok: true }
   }
 
   const latest = game.log.at(-1)
   const fallback = !error && latest?.warning ? latest : null
+  const windowOpenMap = {
+    orders: isWindowOpen(windows, "orders"),
+    province: isWindowOpen(windows, "province"),
+    log: logOpen,
+    legend: isWindowOpen(windows, "legend"),
+    advisor: advisorOpen,
+    ohl: ohlOpen,
+  }
+
+  const orderPanel = (
+    <OrderPanel
+      state={game.state}
+      directive={directive}
+      onDirective={setDirective}
+      queue={queue}
+      onQueue={setQueue}
+      orderMode={orderMode && !finished}
+      onOrderMode={(value) => {
+        if (finished) return
+        setOrderMode(value)
+      }}
+      hint={hint}
+      busy={busy}
+      onEndTurn={() => {
+        if (newsQueue.length) return
+        void endTurn()
+      }}
+      onSelect={selectProvince}
+    />
+  )
+
+  const provincePanel = (
+    <ProvincePanel
+      state={game.state}
+      province={selected}
+      budget={budget}
+      onSelect={selectProvince}
+      onOrder={addArrow}
+      onFortify={fortify}
+      onRecruit={recruit}
+      onCancelRecruit={cancelRecruit}
+      queue={queue}
+    />
+  )
 
   if (setupOpen) {
     return (
@@ -442,11 +546,41 @@ export function GameApp() {
         armReset={armReset}
         onReset={reset}
         advisorOpen={advisorOpen}
-        onAdvisor={() => setAdvisorOpen((value) => !value)}
+        onAdvisor={() => onToggleTableWindow("advisor")}
+        tableShell={desktopShell}
+        windowOpen={windowOpenMap}
+        onToggleWindow={onToggleTableWindow}
       />
+      {!desktopShell && ohlOpen && (
+        <div
+          className="flex items-start justify-between gap-3 border-b border-leather/35 bg-paper-deep px-3 py-2 sm:px-4"
+          data-testid="ohl-orders-window"
+        >
+          <p data-testid="campaign-goal" className="text-xs font-medium leading-snug text-ink sm:text-sm">
+            {campaignGoalLine(game.state.scenario)}
+          </p>
+          <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={() => setWindowOpen("ohl", false)}>
+            Close
+          </Button>
+        </div>
+      )}
+      {!desktopShell && !ohlOpen && (
+        <div className="border-b border-leather/35 bg-paper px-3 py-1.5 sm:px-4">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
+            data-testid="ohl-toggle"
+            onClick={() => setWindowOpen("ohl", true)}
+          >
+            Orders from OHL
+          </Button>
+        </div>
+      )}
       {busy && (
         <p
-          className="border-b border-border bg-muted px-4 py-2 text-sm"
+          className="border-b border-leather/35 bg-paper-deep px-4 py-2 text-sm text-ink"
           role="status"
           data-testid="stavka-deliberating"
         >
@@ -493,11 +627,14 @@ export function GameApp() {
         </div>
       )}
       <div
-        className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem]"
+        className={`grid min-h-0 flex-1 ${desktopShell ? "" : "lg:grid-cols-[minmax(0,1fr)_23rem]"}`}
         {...(newsQueue.length > 0 ? { inert: true } : {})}
         data-testid="game-shell"
       >
-        <div className="relative min-h-0 flex-1 overflow-hidden min-h-[min(58dvh,100%)]">
+        <div
+          ref={mapStageRef}
+          className="relative min-h-0 min-h-[min(58dvh,100%)] flex-1 overflow-hidden"
+        >
           <WarMap
             provinces={provinces}
             selectedId={selectedId}
@@ -505,6 +642,9 @@ export function GameApp() {
             orders={queue}
             flashIds={flash}
             orderMode={orderMode && !finished}
+            showMapLegend={!desktopShell}
+            showRails={showRails}
+            onShowRails={setShowRails}
             targetIds={
               mapTargets &&
               (mapTargets.canOrder
@@ -529,34 +669,178 @@ export function GameApp() {
             onDraw={addArrow}
             onOverlay={setOverlay}
           />
-          <AdvisorPanel
-            open={advisorOpen}
-            state={game.state}
-            queue={queue}
-            closed={finished}
-            epoch={chatEpoch}
-            onClose={() => setAdvisorOpen(false)}
-            onAccept={acceptAdvisorOrders}
-          />
+          {!desktopShell && (
+            <AdvisorPanel
+              open={advisorOpen}
+              state={game.state}
+              queue={queue}
+              closed={finished}
+              epoch={chatEpoch}
+              onClose={() => setWindowOpen("advisor", false)}
+              onAccept={acceptAdvisorOrders}
+            />
+          )}
           <ChronicleDrawer
             open={logOpen}
-            onOpen={setLogOpen}
+            onOpen={(open) => setWindowOpen("log", open)}
             log={game.log}
             active={game.log.length ? activeLog : 0}
             onActive={setLogIndex}
             phase={phase}
             newsCardsActive={newsQueue.length > 0}
+            mapCorner={!desktopShell}
           />
+          {desktopShell &&
+            windows.map((win) => {
+              if (!win.open) return null
+              const focus = () => setWindows((current) => focusWindow(current, win.id))
+              const close = () => setWindowOpen(win.id, false)
+              const onMove = (x: number, y: number) =>
+                setWindows((current) => moveWindow(current, win.id, x, y))
+              if (win.id === "ohl") {
+                return (
+                  <OhlOrdersWindow
+                    key={win.id}
+                    scenario={game.state.scenario}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  />
+                )
+              }
+              if (win.id === "orders") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TABLE_WINDOW_TITLES.orders}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <aside className="flex min-h-0 flex-col">{orderPanel}</aside>
+                  </FloatingWindow>
+                )
+              }
+              if (win.id === "province") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TABLE_WINDOW_TITLES.province}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <aside className="flex min-h-0 flex-col">{provincePanel}</aside>
+                  </FloatingWindow>
+                )
+              }
+              if (win.id === "log") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TABLE_WINDOW_TITLES.log}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    widthClassName="w-[min(24rem,calc(100%-1.5rem))]"
+                    maxHeightClassName="max-h-[min(50dvh,24rem)]"
+                    testId="chronicle-drawer"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <div className="min-h-0" data-testid="mobile-chronicle-panel">
+                      <TimelinePanel
+                        log={game.log}
+                        active={game.log.length ? activeLog : 0}
+                        onActive={setLogIndex}
+                        phase={phase}
+                        variant="drawer"
+                      />
+                    </div>
+                  </FloatingWindow>
+                )
+              }
+              if (win.id === "legend") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TABLE_WINDOW_TITLES.legend}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    widthClassName="w-[min(18rem,calc(100%-1.5rem))]"
+                    maxHeightClassName="max-h-[min(60dvh,28rem)]"
+                    testId="legend-window"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <MapLegend
+                      embedded
+                      showRails={showRails}
+                      onToggleRails={() => setShowRails((value) => !value)}
+                      overlay={overlay}
+                    />
+                  </FloatingWindow>
+                )
+              }
+              if (win.id === "advisor") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TABLE_WINDOW_TITLES.advisor}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    widthClassName="w-[min(24rem,calc(100%-1.5rem))]"
+                    maxHeightClassName="max-h-[min(70dvh,32rem)]"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <AdvisorPanel
+                      open
+                      embedded
+                      state={game.state}
+                      queue={queue}
+                      closed={finished}
+                      epoch={chatEpoch}
+                      onClose={close}
+                      onAccept={acceptAdvisorOrders}
+                    />
+                  </FloatingWindow>
+                )
+              }
+              return null
+            })}
           {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
-                className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/92 px-3 py-2 text-[#f3e2a8] shadow-lg"
+                className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-sm border border-leather/50 bg-paper/95 px-3 py-2 text-ink shadow-[0_10px_24px_rgba(36,28,20,0.22)]"
                 data-testid="finale-banner"
                 role="status"
               >
                 <p className="text-sm" data-testid="finale-summary">
-                  <span className="tracking-wide text-[#c6a15a] uppercase">{FINAL_POSITIONS_LABEL}</span>
-                  <span className="mx-2 text-[#f3e2a8]/70">·</span>
+                  <span className="tracking-wide text-primary uppercase">{FINAL_POSITIONS_LABEL}</span>
+                  <span className="mx-2 text-muted-foreground">·</span>
                   <span className="font-display text-lg leading-none">{game.state.date}</span>
                 </p>
                 <Button type="button" size="sm" data-testid="see-result" onClick={() => setResultOpen(true)}>
@@ -566,68 +850,42 @@ export function GameApp() {
             </div>
           )}
         </div>
-        <aside className="flex min-h-[28rem] flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l">
-          <Tabs
-            value={sideTab}
-            onValueChange={(value) => {
-              if (typeof value === "string") setSideTab(value)
-            }}
-            className="min-h-0 flex-1 gap-0"
-          >
-            <TabsList className="mx-3 mt-3 w-[calc(100%-1.5rem)]">
-              <TabsTrigger value="orders" data-testid="tab-orders">
-                Orders
-              </TabsTrigger>
-              <TabsTrigger value="front" data-testid="tab-province">
-                Province
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="orders" className="min-h-0 flex-1">
-              <OrderPanel
-                state={game.state}
-                directive={directive}
-                onDirective={setDirective}
-                queue={queue}
-                onQueue={setQueue}
-                orderMode={orderMode && !finished}
-                onOrderMode={(value) => {
-                  if (finished) return
-                  setOrderMode(value)
-                }}
-                hint={hint}
-                busy={busy}
-                onEndTurn={() => {
-                  if (newsQueue.length) return
-                  void endTurn()
-                }}
-                onSelect={selectProvince}
-              />
-            </TabsContent>
-            <TabsContent value="front" className="min-h-0 flex-1">
-              <ProvincePanel
-                state={game.state}
-                province={selected}
-                budget={budget}
-                onSelect={selectProvince}
-                onOrder={addArrow}
-                onFortify={fortify}
-                onRecruit={recruit}
-                onCancelRecruit={cancelRecruit}
-                queue={queue}
-              />
-            </TabsContent>
-          </Tabs>
-        </aside>
+        {!desktopShell && (
+          <aside className="flex min-h-[28rem] flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l">
+            <Tabs
+              value={sideTab}
+              onValueChange={(value) => {
+                if (typeof value === "string") setSideTab(value)
+              }}
+              className="min-h-0 flex-1 gap-0"
+            >
+              <TabsList className="mx-3 mt-3 w-[calc(100%-1.5rem)]">
+                <TabsTrigger value="orders" data-testid="tab-orders">
+                  Orders
+                </TabsTrigger>
+                <TabsTrigger value="front" data-testid="tab-province">
+                  Province
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="orders" className="min-h-0 flex-1">
+                {orderPanel}
+              </TabsContent>
+              <TabsContent value="front" className="min-h-0 flex-1">
+                {provincePanel}
+              </TabsContent>
+            </Tabs>
+          </aside>
+        )}
       </div>
       {phase === "result" && game.state.result && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-4"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-leather/45 p-4 backdrop-blur-[1px]"
           data-testid="endgame"
           role="dialog"
           aria-modal="true"
           aria-labelledby="endgame-title"
         >
-          <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg">
+          <div className="w-full max-w-md rounded-sm border border-leather/50 bg-paper p-6 text-ink shadow-[0_18px_40px_rgba(36,28,20,0.35)]">
             <p className="text-xs tracking-wide text-muted-foreground uppercase">
               {game.state.result.sudden ? "Sudden death" : "Campaign over"}
             </p>

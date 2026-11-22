@@ -190,7 +190,23 @@ async function krakowIsSelected(page) {
  * A second click on an already-selected province clears selection.
  * @param {import('playwright').Page} page
  */
+/** Close a desktop floating Province window so it cannot swallow map clicks. */
+async function closeFloatingProvinceIfOpen(page) {
+  const win = page.locator('[role="dialog"][aria-label="Province"]')
+  if (!(await win.isVisible().catch(() => false))) return
+  // Raise Province above Orders (same column) so Close is actionable.
+  await page.locator("[data-testid=tab-province]").click()
+  const close = win.getByRole("button", { name: "Close Province" })
+  try {
+    await close.click({ timeout: 5_000 })
+  } catch {
+    await close.click({ force: true, timeout: 5_000 })
+  }
+  await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
+}
+
 async function selectKrakowOnMap(page) {
+  await closeFloatingProvinceIfOpen(page)
   if (!(await krakowIsSelected(page))) {
     const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
     if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
@@ -198,15 +214,34 @@ async function selectKrakowOnMap(page) {
     await page.waitForTimeout(400)
   }
   await page.locator("[data-testid=tab-province]").click()
-  await page
-    .locator("aside h2")
-    .filter({ hasText: "Kraków" })
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 })
+  const title = page.locator("aside h2").filter({ hasText: "Kraków" }).first()
+  await title.waitFor({ state: "attached", timeout: 10_000 })
+  await title.scrollIntoViewIfNeeded()
+  await title.waitFor({ state: "visible", timeout: 10_000 })
 }
 
 async function expectText(locator, snippet) {
   await locator.getByText(snippet, { exact: false }).first().waitFor({ state: "visible", timeout: 15_000 })
+}
+
+/** @param {import('playwright').Page} page @param {string} aSel @param {string} bSel @param {string} label */
+async function assertNoOverlap(page, aSel, bSel, label) {
+  const result = await page.evaluate(
+    ({ first, second }) => {
+      const a = document.querySelector(first)
+      const b = document.querySelector(second)
+      if (!a || !b) return { ok: false, reason: `missing ${!a ? first : second}` }
+      const ra = a.getBoundingClientRect()
+      const rb = b.getBoundingClientRect()
+      if (ra.width < 1 || ra.height < 1 || rb.width < 1 || rb.height < 1) {
+        return { ok: false, reason: "zero-size rect" }
+      }
+      const hit = !(ra.right <= rb.left || ra.left >= rb.right || ra.bottom <= rb.top || ra.top >= rb.bottom)
+      return { ok: !hit, reason: hit ? "rects overlap" : "clear" }
+    },
+    { first: aSel, second: bSel },
+  )
+  if (!result.ok) throw new Error(`${label}: ${result.reason}`)
 }
 
 async function ensureAdvisorPanelOpen(page) {
@@ -484,12 +519,13 @@ function buildSteps(cli, targets) {
     },
     {
       id: "03-briefing",
-      name: "Read campaign goal in HUD",
+      name: "Read campaign goal in Orders from OHL",
       async run({ page }) {
         const goal = page.locator("[data-testid=campaign-goal]")
         await goal.waitFor({ state: "visible", timeout: 15_000 })
         await expectText(goal, "Lemberg")
         await expectText(goal, "Kraków")
+        await page.locator("[data-testid=ohl-orders-window]").waitFor({ state: "visible" })
       },
     },
     {
@@ -503,18 +539,31 @@ function buildSteps(cli, targets) {
         await expectText(hud, "Strength")
         await expectText(hud, "Provinces")
         await expectText(hud, "VP")
+        await openChronicleDrawer(page)
+        await page.locator("[data-testid=map-legend]").waitFor({ state: "visible", timeout: 10_000 })
+        await assertNoOverlap(
+          page,
+          "[data-testid=chronicle-drawer]",
+          "[data-testid=map-legend]",
+          "Desktop Log vs legend",
+        )
+        await page.locator("[data-testid=chronicle-log-toggle]").click()
       },
     },
     {
       id: "05-map-click",
       name: "Select province via map click",
       async run({ page }) {
+        await closeFloatingProvinceIfOpen(page)
         const point = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
         if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
         await page.mouse.click(point.x, point.y)
         await page.waitForTimeout(400)
         await page.locator("[data-testid=tab-province]").click()
-        await page.locator("aside h2").filter({ hasText: "Katowice" }).first().waitFor({ state: "visible", timeout: 10_000 })
+        const title = page.locator("aside h2").filter({ hasText: "Katowice" }).first()
+        await title.waitFor({ state: "attached", timeout: 10_000 })
+        await title.scrollIntoViewIfNeeded()
+        await title.waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {
@@ -680,7 +729,7 @@ function buildSteps(cli, targets) {
     },
     {
       id: "17-mobile-chronicle",
-      name: "Mobile Log drawer (390×844)",
+      name: "Mobile Log drawer (390×844) and tablet Log/legend clearance",
       async run({ page }) {
         try {
           await page.setViewportSize(MOBILE_VIEWPORT)
@@ -689,8 +738,22 @@ function buildSteps(cli, targets) {
             state: "visible",
             timeout: 10_000,
           })
+          // Drawer covers the map-corner Log toggle; close via chrome, not the buried button.
+          await page.locator("[data-testid=chronicle-drawer]").getByRole("button", { name: "Close" }).click()
+          await page.locator("[data-testid=chronicle-drawer]").waitFor({ state: "hidden", timeout: 10_000 })
+          await page.setViewportSize({ width: 768, height: 1024 })
+          await page.waitForTimeout(500)
+          await page.locator("[data-testid=chronicle-log-toggle]").waitFor({ state: "visible", timeout: 10_000 })
+          await page.locator("[data-testid=map-legend]").waitFor({ state: "visible", timeout: 10_000 })
+          await assertNoOverlap(
+            page,
+            "[data-testid=chronicle-log-toggle]",
+            "[data-testid=map-legend]",
+            "Tablet Log button vs legend",
+          )
         } finally {
           await page.setViewportSize(DESKTOP_VIEWPORT)
+          await page.waitForTimeout(400)
         }
       },
     },
