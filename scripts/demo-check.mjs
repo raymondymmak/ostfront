@@ -194,7 +194,14 @@ async function krakowIsSelected(page) {
 async function closeFloatingProvinceIfOpen(page) {
   const win = page.locator('[role="dialog"][aria-label="Province"]')
   if (!(await win.isVisible().catch(() => false))) return
-  await win.getByRole("button", { name: "Close" }).click()
+  // Raise Province above Orders (same column) so Close is actionable.
+  await page.locator("[data-testid=tab-province]").click()
+  const close = win.getByRole("button", { name: "Close Province" })
+  try {
+    await close.click({ timeout: 5_000 })
+  } catch {
+    await close.click({ force: true, timeout: 5_000 })
+  }
   await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
 }
 

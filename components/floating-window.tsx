@@ -140,7 +140,7 @@ export function FloatingWindow({
       onMouseDown={onFocus}
     >
       <header
-        className="relative flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-[#4a3f33]/30 bg-[#e4d7bb] px-2.5 py-1.5 active:cursor-grabbing before:pointer-events-none before:absolute before:right-0 before:top-0 before:h-0 before:w-0 before:border-l-[10px] before:border-t-[10px] before:border-l-transparent before:border-t-[#cbb892]/90"
+        className="relative flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-[#4a3f33]/30 bg-[#e4d7bb] px-2.5 py-1.5 active:cursor-grabbing"
         style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35)" }}
         onPointerDown={(event) => {
           if (event.button !== 0) return
