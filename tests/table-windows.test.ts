@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
+  clampWindowPosition,
   closeTopmostWindow,
   closeWindow,
   createDefaultTableWindows,
   focusWindow,
   isWindowOpen,
   moveWindow,
+  TABLE_WINDOW_MARGIN,
   toggleWindow,
   topmostOpenWindow,
 } from "@/lib/ui/table-windows"
@@ -49,5 +51,28 @@ describe("table-windows", () => {
     windows = closeWindow(windows, "ohl")
     expect(isWindowOpen(windows, "ohl")).toBe(false)
     expect(isWindowOpen(windows, "orders")).toBe(true)
+  })
+
+  it("clamps positions so windows stay inside the map stage", () => {
+    const clamped = clampWindowPosition(2000, 2000, 300, 200, 1024, 768)
+    expect(clamped.x).toBe(1024 - 300 - TABLE_WINDOW_MARGIN)
+    expect(clamped.y).toBe(768 - 200 - TABLE_WINDOW_MARGIN)
+    const topLeft = clampWindowPosition(-40, -10, 300, 200, 1024, 768)
+    expect(topLeft.x).toBe(TABLE_WINDOW_MARGIN)
+    expect(topLeft.y).toBe(TABLE_WINDOW_MARGIN)
+  })
+
+  it("places default Legend fully above the stage bottom at common desktop sizes", () => {
+    for (const [w, h] of [
+      [1440, 820],
+      [1280, 700],
+      [1024, 650],
+    ] as const) {
+      const windows = createDefaultTableWindows(w, h)
+      const legend = windows.find((item) => item.id === "legend")
+      expect(legend).toBeTruthy()
+      expect(legend!.y).toBeGreaterThanOrEqual(TABLE_WINDOW_MARGIN)
+      expect(legend!.y + 200).toBeLessThanOrEqual(h - TABLE_WINDOW_MARGIN)
+    }
   })
 })

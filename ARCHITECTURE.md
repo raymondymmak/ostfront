@@ -63,7 +63,7 @@ Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints d
 
 | Viewport | Layout |
 | --- | --- |
-| Desktop (`lg+`, ≥1024px) | Full-width map; no fixed 23rem right dock. Slim HUD toggles draggable windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`): Orders, Province, Log, Legend, Chief of Staff, Orders from OHL. Header-only drag. Default-open after Begin: Orders, Legend, OHL. Escape: news → topmost window → deselect. |
+| Desktop (`lg+`, ≥1024px) | Full-width map; no fixed 23rem right dock. Slim HUD toggles parchment-document floating windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`): Orders, Province, Log, Legend, Chief of Staff, Orders from OHL. Header-only drag with grip + grab cursor; positions clamp to the map stage; bodies scroll under max-height. Default-open after Begin: Orders, Legend, OHL. Escape: news → topmost window → deselect. |
 | Below `lg` | Stacked map + Orders/Province `<aside>` tabs (unchanged). Map-corner Log stays above the legend through tablet widths (640–1023px). Campaign goal is a dismissible OHL strip, not the HUD strength block. |
 | `/teach` | Shared `Hud` keeps the goal line in the header (`teachMode`); no campaign window buttons; teaching-app three-column dock unchanged (Part 6). |
 
@@ -319,7 +319,7 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog` (battle rows show compact loss lines from `Resolution.battle`), full summaries behind **Details** |
 | **BattleFacts** | Optional `Resolution.battle` set in `resolveManeuvers` for assaults and meeting engagements that already log losses; includes sorted `origins` for news map arrows |
 | **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); priority objective → encirclement → city → depot; wins over Log for Escape |
-| **General's table** | Desktop (`lg+`) floating windows for Orders / Province / Log / Legend / Advisor / OHL; mobile keeps stacked aside (ADR 010) |
+| **General's table** | Desktop (`lg+`) parchment floating windows for Orders / Province / Log / Legend / Advisor / OHL (clamped + scrollable); mobile keeps stacked aside (ADR 010) |
 
 ---
 

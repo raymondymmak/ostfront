@@ -714,12 +714,12 @@ export function GameApp() {
                     x={win.x}
                     y={win.y}
                     z={win.z}
-                    heightClassName="h-[min(70dvh,36rem)]"
+                    maxHeightClassName="max-h-[min(70dvh,36rem)]"
                     onFocus={focus}
                     onClose={close}
                     onMove={onMove}
                   >
-                    <aside className="flex h-full min-h-0 flex-col">{orderPanel}</aside>
+                    <aside className="flex min-h-0 flex-col">{orderPanel}</aside>
                   </FloatingWindow>
                 )
               }
@@ -732,12 +732,12 @@ export function GameApp() {
                     x={win.x}
                     y={win.y}
                     z={win.z}
-                    heightClassName="h-[min(70dvh,36rem)]"
+                    maxHeightClassName="max-h-[min(70dvh,36rem)]"
                     onFocus={focus}
                     onClose={close}
                     onMove={onMove}
                   >
-                    <aside className="flex h-full min-h-0 flex-col">{provincePanel}</aside>
+                    <aside className="flex min-h-0 flex-col">{provincePanel}</aside>
                   </FloatingWindow>
                 )
               }
@@ -751,13 +751,13 @@ export function GameApp() {
                     y={win.y}
                     z={win.z}
                     widthClassName="w-[min(24rem,calc(100%-1.5rem))]"
-                    heightClassName="h-[min(50dvh,24rem)]"
+                    maxHeightClassName="max-h-[min(50dvh,24rem)]"
                     testId="chronicle-drawer"
                     onFocus={focus}
                     onClose={close}
                     onMove={onMove}
                   >
-                    <div className="min-h-0 flex-1" data-testid="mobile-chronicle-panel">
+                    <div className="min-h-0" data-testid="mobile-chronicle-panel">
                       <TimelinePanel
                         log={game.log}
                         active={game.log.length ? activeLog : 0}
@@ -779,7 +779,7 @@ export function GameApp() {
                     y={win.y}
                     z={win.z}
                     widthClassName="w-[min(18rem,calc(100%-1.5rem))]"
-                    heightClassName="max-h-[min(60dvh,28rem)]"
+                    maxHeightClassName="max-h-[min(60dvh,28rem)]"
                     testId="legend-window"
                     onFocus={focus}
                     onClose={close}
@@ -804,7 +804,7 @@ export function GameApp() {
                     y={win.y}
                     z={win.z}
                     widthClassName="w-[min(24rem,calc(100%-1.5rem))]"
-                    heightClassName="h-[min(70dvh,32rem)]"
+                    maxHeightClassName="max-h-[min(70dvh,32rem)]"
                     onFocus={focus}
                     onClose={close}
                     onMove={onMove}

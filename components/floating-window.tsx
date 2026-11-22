@@ -1,7 +1,8 @@
 "use client"
 
-import { useRef, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
+import { clampWindowPosition, TABLE_DRAG_HINT_KEY, TABLE_WINDOW_MARGIN } from "@/lib/ui/table-windows"
 
 type FloatingWindowProps = {
   title: string
@@ -10,7 +11,8 @@ type FloatingWindowProps = {
   y: number
   z: number
   widthClassName?: string
-  heightClassName?: string
+  /** Preferred max height; actual height is also capped to remaining stage space. */
+  maxHeightClassName?: string
   testId?: string
   onFocus: () => void
   onClose: () => void
@@ -18,8 +20,26 @@ type FloatingWindowProps = {
   children: ReactNode
 }
 
+function readDragHintSeen(): boolean {
+  if (typeof window === "undefined") return true
+  try {
+    return Boolean(window.sessionStorage.getItem(TABLE_DRAG_HINT_KEY))
+  } catch {
+    return false
+  }
+}
+
+function measureStage(node: HTMLElement | null): { width: number; height: number } {
+  const parent = node?.offsetParent as HTMLElement | null
+  if (parent) return { width: parent.clientWidth, height: parent.clientHeight }
+  return {
+    width: typeof window !== "undefined" ? window.innerWidth : 1440,
+    height: typeof window !== "undefined" ? window.innerHeight : 900,
+  }
+}
+
 /**
- * Draggable chrome only (title, close, header drag, focus).
+ * Draggable parchment document chrome (title, close, header drag, focus).
  * Header-only drag so MapLibre pan and arrow-draw keep working on the map.
  */
 export function FloatingWindow({
@@ -29,13 +49,14 @@ export function FloatingWindow({
   y,
   z,
   widthClassName = "w-[min(23rem,calc(100%-1.5rem))]",
-  heightClassName = "max-h-[min(70dvh,36rem)]",
+  maxHeightClassName = "max-h-[min(70dvh,36rem)]",
   testId,
   onFocus,
   onClose,
   onMove,
   children,
 }: FloatingWindowProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{
     pointerId: number
     startX: number
@@ -43,20 +64,71 @@ export function FloatingWindow({
     origX: number
     origY: number
   } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [showHint, setShowHint] = useState(() => !readDragHintSeen())
+  const [stageMaxHeight, setStageMaxHeight] = useState<number | undefined>(undefined)
+
+  useEffect(() => {
+    if (!open) return
+    const node = rootRef.current
+    if (!node) return
+
+    const sync = () => {
+      const { width: stageW, height: stageH } = measureStage(node)
+      const remaining = Math.max(120, stageH - y - TABLE_WINDOW_MARGIN)
+      setStageMaxHeight(remaining)
+      const ww = node.offsetWidth || 320
+      const wh = node.offsetHeight || 200
+      const next = clampWindowPosition(x, y, ww, wh, stageW, stageH)
+      if (next.x !== x || next.y !== y) onMove(next.x, next.y)
+    }
+
+    const frame = window.requestAnimationFrame(sync)
+    const parent = node.offsetParent as HTMLElement | null
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null
+    if (parent && ro) ro.observe(parent)
+    ro?.observe(node)
+    window.addEventListener("resize", sync)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      ro?.disconnect()
+      window.removeEventListener("resize", sync)
+    }
+  }, [open, x, y, onMove])
+
+  function dismissHint() {
+    setShowHint(false)
+    try {
+      window.sessionStorage.setItem(TABLE_DRAG_HINT_KEY, "1")
+    } catch {
+      /* private mode */
+    }
+  }
 
   if (!open) return null
 
+  const lift = dragging
+    ? "motion-safe:scale-[1.015] motion-safe:rotate-[0.7deg] shadow-[0_18px_36px_rgba(20,14,8,0.55)] motion-reduce:shadow-[0_14px_28px_rgba(20,14,8,0.5)]"
+    : "shadow-[0_8px_18px_rgba(20,14,8,0.35)]"
+
   return (
     <div
-      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl ${widthClassName} ${heightClassName}`}
-      style={{ left: x, top: y, zIndex: z }}
+      ref={rootRef}
+      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-sm border border-[#3d342b]/55 bg-[#f6f1e4] text-[#241c14] transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
+      style={{
+        left: x,
+        top: y,
+        zIndex: z,
+        maxHeight: stageMaxHeight !== undefined ? stageMaxHeight : undefined,
+      }}
       data-testid={testId}
+      data-dragging={dragging ? "true" : undefined}
       role="dialog"
       aria-label={title}
       onMouseDown={onFocus}
     >
       <header
-        className="flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2 active:cursor-grabbing"
+        className="flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-[#3d342b]/25 bg-[#e8dfc8] px-2.5 py-1.5 active:cursor-grabbing"
         onPointerDown={(event) => {
           if (event.button !== 0) return
           const target = event.target as HTMLElement
@@ -64,6 +136,8 @@ export function FloatingWindow({
           event.preventDefault()
           event.stopPropagation()
           onFocus()
+          setDragging(true)
+          dismissHint()
           drag.current = {
             pointerId: event.pointerId,
             startX: event.clientX,
@@ -78,13 +152,19 @@ export function FloatingWindow({
           if (!state || state.pointerId !== event.pointerId) return
           event.preventDefault()
           event.stopPropagation()
+          const node = rootRef.current
+          const { width: stageW, height: stageH } = measureStage(node)
+          const ww = node?.offsetWidth ?? 320
+          const wh = node?.offsetHeight ?? 200
           const dx = event.clientX - state.startX
           const dy = event.clientY - state.startY
-          onMove(Math.max(0, state.origX + dx), Math.max(0, state.origY + dy))
+          const next = clampWindowPosition(state.origX + dx, state.origY + dy, ww, wh, stageW, stageH)
+          onMove(next.x, next.y)
         }}
         onPointerUp={(event) => {
           if (drag.current?.pointerId === event.pointerId) {
             drag.current = null
+            setDragging(false)
             try {
               event.currentTarget.releasePointerCapture(event.pointerId)
             } catch {
@@ -94,14 +174,34 @@ export function FloatingWindow({
         }}
         onPointerCancel={() => {
           drag.current = null
+          setDragging(false)
         }}
       >
-        <p className="font-display text-base leading-none select-none">{title}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden
+            className="inline-flex h-5 w-3 shrink-0 flex-col justify-center gap-[3px]"
+            title="Drag to move"
+          >
+            <span className="h-px w-full bg-[#5c5144]/70" />
+            <span className="h-px w-full bg-[#5c5144]/70" />
+            <span className="h-px w-full bg-[#5c5144]/70" />
+            <span className="h-px w-full bg-[#5c5144]/70" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-display text-base leading-none text-[#241c14] select-none">{title}</p>
+            {showHint && (
+              <p className="mt-0.5 text-[10px] leading-none text-[#5c5144] select-none" data-testid="table-drag-hint">
+                Drag to move
+              </p>
+            )}
+          </div>
+        </div>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs"
+          className="h-7 px-2 text-xs text-[#3d342b] hover:bg-[#3d342b]/10 hover:text-[#241c14]"
           aria-label={`Close ${title}`}
           onClick={(event) => {
             event.stopPropagation()
@@ -111,7 +211,7 @@ export function FloatingWindow({
           Close
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">{children}</div>
     </div>
   )
 }

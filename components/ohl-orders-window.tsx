@@ -35,14 +35,14 @@ export function OhlOrdersWindow({
       y={y}
       z={z}
       widthClassName="w-[min(36rem,calc(100%-1.5rem))]"
-      heightClassName="max-h-[min(40dvh,12rem)]"
+      maxHeightClassName="max-h-[min(40dvh,12rem)]"
       testId="ohl-orders-window"
       onFocus={onFocus}
       onClose={onClose}
       onMove={onMove}
     >
       <div className="px-3 py-2.5">
-        <p data-testid="campaign-goal" className="text-sm leading-snug text-foreground">
+        <p data-testid="campaign-goal" className="text-sm leading-snug text-[#241c14]">
           {goal}
         </p>
       </div>
