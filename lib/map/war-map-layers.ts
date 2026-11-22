@@ -246,7 +246,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     paint: { "line-color": "#f3e2a8", "line-width": 3.4 },
   })
   // Rails above fills+borders (gate sits on the shared border), under labels/counters.
-  // ~1.5–2.5px track + light casing; modest zoom growth; no sleeper ticks.
+  // ~2.4–3.5px track + light casing (~+40% vs prior); modest zoom growth; no sleeper ticks.
   map.addLayer({
     id: "rail-casing",
     type: "line",
@@ -255,7 +255,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": RAIL_STYLE.casing,
-      "line-width": railWidthHot(2.6, 3.4),
+      "line-width": railWidthHot(3.6, 4.8),
       "line-opacity": railFade(1),
     },
   })
@@ -267,7 +267,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": RAIL_STYLE.track,
-      "line-width": railWidthHot(1.7, 2.5),
+      "line-width": railWidthHot(2.4, 3.5),
       "line-opacity": railFade(1),
     },
   })
@@ -280,7 +280,7 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": RAIL_STYLE.cut,
-      "line-width": railWidth(1.7, 2.5),
+      "line-width": railWidth(2.4, 3.5),
       "line-dasharray": [1.4, 1.6],
       "line-opacity": railFade(1),
     },

@@ -188,7 +188,7 @@ function RailSwatch({ color, broken = false }: { color: string; broken?: boolean
         x2="27"
         y2="5"
         stroke={RAIL_STYLE.casing}
-        strokeWidth="3.2"
+        strokeWidth="4.2"
         strokeLinecap="round"
       />
       {broken ? (
@@ -198,12 +198,12 @@ function RailSwatch({ color, broken = false }: { color: string; broken?: boolean
           x2="27"
           y2="5"
           stroke={color}
-          strokeWidth="2"
+          strokeWidth="2.8"
           strokeDasharray="3 2.5"
           strokeLinecap="butt"
         />
       ) : (
-        <line x1="1" y1="5" x2="27" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        <line x1="1" y1="5" x2="27" y2="5" stroke={color} strokeWidth="2.8" strokeLinecap="round" />
       )}
     </svg>
   )
