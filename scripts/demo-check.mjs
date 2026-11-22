@@ -244,6 +244,71 @@ async function assertNoOverlap(page, aSel, bSel, label) {
   if (!result.ok) throw new Error(`${label}: ${result.reason}`)
 }
 
+/**
+ * Start-card controls must share equal left/right insets inside the parchment card
+ * (catches max-w without mx-auto / left-flush flex blocks under text-center).
+ * @param {import('playwright').Page} page
+ * @param {number} [tolerancePx]
+ */
+async function assertBriefingControlsCentered(page, tolerancePx = 1) {
+  const result = await page.evaluate(
+    ({ cardSel, controlSels, tol }) => {
+      const card = document.querySelector(cardSel)
+      if (!card) return { ok: false, reason: `missing ${cardSel}` }
+      const cardRect = card.getBoundingClientRect()
+      /** @type {{ sel: string, left: number, right: number, delta: number }[]} */
+      const rows = []
+      for (const sel of controlSels) {
+        const el = document.querySelector(sel)
+        if (!el) return { ok: false, reason: `missing ${sel}` }
+        const rect = el.getBoundingClientRect()
+        if (rect.width < 1 || rect.height < 1) return { ok: false, reason: `zero-size ${sel}` }
+        const left = rect.left - cardRect.left
+        const right = cardRect.right - rect.right
+        const delta = Math.abs(left - right)
+        rows.push({ sel, left, right, delta })
+        if (delta > tol) {
+          return {
+            ok: false,
+            reason: `${sel}: left ${left.toFixed(2)}px vs right ${right.toFixed(2)}px (Δ ${delta.toFixed(2)} > ${tol})`,
+            rows,
+          }
+        }
+      }
+      const shell = document.querySelector("[data-testid=scenario-picker]")
+      const main = shell?.querySelector("main")
+      if (!shell || !main) return { ok: false, reason: "missing scenario-picker main", rows }
+      const shellRect = shell.getBoundingClientRect()
+      const mainRect = main.getBoundingClientRect()
+      const cardCenterX = (cardRect.left + cardRect.right) / 2
+      const shellCenterX = (shellRect.left + shellRect.right) / 2
+      const cardCenterY = (cardRect.top + cardRect.bottom) / 2
+      const mainCenterY = (mainRect.top + mainRect.bottom) / 2
+      if (Math.abs(cardCenterX - shellCenterX) > tol + 1) {
+        return {
+          ok: false,
+          reason: `card not horizontally centered in shell (Δx ${Math.abs(cardCenterX - shellCenterX).toFixed(2)})`,
+          rows,
+        }
+      }
+      if (Math.abs(cardCenterY - mainCenterY) > tol + 8) {
+        return {
+          ok: false,
+          reason: `card not vertically centered in main (Δy ${Math.abs(cardCenterY - mainCenterY).toFixed(2)})`,
+          rows,
+        }
+      }
+      return { ok: true, rows }
+    },
+    {
+      cardSel: "[data-testid=campaign-start-card]",
+      controlSels: ["[data-testid=difficulty]", "[data-testid=campaign-start-actions]"],
+      tol: tolerancePx,
+    },
+  )
+  if (!result.ok) throw new Error(`Briefing controls centering: ${result.reason}`)
+}
+
 async function ensureAdvisorPanelOpen(page) {
   const panel = page.locator("[data-testid=advisor-panel]")
   if (await panel.isVisible().catch(() => false)) return
@@ -503,6 +568,15 @@ function buildSteps(cli, targets) {
           })
         }
         await page.locator("[data-testid=briefing-task]").waitFor({ state: "visible", timeout: 10_000 })
+        await page.locator("[data-testid=campaign-start-card]").waitFor({ state: "visible", timeout: 10_000 })
+        try {
+          await page.setViewportSize(MOBILE_VIEWPORT)
+          await page.waitForTimeout(200)
+          await assertBriefingControlsCentered(page, 1)
+        } finally {
+          await page.setViewportSize(DESKTOP_VIEWPORT)
+          await page.waitForTimeout(200)
+        }
       },
     },
     {

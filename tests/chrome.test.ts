@@ -6,6 +6,7 @@ describe("top bar and map chrome", () => {
   const legend = readFileSync("components/map-legend.tsx", "utf8")
   const map = readFileSync("components/war-map.tsx", "utf8")
   const app = readFileSync("components/game-app.tsx", "utf8")
+  const campaignStart = readFileSync("components/campaign-start.tsx", "utf8")
 
   it("keeps the labelled situation in the top bar and drops the scenario subtitle", () => {
     expect(hud).toContain("Ostfront")
@@ -50,5 +51,24 @@ describe("top bar and map chrome", () => {
     expect(drawer).toContain("bottom-14 left-3")
     expect(drawer).not.toMatch(/className="[^"]*sm:bottom-3/)
     expect(drawer).toContain("lg:hidden")
+  })
+
+  it("keeps start-card controls full-width inside the parchment card (no left-flush max-w)", () => {
+    expect(campaignStart).toContain('data-testid="campaign-start-card"')
+    expect(campaignStart).toContain('data-testid="campaign-start-actions"')
+    expect(campaignStart).toContain('data-testid="difficulty"')
+    expect(campaignStart).toMatch(/safe-area-inset-top/)
+    expect(campaignStart).toMatch(/safe-area-inset-bottom/)
+    const difficultyOpen = campaignStart.lastIndexOf("<div", campaignStart.indexOf('data-testid="difficulty"'))
+    const difficultyBlock = campaignStart.slice(difficultyOpen, campaignStart.indexOf(">", campaignStart.indexOf('data-testid="difficulty"')) + 1)
+    const actionsOpen = campaignStart.lastIndexOf("<div", campaignStart.indexOf('data-testid="campaign-start-actions"'))
+    const actionsBlock = campaignStart.slice(
+      actionsOpen,
+      campaignStart.indexOf(">", campaignStart.indexOf('data-testid="campaign-start-actions"')) + 1,
+    )
+    expect(difficultyBlock).toMatch(/className="[^"]*\bw-full\b/)
+    expect(actionsBlock).toMatch(/className="[^"]*\bw-full\b/)
+    expect(difficultyBlock).not.toMatch(/max-w-/)
+    expect(actionsBlock).not.toMatch(/max-w-/)
   })
 })
