@@ -28,6 +28,15 @@ import {
 } from "@/lib/map/province-label-layers"
 import { provincePaintProperties } from "@/lib/map/province-paint"
 import {
+  LESSON_FOCUS_FILL_LAYER,
+  LESSON_SOURCE_OUTLINE_LAYER,
+  LESSON_TARGET_OUTLINE_LAYER,
+  lessonFocusActive,
+  lessonFocusAttribute,
+  startLessonTargetPulse,
+  type LessonFocus,
+} from "@/lib/map/lesson-highlight"
+import {
   applyProvinceRoleStates,
   pulseTargetHighlight,
   targetsActive,
@@ -61,6 +70,8 @@ type WarMapProps = MapInput & {
   flashIds: string[]
   /** Coach / teaching highlights anchored to province ids (not screen pixels). */
   coachHighlightIds?: string[]
+  /** Persistent lesson focus (target + source provinces) for /teach. */
+  lessonFocus?: LessonFocus
   targetIds?: { move: string[]; attack: string[]; canOrder: boolean }
   targetHoverNote?: (provinceId: string, base: string) => string
   onOverlay: (overlay: Overlay) => void
@@ -82,6 +93,7 @@ export function WarMap({
   orders,
   flashIds,
   coachHighlightIds = [],
+  lessonFocus,
   targetIds,
   targetHoverNote,
   orderMode,
@@ -397,11 +409,66 @@ export function WarMap({
     )
   }, [coachHighlightIds])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loadedRef.current) return
+    const targets = lessonFocus?.targets ?? []
+    const sources = lessonFocus?.sources ?? []
+    const focusIds = [...new Set([...targets, ...sources])]
+    const none = ["__none__"] as string[]
+
+    if (map.getLayer(LESSON_FOCUS_FILL_LAYER)) {
+      map.setFilter(LESSON_FOCUS_FILL_LAYER, [
+        "in",
+        ["get", "id"],
+        ["literal", focusIds.length ? focusIds : none],
+      ])
+      map.setPaintProperty(
+        LESSON_FOCUS_FILL_LAYER,
+        "fill-opacity",
+        focusIds.length ? 0.18 : 0,
+      )
+    }
+    if (map.getLayer(LESSON_SOURCE_OUTLINE_LAYER)) {
+      map.setFilter(LESSON_SOURCE_OUTLINE_LAYER, [
+        "in",
+        ["get", "id"],
+        ["literal", sources.length ? sources : none],
+      ])
+      map.setPaintProperty(
+        LESSON_SOURCE_OUTLINE_LAYER,
+        "line-opacity",
+        sources.length ? 0.75 : 0,
+      )
+    }
+    if (map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) {
+      map.setFilter(LESSON_TARGET_OUTLINE_LAYER, [
+        "in",
+        ["get", "id"],
+        ["literal", targets.length ? targets : none],
+      ])
+    }
+
+    if (!targets.length || !map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) {
+      if (map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) {
+        map.setPaintProperty(LESSON_TARGET_OUTLINE_LAYER, "line-opacity", 0)
+      }
+      return
+    }
+
+    return startLessonTargetPulse((opacity) => {
+      if (!map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) return
+      map.setPaintProperty(LESSON_TARGET_OUTLINE_LAYER, "line-opacity", opacity)
+    })
+  }, [lessonFocus])
+
   return (
     <div
       className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
+      data-lesson-highlights={lessonFocusAttribute(lessonFocus)}
+      data-lesson-focus={lessonFocusActive(lessonFocus) ? "true" : undefined}
       data-map-targets={
         targetIds
           ? `move:${targetIds.move.join(",")};attack:${targetIds.attack.join(",")};order:${targetIds.canOrder}`

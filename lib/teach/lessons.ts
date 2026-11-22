@@ -187,7 +187,10 @@ export type LessonMeta = {
   targetName: string
   prongProvinceIds: string[]
   title: string
+  /** Short map-first prompt shown in the Lesson window. */
   question: string
+  /** Longer context kept behind expandable UI. */
+  briefing: string
 }
 
 export function lessonMeta(lessonId: TeachLessonId, variant: TeachVariant): LessonMeta {
@@ -208,7 +211,11 @@ export function lessonMeta(lessonId: TeachLessonId, variant: TeachVariant): Less
       title: "Supply vs headcount",
       question:
         variant === "guided"
-          ? `${targetName} is held by Russian IX. You may strike once from ${heavyName} (Heavy Corps) or from ${fedName} (Fed Corps). Toggle Supply on the map. Which launch gives the stronger attack in the engine preview — and why?`
+          ? `Strike ${targetName} once — from ${heavyName} or ${fedName}. Which launch hits harder, and why?`
+          : `One assault on ${targetName}. Does headcount or supply drive the blow?`,
+      briefing:
+        variant === "guided"
+          ? `${targetName} is held by Russian IX. You may strike once from ${heavyName} (Heavy Corps, lower supply) or from ${fedName} (Fed Corps on depot rail). Toggle Supply on the map, compare engine preview attack values, then predict before you resolve.`
           : `Same trade-off without coach hints: choose one assault on ${targetName}, predict the outcome, and explain whether headcount or supply drives attack power.`,
     }
   }
@@ -227,7 +234,11 @@ export function lessonMeta(lessonId: TeachLessonId, variant: TeachVariant): Less
     title: "Converging attacks on Lublin",
     question:
       variant === "guided"
-        ? `${targetName} holds XXIV Corps. You have usable strength at Kraków and at Kielce (recently taken). How would you strike ${targetName} this fortnight, and what rule makes a two-direction attack different from two separate blows?`
+        ? `Strike ${targetName} this fortnight. What makes two directions different from two separate blows?`
+        : `Assault ${targetName} from Kraków and Kielce. Say why your plan works.`,
+    briefing:
+      variant === "guided"
+        ? `${targetName} holds XXIV Corps. You have usable strength at Kraków and at Kielce (recently taken). Queue attacks on the map, then state what rule makes a two-direction attack different from two separate blows.`
         : `The board is similar to your last drill, but the defender strength differs. Plan an assault on ${targetName} from Kraków and Kielce without coach help, and state why.`,
   }
 }

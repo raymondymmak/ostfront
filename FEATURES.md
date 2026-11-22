@@ -1,20 +1,23 @@
 # Ostfront features
 
-## Teaching drill (Sprint 1–2 / Phase 2A–2B)
+## Teaching drill (Sprint 1–2 / Phase 2A–2B / Phase 2D Part 6)
 
 Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach]`. Campaign at **`/`** is unchanged.
+
+On desktop (`lg+`, ≥1024px) `/teach` uses the same general’s-table shell as the campaign: full-width map, parchment HUD, draggable **Lesson** / **Orders** / **Province** / **Legend** windows (`[data-testid=teach-lesson-window]`, `[data-testid=teach-orders-window]`, `[data-testid=teach-province-window]`, `[data-testid=legend-window]`). Default-open: Lesson, Orders, Legend. `[data-testid=teach-app]` carries `data-teach-shell=desktop|stacked`. Brass lesson-focus outlines mark the target and source provinces (`[data-testid=war-map]` `data-lesson-highlights`, `data-lesson-focus=true`). Below `lg`, stacked map + Orders/Province tabs + Lesson column.
 
 | Step | Selector / API | Proof |
 | --- | --- | --- |
 | Open drill | `[data-testid=teach-begin]` or `[data-testid=teach-begin-supply]` | `[data-testid=teach-app]`; lessons `converging-lublin` \| `supply-tradeoff` |
-| Coach question | `[data-testid=teach-question]` | Guided variant only; silent shows `[data-testid=teach-silent-banner]` |
+| Coach question | `[data-testid=teach-question]` | Short map-first prompt; longer copy behind `[data-testid=teach-briefing-toggle]` → `[data-testid=teach-briefing]` |
+| Lesson focus | Map `data-lesson-highlights` | Target + prong province ids highlighted on load |
 | Hints | `[data-testid=teach-request-hint]` | Guided only; supply hints reference `[data-testid=map-mode-supply]` |
 | Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; engine preview attack/defence lines |
 | Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares to server plan |
 | Prediction (required) | `[data-testid=teach-prediction]` | Server rejects resolve if under 12 chars; stored on attempt; compared post-resolve in feedback |
 | Belief recall | `[data-testid=teach-belief-recall]` | Silent session with `priorAttemptId`; server-loaded belief — not client-writable |
 | Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** |
-| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided fixed die roll disclosed before resolve |
+| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided fixed die roll disclosed (expandable) before resolve |
 | Resolve | `[data-testid=teach-resolve]` | POST **`/api/teach/resolve`** with `prediction` (strict schema). `[data-testid=teach-belief-stored]` shows belief persistence status |
 | Silent follow-up | `[data-testid=teach-start-silent]` | No hints; optional belief recall from prior guided attempt |
 | Supply lesson | `[data-testid=teach-start-supply]` or setup button | Trade-off Katowice (heavy, lower supply) vs Kraków (lean, depot-fed); preview ratios from engine |

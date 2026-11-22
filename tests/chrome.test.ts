@@ -53,6 +53,20 @@ describe("top bar and map chrome", () => {
     expect(drawer).toContain("lg:hidden")
   })
 
+  it("puts /teach on the same general's-table shell with lesson focus highlights", () => {
+    const teach = readFileSync("components/teaching-app.tsx", "utf8")
+    const hud = readFileSync("components/hud.tsx", "utf8")
+    const map = readFileSync("components/war-map.tsx", "utf8")
+    expect(teach).toContain("createDefaultTeachWindows")
+    expect(teach).toContain("FloatingWindow")
+    expect(teach).toContain("lessonFocus=")
+    expect(teach).toContain("tableShell={desktopShell}")
+    expect(hud).toContain("onToggleTeachWindow")
+    expect(hud).toContain("teach-lesson-toggle")
+    expect(map).toContain("data-lesson-highlights")
+    expect(map).toContain("LESSON_TARGET_OUTLINE_LAYER")
+  })
+
   it("keeps start-card controls full-width inside the parchment card (no left-flush max-w)", () => {
     expect(campaignStart).toContain('data-testid="campaign-start-card"')
     expect(campaignStart).toContain('data-testid="campaign-start-actions"')

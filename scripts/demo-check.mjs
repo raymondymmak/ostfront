@@ -921,17 +921,37 @@ function buildSteps(cli, targets) {
       id: "22-teach-load",
       name: "Open converging-attacks teaching drill",
       async run({ page }) {
+        await page.setViewportSize(DESKTOP_VIEWPORT)
         const base = targets.appUrl.replace(/\/$/, "")
         await gotoChecked(page, `${base}/teach`)
         await page.locator("[data-testid=teach-begin]").click()
-        await page.locator("[data-testid=teach-app]").waitFor({ state: "visible", timeout: 60_000 })
+        const app = page.locator("[data-testid=teach-app]")
+        await app.waitFor({ state: "visible", timeout: 60_000 })
         await page.locator("[data-testid=teach-question]").waitFor({ state: "visible", timeout: 15_000 })
+        const shell = await app.getAttribute("data-teach-shell")
+        if (shell !== "desktop") {
+          throw new Error(`Expected desktop teach shell at 1440×900, got: ${shell ?? "(none)"}`)
+        }
+        await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 10_000 })
+        await page.locator("[data-testid=teach-orders-window]").waitFor({ state: "visible", timeout: 5_000 })
+        await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
+        const map = page.locator("[data-testid=war-map]")
+        await map.waitFor({ state: "visible", timeout: 15_000 })
+        const lessonHighlights = await map.getAttribute("data-lesson-highlights")
+        if (!lessonHighlights?.includes("target:lublin") || !lessonHighlights.includes("source:")) {
+          throw new Error(`Expected lesson target highlight on lublin, got: ${lessonHighlights ?? "(none)"}`)
+        }
+        if ((await map.getAttribute("data-lesson-focus")) !== "true") {
+          throw new Error("Expected data-lesson-focus=true on teach map")
+        }
       },
     },
     {
       id: "23-teach-hint",
       name: "Request coach hint (province-anchored)",
       async run({ page }) {
+        await page.locator("[data-testid=teach-lesson-toggle]").click()
+        await page.locator("[data-testid=teach-panel]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=teach-request-hint]").click()
         await page.waitForTimeout(300)
         const map = page.locator("[data-testid=war-map]")

@@ -2,13 +2,16 @@
 
 export type TableWindowId = "orders" | "province" | "log" | "legend" | "advisor" | "ohl"
 
-export type TableWindowState = {
-  id: TableWindowId
+/** Shared frame for campaign and /teach floating windows. */
+export type StackedWindow<Id extends string = string> = {
+  id: Id
   open: boolean
   x: number
   y: number
   z: number
 }
+
+export type TableWindowState = StackedWindow<TableWindowId>
 
 /** Tailwind `lg` — same breakpoint as the campaign shell (min-width 1024px). */
 export const DESKTOP_SHELL_MQ = "(min-width: 1024px)"
