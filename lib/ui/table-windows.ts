@@ -35,9 +35,10 @@ export function createDefaultTableWindows(
     },
     {
       id: "log",
+      // Sit to the right of the bottom-left Legend so open Log never covers it.
       open: false,
-      x: 12,
-      y: Math.max(12, bottomLegend - 280),
+      x: Math.min(320, Math.max(200, mapWidth * 0.22)),
+      y: Math.max(12, mapHeight - 420),
       z: BASE_Z + 5,
     },
     {
