@@ -15,6 +15,12 @@ type ChronicleDrawerProps = {
   onActive: (index: number) => void
   phase: FinalePhase
   newsCardsActive?: boolean
+  /**
+   * Map-corner Log control + drawer. Hidden on the desktop floating-window shell
+   * (`lg+`); keep phone (<640) placement and lift Log above the legend on tablet
+   * (640–1023) so they never overlap.
+   */
+  mapCorner?: boolean
 }
 
 export function ChronicleDrawer({
@@ -25,9 +31,10 @@ export function ChronicleDrawer({
   onActive,
   phase,
   newsCardsActive = false,
+  mapCorner = true,
 }: ChronicleDrawerProps) {
   useEffect(() => {
-    if (!open) return
+    if (!open || !mapCorner) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       if (!chronicleHandlesEscapeKey(newsCardsActive)) return
@@ -36,11 +43,18 @@ export function ChronicleDrawer({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [newsCardsActive, onOpen, open])
+  }, [mapCorner, newsCardsActive, onOpen, open])
+
+  if (!mapCorner) return null
 
   return (
     <>
-      <div className="pointer-events-none absolute bottom-14 left-3 z-40 sm:bottom-3">
+      {/*
+        Phone: bottom-14 clears the legend at bottom-3.
+        Tablet (sm–lg): keep bottom-14 so Log never sits on the legend.
+        Desktop shell hides this control entirely (mapCorner=false / lg:hidden).
+      */}
+      <div className="pointer-events-none absolute bottom-14 left-3 z-40 lg:hidden">
         <Button
           type="button"
           size="sm"
@@ -62,20 +76,20 @@ export function ChronicleDrawer({
       </div>
       {open ? (
         <div
-          className="pointer-events-auto absolute bottom-14 left-3 z-40 flex w-[min(calc(100%-1.5rem),24rem)] max-h-[min(42dvh,20rem)] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl sm:bottom-12 sm:max-h-[min(50vh,24rem)]"
+          className="pointer-events-auto absolute bottom-14 left-3 z-40 flex w-[min(calc(100%-1.5rem),24rem)] max-h-[min(42dvh,20rem)] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl sm:max-h-[min(50vh,24rem)] lg:hidden"
           data-testid="chronicle-drawer"
           role="region"
           aria-label="Fortnight log"
         >
-            <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-              <p className="font-display text-base leading-none">Chronicle</p>
-              <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onOpen(false)}>
-                Close
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1" data-testid="mobile-chronicle-panel">
-              <TimelinePanel log={log} active={active} onActive={onActive} phase={phase} variant="drawer" />
-            </div>
+          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+            <p className="font-display text-base leading-none">Chronicle</p>
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onOpen(false)}>
+              Close
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1" data-testid="mobile-chronicle-panel">
+            <TimelinePanel log={log} active={active} onActive={onActive} phase={phase} variant="drawer" />
+          </div>
         </div>
       ) : null}
     </>

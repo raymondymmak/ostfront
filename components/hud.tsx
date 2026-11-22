@@ -8,6 +8,7 @@ import { statusLabel } from "@/lib/finale"
 import { scenarioSpec } from "@/lib/data/objectives"
 import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import { FACTION_LABEL } from "@/lib/format"
+import type { TableWindowId } from "@/lib/ui/table-windows"
 import type { GameState } from "@/lib/types"
 
 type HudProps = {
@@ -17,9 +18,23 @@ type HudProps = {
   advisorOpen: boolean
   onAdvisor: () => void
   teachMode?: boolean
+  /** Desktop general's-table: window toggle buttons (hidden in teachMode). */
+  tableShell?: boolean
+  windowOpen?: Partial<Record<TableWindowId, boolean>>
+  onToggleWindow?: (id: TableWindowId) => void
 }
 
-export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMode }: HudProps) {
+export function Hud({
+  state,
+  armReset,
+  onReset,
+  advisorOpen,
+  onAdvisor,
+  teachMode,
+  tableShell = false,
+  windowOpen = {},
+  onToggleWindow,
+}: HudProps) {
   const central = strength(state, "central")
   const russia = strength(state, "russia")
   const held = {
@@ -35,7 +50,6 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMod
   const centralShare = total === 0 ? 0 : (central / total) * 100
   const russiaShare = total === 0 ? 0 : 100 - centralShare
   const fortnight = Math.min(state.turn + 1, spec.length)
-  const goal = campaignGoalLine(state.scenario)
 
   return (
     <header className="border-b border-border px-3 py-2.5 sm:px-4">
@@ -47,12 +61,14 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMod
           data-testid="objectives"
           className="order-3 w-full min-w-0 md:order-none md:w-auto md:flex-1"
         >
-          <p
-            data-testid="campaign-goal"
-            className="mb-1.5 text-center text-xs font-medium leading-snug text-foreground md:text-left"
-          >
-            {goal}
-          </p>
+          {teachMode && (
+            <p
+              data-testid="campaign-goal"
+              className="mb-1.5 text-center text-xs font-medium leading-snug text-foreground md:text-left"
+            >
+              {campaignGoalLine(state.scenario)}
+            </p>
+          )}
           <div
             className="flex h-3 w-full overflow-hidden rounded-full bg-[#2a241e]"
             role="img"
@@ -141,6 +157,55 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMod
               <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs" data-testid="teach-mode-badge">
                 Teaching drill
               </span>
+            ) : tableShell ? (
+              <>
+                <WindowToggle
+                  id="orders"
+                  label="Orders"
+                  testId="tab-orders"
+                  pressed={Boolean(windowOpen.orders)}
+                  onToggle={onToggleWindow}
+                />
+                <WindowToggle
+                  id="province"
+                  label="Province"
+                  testId="tab-province"
+                  pressed={Boolean(windowOpen.province)}
+                  onToggle={onToggleWindow}
+                />
+                <WindowToggle
+                  id="log"
+                  label="Log"
+                  testId="chronicle-log-toggle"
+                  pressed={Boolean(windowOpen.log)}
+                  onToggle={onToggleWindow}
+                />
+                <WindowToggle
+                  id="legend"
+                  label="Legend"
+                  testId="legend-toggle"
+                  pressed={Boolean(windowOpen.legend)}
+                  onToggle={onToggleWindow}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={advisorOpen ? "default" : "outline"}
+                  aria-expanded={advisorOpen}
+                  data-testid="advisor-toggle"
+                  onClick={onAdvisor}
+                >
+                  Chief of Staff
+                </Button>
+                <WindowToggle
+                  id="ohl"
+                  label="OHL"
+                  testId="ohl-toggle"
+                  pressed={Boolean(windowOpen.ohl)}
+                  onToggle={onToggleWindow}
+                  title="Orders from OHL"
+                />
+              </>
             ) : (
               <Button
                 type="button"
@@ -160,6 +225,36 @@ export function Hud({ state, armReset, onReset, advisorOpen, onAdvisor, teachMod
         </div>
       </div>
     </header>
+  )
+}
+
+function WindowToggle({
+  id,
+  label,
+  testId,
+  pressed,
+  onToggle,
+  title,
+}: {
+  id: TableWindowId
+  label: string
+  testId: string
+  pressed: boolean
+  onToggle?: (id: TableWindowId) => void
+  title?: string
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={pressed ? "default" : "outline"}
+      aria-pressed={pressed}
+      data-testid={testId}
+      title={title}
+      onClick={() => onToggle?.(id)}
+    >
+      {label}
+    </Button>
   )
 }
 

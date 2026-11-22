@@ -9,36 +9,44 @@ export function MapLegend({
   showRails,
   onToggleRails,
   overlay,
+  /** When true, render as floating-window body (no map-corner chrome). */
+  embedded = false,
 }: {
   showRails: boolean
   onToggleRails: () => void
   overlay: Overlay
+  embedded?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [mapCornerOpen, setMapCornerOpen] = useState(false)
 
   useEffect(() => {
+    if (embedded) return
     const media = window.matchMedia("(min-width: 1024px)")
-    const sync = () => setOpen(media.matches)
+    const sync = () => setMapCornerOpen(media.matches)
     sync()
     media.addEventListener("change", sync)
     return () => media.removeEventListener("change", sync)
-  }, [])
+  }, [embedded])
 
-  return (
-    <div className="pointer-events-auto absolute bottom-3 left-3 z-20 max-h-[calc(100%-1.5rem)] max-w-[min(18rem,calc(100%-1.5rem))] overflow-y-auto rounded-md bg-[#f6f1e4]/95 text-[11px] text-[#241c14] shadow-sm">
-      <div className="flex items-center px-2 py-1.5">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center justify-between gap-2 px-0.5 py-0.5 text-left font-semibold text-[#3d342b]"
-          onClick={() => setOpen((value) => !value)}
-          aria-expanded={open}
-        >
-          Map legend
-          <span className="text-[10px] font-normal text-[#5c5144]">{open ? "Hide" : "Show"}</span>
-        </button>
-      </div>
+  const open = embedded || mapCornerOpen
+
+  const body = (
+    <>
+      {!embedded && (
+        <div className="flex items-center px-2 py-1.5">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center justify-between gap-2 px-0.5 py-0.5 text-left font-semibold text-[#3d342b]"
+            onClick={() => setMapCornerOpen((value) => !value)}
+            aria-expanded={open}
+          >
+            Map legend
+            <span className="text-[10px] font-normal text-[#5c5144]">{open ? "Hide" : "Show"}</span>
+          </button>
+        </div>
+      )}
       {open && (
-        <div className="border-t border-[#3d342b]/20 px-2.5 py-2">
+        <div className={`${embedded ? "" : "border-t border-[#3d342b]/20"} px-2.5 py-2`}>
           <div className="flex items-center gap-2">
             <span className="inline-block size-2.5 bg-[#4a6d90]" /> Central Powers
           </div>
@@ -101,6 +109,26 @@ export function MapLegend({
       )}
       {overlay === "supply" && <SupplyScale />}
       {overlay === "unrest" && <UnrestScale />}
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <div
+        className="h-full max-h-full overflow-y-auto bg-[#f6f1e4] text-[11px] text-[#241c14]"
+        data-testid="map-legend"
+      >
+        {body}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="pointer-events-auto absolute bottom-3 left-3 z-20 max-h-[calc(100%-1.5rem)] max-w-[min(18rem,calc(100%-1.5rem))] overflow-y-auto rounded-md bg-[#f6f1e4]/95 text-[11px] text-[#241c14] shadow-sm"
+      data-testid="map-legend"
+    >
+      {body}
     </div>
   )
 }

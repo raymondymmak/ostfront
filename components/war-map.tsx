@@ -64,6 +64,10 @@ type WarMapProps = MapInput & {
   targetIds?: { move: string[]; attack: string[]; canOrder: boolean }
   targetHoverNote?: (provinceId: string, base: string) => string
   onOverlay: (overlay: Overlay) => void
+  /** When false, omit the map-corner legend (desktop floating Legend window hosts it). */
+  showMapLegend?: boolean
+  showRails?: boolean
+  onShowRails?: (show: boolean) => void
 }
 
 type Snapshot = MapInput & {
@@ -84,12 +88,21 @@ export function WarMap({
   onSelect,
   onDraw,
   onOverlay,
+  showMapLegend = true,
+  showRails: showRailsProp,
+  onShowRails,
 }: WarMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<string | null>(null)
-  const [showRails, setShowRails] = useState(true)
+  const [showRailsLocal, setShowRailsLocal] = useState(true)
+  const showRails = showRailsProp ?? showRailsLocal
+  const setShowRails = (next: boolean | ((value: boolean) => boolean)) => {
+    const value = typeof next === "function" ? next(showRails) : next
+    if (onShowRails) onShowRails(value)
+    else setShowRailsLocal(value)
+  }
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
   const targetIdsRef = useRef(targetIds)
@@ -423,11 +436,13 @@ export function WarMap({
         </div>
       )}
       <MapMode overlay={overlay} onOverlay={onOverlay} className={failed ? "right-2.5" : "right-12"} />
-      <MapLegend
-        showRails={showRails}
-        onToggleRails={() => setShowRails((value) => !value)}
-        overlay={overlay}
-      />
+      {showMapLegend && (
+        <MapLegend
+          showRails={showRails}
+          onToggleRails={() => setShowRails((value) => !value)}
+          overlay={overlay}
+        />
+      )}
 
       {orderMode && (
         <div className="pointer-events-none absolute top-2 left-2 z-20 max-w-[calc(100%-8.5rem)] rounded-md bg-[#241c14]/90 px-2.5 py-1.5 text-xs text-[#f3e2a8]">

@@ -51,9 +51,20 @@ type AdvisorPanelProps = {
   epoch: number
   onClose: () => void
   onAccept: (orders: AdvisorOrder[], mode: "accept" | "override") => { ok: boolean; reason?: string }
+  /** When true, fill a floating window (no absolute map-corner chrome). */
+  embedded?: boolean
 }
 
-export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAccept }: AdvisorPanelProps) {
+export function AdvisorPanel({
+  open,
+  state,
+  queue,
+  closed,
+  epoch,
+  onClose,
+  onAccept,
+  embedded = false,
+}: AdvisorPanelProps) {
   const [messages, setMessages] = useState<ChatTurn[]>(readHistory)
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
@@ -202,12 +213,12 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
     )
   }
 
+  const shellClass = embedded
+    ? "flex h-full max-h-full w-full flex-col overflow-hidden bg-[#241c14] text-[#f3e2a8]"
+    : "pointer-events-auto absolute right-3 bottom-3 z-30 flex max-h-[min(32rem,calc(100%-1.5rem))] w-[min(24rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/95 text-[#f3e2a8] shadow-lg"
+
   return (
-    <section
-      className="pointer-events-auto absolute right-3 bottom-3 z-30 flex max-h-[min(32rem,calc(100%-1.5rem))] w-[min(24rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/95 text-[#f3e2a8] shadow-lg"
-      data-testid="advisor-panel"
-      aria-label="Chief of the General Staff"
-    >
+    <section className={shellClass} data-testid="advisor-panel" aria-label="Chief of the General Staff">
       <header className="flex items-start justify-between gap-2 border-b border-[#c6a15a]/30 px-3 py-2.5">
         <div>
           <p className="text-[10px] tracking-[0.14em] text-[#c6a15a] uppercase">OHL</p>
@@ -217,9 +228,11 @@ export function AdvisorPanel({ open, state, queue, closed, epoch, onClose, onAcc
             {offline ? " · offline" : ""}
           </p>
         </div>
-        <Button type="button" size="sm" variant="outline" onClick={onClose}>
-          Hide
-        </Button>
+        {!embedded && (
+          <Button type="button" size="sm" variant="outline" onClick={onClose}>
+            Hide
+          </Button>
+        )}
       </header>
       {notice && (
         <p className="border-b border-[#c6a15a]/30 px-3 py-2 text-xs text-[#f3e2a8]" role="status" data-testid="advisor-notice">

@@ -209,6 +209,26 @@ async function expectText(locator, snippet) {
   await locator.getByText(snippet, { exact: false }).first().waitFor({ state: "visible", timeout: 15_000 })
 }
 
+/** @param {import('playwright').Page} page @param {string} aSel @param {string} bSel @param {string} label */
+async function assertNoOverlap(page, aSel, bSel, label) {
+  const result = await page.evaluate(
+    ({ first, second }) => {
+      const a = document.querySelector(first)
+      const b = document.querySelector(second)
+      if (!a || !b) return { ok: false, reason: `missing ${!a ? first : second}` }
+      const ra = a.getBoundingClientRect()
+      const rb = b.getBoundingClientRect()
+      if (ra.width < 1 || ra.height < 1 || rb.width < 1 || rb.height < 1) {
+        return { ok: false, reason: "zero-size rect" }
+      }
+      const hit = !(ra.right <= rb.left || ra.left >= rb.right || ra.bottom <= rb.top || ra.top >= rb.bottom)
+      return { ok: !hit, reason: hit ? "rects overlap" : "clear" }
+    },
+    { first: aSel, second: bSel },
+  )
+  if (!result.ok) throw new Error(`${label}: ${result.reason}`)
+}
+
 async function ensureAdvisorPanelOpen(page) {
   const panel = page.locator("[data-testid=advisor-panel]")
   if (await panel.isVisible().catch(() => false)) return
@@ -484,12 +504,13 @@ function buildSteps(cli, targets) {
     },
     {
       id: "03-briefing",
-      name: "Read campaign goal in HUD",
+      name: "Read campaign goal in Orders from OHL",
       async run({ page }) {
         const goal = page.locator("[data-testid=campaign-goal]")
         await goal.waitFor({ state: "visible", timeout: 15_000 })
         await expectText(goal, "Lemberg")
         await expectText(goal, "Kraków")
+        await page.locator("[data-testid=ohl-orders-window]").waitFor({ state: "visible" })
       },
     },
     {
@@ -503,6 +524,15 @@ function buildSteps(cli, targets) {
         await expectText(hud, "Strength")
         await expectText(hud, "Provinces")
         await expectText(hud, "VP")
+        await openChronicleDrawer(page)
+        await page.locator("[data-testid=map-legend]").waitFor({ state: "visible", timeout: 10_000 })
+        await assertNoOverlap(
+          page,
+          "[data-testid=chronicle-drawer]",
+          "[data-testid=map-legend]",
+          "Desktop Log vs legend",
+        )
+        await page.locator("[data-testid=chronicle-log-toggle]").click()
       },
     },
     {
@@ -680,7 +710,7 @@ function buildSteps(cli, targets) {
     },
     {
       id: "17-mobile-chronicle",
-      name: "Mobile Log drawer (390×844)",
+      name: "Mobile Log drawer (390×844) and tablet Log/legend clearance",
       async run({ page }) {
         try {
           await page.setViewportSize(MOBILE_VIEWPORT)
@@ -689,8 +719,20 @@ function buildSteps(cli, targets) {
             state: "visible",
             timeout: 10_000,
           })
+          await page.locator("[data-testid=chronicle-log-toggle]").click()
+          await page.setViewportSize({ width: 768, height: 1024 })
+          await page.waitForTimeout(400)
+          await page.locator("[data-testid=chronicle-log-toggle]").waitFor({ state: "visible", timeout: 10_000 })
+          await page.locator("[data-testid=map-legend]").waitFor({ state: "visible", timeout: 10_000 })
+          await assertNoOverlap(
+            page,
+            "[data-testid=chronicle-log-toggle]",
+            "[data-testid=map-legend]",
+            "Tablet Log button vs legend",
+          )
         } finally {
           await page.setViewportSize(DESKTOP_VIEWPORT)
+          await page.waitForTimeout(400)
         }
       },
     },

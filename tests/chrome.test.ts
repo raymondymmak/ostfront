@@ -24,6 +24,8 @@ describe("top bar and map chrome", () => {
     expect(hud).toContain('data-testid="objectives"')
     expect(hud).toContain('data-testid="advisor-toggle"')
     expect(hud).toContain("statusLabel")
+    expect(hud).toContain("teachMode")
+    expect(hud).toContain("tableShell")
   })
 
   it("puts map mode on the map and the rails toggle inside the open legend", () => {
@@ -31,11 +33,22 @@ describe("top bar and map chrome", () => {
     expect(map).toContain("onOverlay={onOverlay}")
     expect(app).toContain("onOverlay={setOverlay}")
     const hudCall = app.slice(app.indexOf("<Hud"), app.indexOf("/>", app.indexOf("<Hud")))
-    expect(hudCall).not.toContain("overlay")
+    expect(hudCall).not.toContain("overlay=")
     const openAt = legend.indexOf("{open &&")
     const toggleAt = legend.indexOf('data-testid="rail-toggle"')
     expect(toggleAt).toBeGreaterThan(openAt)
     expect(legend.slice(0, openAt)).not.toContain("rail-toggle")
     expect(legend).toContain('data-testid="overlay-scale"')
+  })
+
+  it("uses a desktop floating-window shell and keeps Log above the legend below lg", () => {
+    expect(app).toContain("createDefaultTableWindows")
+    expect(app).toContain("FloatingWindow")
+    expect(app).toContain("OhlOrdersWindow")
+    expect(app).toContain("tableShell={desktopShell}")
+    const drawer = readFileSync("components/chronicle-drawer.tsx", "utf8")
+    expect(drawer).toContain("bottom-14 left-3")
+    expect(drawer).not.toMatch(/className="[^"]*sm:bottom-3/)
+    expect(drawer).toContain("lg:hidden")
   })
 })

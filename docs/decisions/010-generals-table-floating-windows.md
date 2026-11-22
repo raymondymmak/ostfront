@@ -1,0 +1,7 @@
+# Desktop floating-window shell vs mobile stacked layout
+
+**Status:** accepted  
+**Date:** 2026-11-22  
+**Context:** The campaign used a fixed 23rem right dock for Orders/Province and a map-corner Log control that sat on the legend from `sm` (640px) upward. Raymond’s Phase 2D Part 5 brief asked for a general’s-table layout on desktop without reworking `/teach`, the engine, or advisor trust.  
+**Decision:** At Tailwind `lg` (min-width 1024px), remove the right dock and host Orders, Province, Log, Legend, Chief of Staff, and Orders from OHL as draggable floating windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`). Drag is header-only so MapLibre pan and arrow-draw keep working. The campaign goal line leaves the HUD into Orders from OHL (`components/ohl-orders-window.tsx`). Below `lg`, keep the stacked map + aside tabs; fix Log/legend overlap by keeping the map-corner Log at `bottom-14` through tablet widths (no `sm:bottom-3`). In `teachMode`, Hud keeps the goal in the header and hides campaign window buttons.  
+**Consequences:** Demo-check and FEATURES treat `campaign-goal` as living in the OHL window/strip after Begin. Desktop QA must open Legend (default) for `rail-toggle` / overlay scales. Teaching layout stays on Part 6. Window open/z state is client UX only — not persisted with the campaign save.
