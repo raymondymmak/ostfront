@@ -190,7 +190,16 @@ async function krakowIsSelected(page) {
  * A second click on an already-selected province clears selection.
  * @param {import('playwright').Page} page
  */
+/** Close a desktop floating Province window so it cannot swallow map clicks. */
+async function closeFloatingProvinceIfOpen(page) {
+  const win = page.locator('[role="dialog"][aria-label="Province"]')
+  if (!(await win.isVisible().catch(() => false))) return
+  await win.getByRole("button", { name: "Close" }).click()
+  await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
+}
+
 async function selectKrakowOnMap(page) {
+  await closeFloatingProvinceIfOpen(page)
   if (!(await krakowIsSelected(page))) {
     const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
     if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
@@ -198,11 +207,10 @@ async function selectKrakowOnMap(page) {
     await page.waitForTimeout(400)
   }
   await page.locator("[data-testid=tab-province]").click()
-  await page
-    .locator("aside h2")
-    .filter({ hasText: "Kraków" })
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 })
+  const title = page.locator("aside h2").filter({ hasText: "Kraków" }).first()
+  await title.waitFor({ state: "attached", timeout: 10_000 })
+  await title.scrollIntoViewIfNeeded()
+  await title.waitFor({ state: "visible", timeout: 10_000 })
 }
 
 async function expectText(locator, snippet) {
@@ -539,12 +547,16 @@ function buildSteps(cli, targets) {
       id: "05-map-click",
       name: "Select province via map click",
       async run({ page }) {
+        await closeFloatingProvinceIfOpen(page)
         const point = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
         if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
         await page.mouse.click(point.x, point.y)
         await page.waitForTimeout(400)
         await page.locator("[data-testid=tab-province]").click()
-        await page.locator("aside h2").filter({ hasText: "Katowice" }).first().waitFor({ state: "visible", timeout: 10_000 })
+        const title = page.locator("aside h2").filter({ hasText: "Katowice" }).first()
+        await title.waitFor({ state: "attached", timeout: 10_000 })
+        await title.scrollIntoViewIfNeeded()
+        await title.waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {

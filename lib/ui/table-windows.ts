@@ -74,9 +74,10 @@ export function createDefaultTableWindows(
       z: BASE_Z + 1,
     },
     {
+      // Same right column as Orders so opening Province does not cover map click targets.
       id: "province",
       open: false,
-      x: Math.max(m, mapWidth - TABLE_WINDOW_SIZE_HINTS.province.w * 2 - m - 40),
+      x: Math.max(m, mapWidth - TABLE_WINDOW_SIZE_HINTS.province.w - m - 24),
       y: belowMapMode,
       z: BASE_Z + 4,
     },
