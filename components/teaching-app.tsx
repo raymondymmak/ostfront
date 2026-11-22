@@ -478,7 +478,7 @@ export function TeachingApp() {
           ? () => void loadSession("supply-tradeoff", "guided")
           : undefined
       }
-      embedded={desktopShell}
+      embedded
     />
   )
 
@@ -634,7 +634,8 @@ export function TeachingApp() {
         </div>
         {!desktopShell && (
           <>
-            <aside className="flex min-h-0 flex-col border-t border-border lg:border-t-0 lg:border-l">
+            <div className="border-t border-leather/35 bg-paper">{teachPanel}</div>
+            <aside className="flex min-h-0 flex-col border-t border-border">
               <Tabs value={sideTab} onValueChange={setSideTab} className="flex min-h-0 flex-1 flex-col">
                 <TabsList className="mx-3 mt-3 w-[calc(100%-1.5rem)]">
                   <TabsTrigger value="orders" data-testid="tab-orders">
@@ -652,7 +653,6 @@ export function TeachingApp() {
                 </TabsContent>
               </Tabs>
             </aside>
-            {teachPanel}
           </>
         )}
       </div>
