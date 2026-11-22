@@ -95,13 +95,12 @@ export function FloatingWindow({
   return (
     <div
       ref={rootRef}
-      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-[#4a3f33]/65 text-[#241c14] transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
+      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-leather/65 bg-paper text-ink transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
       style={{
         left: x,
         top: y,
         zIndex: z,
         maxHeight: stageMaxHeight !== undefined ? stageMaxHeight : undefined,
-        backgroundColor: "#f3ead7",
         backgroundImage:
           "linear-gradient(180deg, rgba(255,250,240,0.55) 0%, rgba(243,234,215,0.2) 40%, rgba(214,198,168,0.35) 100%), radial-gradient(ellipse at 18% 12%, rgba(255,255,255,0.35), transparent 42%)",
       }}
@@ -112,7 +111,7 @@ export function FloatingWindow({
       onMouseDown={onFocus}
     >
       <header
-        className="relative flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-[#4a3f33]/30 bg-[#e4d7bb] px-2.5 py-1.5 active:cursor-grabbing"
+        className="relative flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-leather/30 bg-paper-deep px-2.5 py-1.5 active:cursor-grabbing"
         style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35)" }}
         onPointerDown={(event) => {
           if (event.button !== 0) return
@@ -164,16 +163,16 @@ export function FloatingWindow({
         <div className="flex min-w-0 items-center gap-2">
           <span aria-hidden className="grid h-5 w-3.5 shrink-0 grid-cols-2 content-center gap-x-[3px] gap-y-[3px]">
             {Array.from({ length: 6 }).map((_, i) => (
-              <span key={i} className="size-[3px] rounded-full bg-[#5c5144]/75" />
+              <span key={i} className="size-[3px] rounded-full bg-ink-muted/75" />
             ))}
           </span>
-          <p className="min-w-0 truncate font-display text-base leading-none text-[#241c14] select-none">{title}</p>
+          <p className="min-w-0 truncate font-display text-base leading-none text-ink select-none">{title}</p>
         </div>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs text-[#3d342b] hover:bg-[#3d342b]/10 hover:text-[#241c14]"
+          className="h-7 px-2 text-xs text-leather hover:bg-leather/10 hover:text-ink"
           aria-label={`Close ${title}`}
           onClick={(event) => {
             event.stopPropagation()

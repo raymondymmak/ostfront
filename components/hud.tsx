@@ -52,7 +52,7 @@ export function Hud({
   const fortnight = Math.min(state.turn + 1, spec.length)
 
   return (
-    <header className="border-b border-border px-3 py-2.5 sm:px-4">
+    <header className="table-hud px-3 py-2.5 sm:px-4">
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2 md:flex-nowrap md:items-center">
         <p className="shrink-0 font-display text-[1.65rem] leading-none tracking-wide text-primary italic">
           Ostfront
@@ -70,17 +70,17 @@ export function Hud({
             </p>
           )}
           <div
-            className="flex h-3 w-full overflow-hidden rounded-full bg-[#2a241e]"
+            className="flex h-3 w-full overflow-hidden rounded-full border border-leather/25 bg-paper shadow-inner"
             role="img"
             aria-label={`Listed strength. ${FACTION_LABEL.central} ${central} versus ${FACTION_LABEL.russia} ${russia}.`}
           >
             <div
-              className={`h-full bg-[#4a6d90] ${central > 0 && russia > 0 ? "shadow-[inset_-1px_0_0_rgba(246,241,228,0.85)]" : ""}`}
+              className={`h-full bg-faction-central ${central > 0 && russia > 0 ? "shadow-[inset_-1px_0_0_rgba(246,241,228,0.85)]" : ""}`}
               style={{ width: `${centralShare}%` }}
               title={`${FACTION_LABEL.central} listed strength ${central}`}
             />
             <div
-              className="h-full bg-[#a85b49]"
+              className="h-full bg-faction-russia"
               style={{ width: `${russiaShare}%` }}
               title={`${FACTION_LABEL.russia} listed strength ${russia}`}
             />
@@ -88,12 +88,12 @@ export function Hud({
           <p className="mt-1 text-center text-xs text-muted-foreground">
             <span title={`${FACTION_LABEL.central} listed strength versus ${FACTION_LABEL.russia}`}>
               Strength{" "}
-              <span className="text-[#d5e2f2]" title={`${FACTION_LABEL.central} listed strength`}>
+              <span className="font-semibold text-faction-central" title={`${FACTION_LABEL.central} listed strength`}>
                 <span className="sr-only">{FACTION_LABEL.central} </span>
                 {central}
               </span>
               {" vs "}
-              <span className="text-[#f0d2cb]" title={`${FACTION_LABEL.russia} listed strength`}>
+              <span className="font-semibold text-faction-russia" title={`${FACTION_LABEL.russia} listed strength`}>
                 <span className="sr-only">{FACTION_LABEL.russia} </span>
                 {russia}
               </span>
@@ -193,6 +193,11 @@ export function Hud({
                   variant={advisorOpen ? "default" : "outline"}
                   aria-expanded={advisorOpen}
                   data-testid="advisor-toggle"
+                  className={
+                    advisorOpen
+                      ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
+                      : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
+                  }
                   onClick={onAdvisor}
                 >
                   Chief of Staff
@@ -213,12 +218,23 @@ export function Hud({
                 variant={advisorOpen ? "default" : "outline"}
                 aria-expanded={advisorOpen}
                 data-testid="advisor-toggle"
+                className={
+                  advisorOpen
+                    ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
+                    : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
+                }
                 onClick={onAdvisor}
               >
                 Chief of Staff
               </Button>
             )}
-            <Button type="button" size="sm" variant="outline" onClick={onReset}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
+              onClick={onReset}
+            >
               {armReset ? "Confirm restart" : teachMode ? "Restart drill" : "Restart"}
             </Button>
           </div>
@@ -251,6 +267,11 @@ function WindowToggle({
       aria-pressed={pressed}
       data-testid={testId}
       title={title}
+      className={
+        pressed
+          ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
+          : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
+      }
       onClick={() => onToggle?.(id)}
     >
       {label}

@@ -91,21 +91,22 @@ export function CampaignStart({
       </div>
 
       <main className="relative z-10 mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 py-6 text-center sm:max-w-lg sm:px-8 lg:max-h-dvh lg:py-8">
+        <div className="w-full rounded-sm border border-leather/45 bg-paper/95 px-5 py-6 text-ink shadow-[0_16px_36px_rgba(20,14,8,0.35)] sm:px-8 sm:py-8">
         <h1 className="font-display text-5xl font-normal italic leading-none tracking-wide text-primary sm:text-6xl md:text-7xl">
           Ostfront
         </h1>
-        <p className="mt-4 font-display text-xl leading-tight text-foreground sm:text-2xl">Gorlice–Tarnów</p>
+        <p className="mt-4 font-display text-xl leading-tight text-ink sm:text-2xl">Gorlice–Tarnów</p>
         <p className="mt-1 text-sm text-muted-foreground">2 May 1915</p>
 
         <p
-          className="mt-6 max-w-sm text-base font-medium leading-snug text-accent-foreground sm:text-[1.05rem]"
+          className="mt-6 max-w-sm text-base font-medium leading-snug text-ink sm:text-[1.05rem]"
           data-testid="briefing-task"
         >
           {goal}
         </p>
 
         <div
-          className="mt-8 flex w-full max-w-xs rounded-lg border border-border bg-card/80 p-1 shadow-lg backdrop-blur-sm sm:max-w-sm"
+          className="mt-8 flex w-full max-w-xs rounded-sm border border-leather/40 bg-paper-deep p-1 shadow-sm sm:max-w-sm"
           data-testid="difficulty"
           role="group"
           aria-label="Difficulty"
@@ -160,7 +161,7 @@ export function CampaignStart({
 
         {moreOpen ? (
           <div
-            className="mt-3 max-h-[min(32vh,14rem)] w-full max-w-sm shrink-0 overflow-y-auto overscroll-contain rounded-lg border border-border bg-card/90 p-4 text-left text-xs leading-5 text-muted-foreground shadow-md"
+            className="mt-3 max-h-[min(32vh,14rem)] w-full max-w-sm shrink-0 overflow-y-auto overscroll-contain rounded-sm border border-leather/35 bg-paper p-4 text-left text-xs leading-5 text-muted-foreground shadow-sm"
             data-testid="campaign-more-briefing"
           >
             {BRIEFING.map((paragraph) => (
@@ -170,6 +171,7 @@ export function CampaignStart({
             ))}
           </div>
         ) : null}
+        </div>
       </main>
     </div>
   )

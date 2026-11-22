@@ -59,7 +59,7 @@ export function ChronicleDrawer({
           type="button"
           size="sm"
           variant="secondary"
-          className="pointer-events-auto h-8 border-border/80 bg-card/90 px-3 text-xs shadow-md backdrop-blur-sm"
+          className="pointer-events-auto h-8 rounded-sm border-leather/45 bg-paper/95 px-3 text-xs text-ink shadow-[0_6px_14px_rgba(36,28,20,0.18)]"
           data-testid="chronicle-log-toggle"
           aria-expanded={open}
           disabled={newsCardsActive}
@@ -76,7 +76,7 @@ export function ChronicleDrawer({
       </div>
       {open ? (
         <div
-          className="pointer-events-auto absolute bottom-14 left-3 z-40 flex w-[min(calc(100%-1.5rem),24rem)] max-h-[min(42dvh,20rem)] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl sm:max-h-[min(50vh,24rem)] lg:hidden"
+          className="pointer-events-auto absolute bottom-14 left-3 z-40 flex w-[min(calc(100%-1.5rem),24rem)] max-h-[min(42dvh,20rem)] flex-col overflow-hidden rounded-sm border border-leather/50 bg-paper text-ink shadow-[0_12px_28px_rgba(36,28,20,0.28)] sm:max-h-[min(50vh,24rem)] lg:hidden"
           data-testid="chronicle-drawer"
           role="region"
           aria-label="Fortnight log"

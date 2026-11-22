@@ -39,6 +39,14 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-leather: var(--leather);
+  --color-brass: var(--brass);
+  --color-faction-central: var(--faction-central);
+  --color-faction-russia: var(--faction-russia);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,73 +56,98 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+  General's map table palette (chrome only — MapLibre province paint stays separate).
+  Faction colours: Central Powers blue, Russia red — never restyled for theme.
+*/
 :root {
-  --background: #14110e;
-  --foreground: #ebe4d4;
-  --card: #221c17;
-  --card-foreground: #ebe4d4;
-  --popover: #2a231c;
-  --popover-foreground: #ebe4d4;
-  --primary: #c6a15a;
-  --primary-foreground: #1a140e;
-  --secondary: #2c261f;
-  --secondary-foreground: #ebe4d4;
-  --muted: #2a241e;
-  --muted-foreground: #b3a48f;
-  --accent: #3a3128;
-  --accent-foreground: #f3ead7;
-  --destructive: #e07a6a;
-  --border: #3d342b;
-  --input: #4a4036;
+  --paper: #f6f1e4;
+  --paper-deep: #e8dfc8;
+  --ink: #241c14;
+  --ink-muted: #5c5144;
+  --leather: #4a3f33;
+  --brass: #c6a15a;
+  --brass-deep: #8a6a32;
+  --faction-central: #4a6d90;
+  --faction-russia: #a85b49;
+
+  --background: #ebe4d4;
+  --foreground: #241c14;
+  --card: #f6f1e4;
+  --card-foreground: #241c14;
+  --popover: #f6f1e4;
+  --popover-foreground: #241c14;
+  --primary: #8a6a32;
+  --primary-foreground: #f6f1e4;
+  --secondary: #e4d7bb;
+  --secondary-foreground: #241c14;
+  --muted: #e4d7bb;
+  --muted-foreground: #5c5144;
+  --accent: #e4d7bb;
+  --accent-foreground: #241c14;
+  --destructive: #a85b49;
+  --border: #4a3f33;
+  --input: #cbb892;
   --ring: #c6a15a;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --chart-1: #4a6d90;
+  --chart-2: #a85b49;
+  --chart-3: #c6a15a;
+  --chart-4: #5c5144;
+  --chart-5: #8a6a32;
+  --radius: 0.425rem;
+  --sidebar: #f6f1e4;
+  --sidebar-foreground: #241c14;
+  --sidebar-primary: #8a6a32;
+  --sidebar-primary-foreground: #f6f1e4;
+  --sidebar-accent: #e4d7bb;
+  --sidebar-accent-foreground: #241c14;
+  --sidebar-border: #4a3f33;
+  --sidebar-ring: #c6a15a;
 }
 
+/* App root keeps class "dark" for layout; map-table chrome is parchment either way. */
 .dark {
-  --background: #14110e;
-  --foreground: #ebe4d4;
-  --card: #221c17;
-  --card-foreground: #ebe4d4;
-  --popover: #2a231c;
-  --popover-foreground: #ebe4d4;
-  --primary: #c6a15a;
-  --primary-foreground: #1a140e;
-  --secondary: #2c261f;
-  --secondary-foreground: #ebe4d4;
-  --muted: #2a241e;
-  --muted-foreground: #b3a48f;
-  --accent: #3a3128;
-  --accent-foreground: #f3ead7;
-  --destructive: #e07a6a;
-  --border: #3d342b;
-  --input: #4a4036;
+  --paper: #f6f1e4;
+  --paper-deep: #e8dfc8;
+  --ink: #241c14;
+  --ink-muted: #5c5144;
+  --leather: #4a3f33;
+  --brass: #c6a15a;
+  --brass-deep: #8a6a32;
+  --faction-central: #4a6d90;
+  --faction-russia: #a85b49;
+
+  --background: #ebe4d4;
+  --foreground: #241c14;
+  --card: #f6f1e4;
+  --card-foreground: #241c14;
+  --popover: #f6f1e4;
+  --popover-foreground: #241c14;
+  --primary: #8a6a32;
+  --primary-foreground: #f6f1e4;
+  --secondary: #e4d7bb;
+  --secondary-foreground: #241c14;
+  --muted: #e4d7bb;
+  --muted-foreground: #5c5144;
+  --accent: #e4d7bb;
+  --accent-foreground: #241c14;
+  --destructive: #a85b49;
+  --border: #4a3f33;
+  --input: #cbb892;
   --ring: #c6a15a;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --chart-1: #4a6d90;
+  --chart-2: #a85b49;
+  --chart-3: #c6a15a;
+  --chart-4: #5c5144;
+  --chart-5: #8a6a32;
+  --sidebar: #f6f1e4;
+  --sidebar-foreground: #241c14;
+  --sidebar-primary: #8a6a32;
+  --sidebar-primary-foreground: #f6f1e4;
+  --sidebar-accent: #e4d7bb;
+  --sidebar-accent-foreground: #241c14;
+  --sidebar-border: #4a3f33;
+  --sidebar-ring: #c6a15a;
 }
 
 @layer base {
@@ -130,6 +163,16 @@
 
 .font-display {
   font-family: var(--font-display), Georgia, serif;
+}
+
+/* Leather-edged parchment strip for the campaign HUD. */
+.table-hud {
+  background-color: var(--paper-deep);
+  background-image:
+    linear-gradient(180deg, rgba(255, 252, 245, 0.55) 0%, transparent 45%),
+    linear-gradient(0deg, rgba(74, 63, 51, 0.12), transparent 40%);
+  border-bottom: 1px solid color-mix(in srgb, var(--leather) 55%, transparent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 6px 16px rgba(36, 28, 20, 0.12);
 }
 
 .map-tag {
@@ -198,6 +241,11 @@
 }
 
 .maplibregl-ctrl-group {
-  background: #f6f1e4 !important;
-  border: 1px solid #3d342b !important;
+  background: var(--paper) !important;
+  border: 1px solid color-mix(in srgb, var(--leather) 70%, transparent) !important;
+  box-shadow: 0 4px 12px rgba(36, 28, 20, 0.18) !important;
+}
+
+.maplibregl-ctrl-group button {
+  background-color: var(--paper) !important;
 }

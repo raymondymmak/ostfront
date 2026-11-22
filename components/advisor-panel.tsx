@@ -214,16 +214,16 @@ export function AdvisorPanel({
   }
 
   const shellClass = embedded
-    ? "flex h-full max-h-full w-full flex-col overflow-hidden bg-[#241c14] text-[#f3e2a8]"
-    : "pointer-events-auto absolute right-3 bottom-3 z-30 flex max-h-[min(32rem,calc(100%-1.5rem))] w-[min(24rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/95 text-[#f3e2a8] shadow-lg"
+    ? "flex h-full max-h-full w-full flex-col overflow-hidden bg-transparent text-ink"
+    : "pointer-events-auto absolute right-3 bottom-3 z-30 flex max-h-[min(32rem,calc(100%-1.5rem))] w-[min(24rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-sm border border-leather/50 bg-paper/95 text-ink shadow-[0_12px_28px_rgba(36,28,20,0.28)]"
 
   return (
     <section className={shellClass} data-testid="advisor-panel" aria-label="Chief of the General Staff">
-      <header className="flex items-start justify-between gap-2 border-b border-[#c6a15a]/30 px-3 py-2.5">
+      <header className="flex items-start justify-between gap-2 border-b border-leather/30 px-3 py-2.5">
         <div>
-          <p className="text-[10px] tracking-[0.14em] text-[#c6a15a] uppercase">OHL</p>
+          <p className="text-[10px] tracking-[0.14em] text-primary uppercase">OHL</p>
           <h2 className="font-display text-lg leading-none">Erich von Falkenhayn</h2>
-          <p className="mt-1 text-xs text-[#f3e2a8]/70">
+          <p className="mt-1 text-xs text-muted-foreground">
             Chief of the General Staff
             {offline ? " · offline" : ""}
           </p>
@@ -235,13 +235,13 @@ export function AdvisorPanel({
         )}
       </header>
       {notice && (
-        <p className="border-b border-[#c6a15a]/30 px-3 py-2 text-xs text-[#f3e2a8]" role="status" data-testid="advisor-notice">
+        <p className="border-b border-leather/30 px-3 py-2 text-xs text-ink" role="status" data-testid="advisor-notice">
           {notice}
         </p>
       )}
       <div ref={thread} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3" aria-live="polite">
         {messages.length === 0 && (
-          <p className="text-sm text-[#f3e2a8]/80">
+          <p className="text-sm text-ink/80">
             May to July 1915. I read the map the engine gives me. I do not issue orders, and I have not seen the Russian ones.
           </p>
         )}
@@ -254,7 +254,7 @@ export function AdvisorPanel({
             <p
               className={
                 message.role === "user"
-                  ? "text-sm text-[#f3e2a8]/75"
+                  ? "text-sm text-ink/75"
                   : "text-sm leading-6 whitespace-pre-wrap"
               }
               data-testid={message.role === "advisor" ? "advisor-reply" : undefined}
@@ -274,7 +274,7 @@ export function AdvisorPanel({
               return (
               <article
                 key={card.id}
-                className="rounded-md border border-[#c6a15a]/35 bg-[#1a140e]/80 p-2.5"
+                className="rounded-md border border-leather/35 bg-paper-deep p-2.5"
                 data-testid="advisor-suggestion"
                 data-advisor-state={card.queue}
                 data-advisor-queue-lines={JSON.stringify(queueLineTexts)}
@@ -282,27 +282,27 @@ export function AdvisorPanel({
               >
                 <p className="text-sm">{card.label}</p>
                 {card.queue === "duplicate" && (
-                  <p className="mt-1 text-xs text-[#f3e2a8]/75" data-testid="advisor-queue">
+                  <p className="mt-1 text-xs text-ink/75" data-testid="advisor-queue">
                     Already queued
                   </p>
                 )}
                 {card.queue === "conflict" && card.conflict && (
-                  <p className="mt-1 text-xs text-[#f3e2a8]/75" data-testid="advisor-queue">
+                  <p className="mt-1 text-xs text-ink/75" data-testid="advisor-queue">
                     Conflicts with: {card.conflict}
                   </p>
                 )}
                 {card.valid && card.detail && (
-                  <p className="mt-1 text-xs text-[#f3e2a8]/75" data-testid="advisor-odds">
+                  <p className="mt-1 text-xs text-ink/75" data-testid="advisor-odds">
                     {card.detail}
                   </p>
                 )}
                 {card.depotWarning && (
-                  <p className="mt-1 text-xs text-[#e0a15a]" data-testid="advisor-depot-warning">
+                  <p className="mt-1 text-xs text-primary" data-testid="advisor-depot-warning">
                     {card.depotWarning}
                   </p>
                 )}
                 {!card.valid && card.note && (
-                  <p className="mt-1 text-xs text-[#e07a6a]">The engine rejects this. {card.note}</p>
+                  <p className="mt-1 text-xs text-destructive">The engine rejects this. {card.note}</p>
                 )}
                 <div className="mt-2 flex gap-2">
                   {action === "accept" && !closed && (
@@ -346,7 +346,7 @@ export function AdvisorPanel({
           </div>
         ))}
         {busy && (
-          <p className="text-sm text-[#f3e2a8]/70" role="status">
+          <p className="text-sm text-muted-foreground" role="status">
             The chief of staff is reading the map…
           </p>
         )}
@@ -358,7 +358,7 @@ export function AdvisorPanel({
                 type="button"
                 disabled={busy}
                 data-testid={`advisor-starter-${starter.id}`}
-                className="rounded-md border border-[#c6a15a]/35 px-2.5 py-2 text-left text-sm hover:bg-[#c6a15a]/10 disabled:opacity-50"
+                className="rounded-md border border-leather/40 bg-paper px-2.5 py-2 text-left text-sm hover:bg-brass/15 disabled:opacity-50"
                 onClick={() => void ask(starter.label)}
               >
                 {starter.label}
@@ -368,14 +368,14 @@ export function AdvisorPanel({
         )}
       </div>
       <form
-        className="flex flex-col gap-2 border-t border-[#c6a15a]/30 p-3"
+        className="flex flex-col gap-2 border-t border-leather/30 p-3"
         onSubmit={(event) => {
           event.preventDefault()
           void ask(draft)
         }}
       >
         {closed && (
-          <p className="text-xs text-[#f3e2a8]/70">
+          <p className="text-xs text-muted-foreground">
             The campaign is over. I can still read the final map. Suggestions are closed.
           </p>
         )}
@@ -396,7 +396,7 @@ export function AdvisorPanel({
               void ask(draft)
             }
           }}
-          className="w-full resize-none rounded-md border border-[#c6a15a]/35 bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-[#f3e2a8]/40 focus-visible:border-[#c6a15a]"
+          className="w-full resize-none rounded-md border border-leather/40 bg-paper px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-brass"
         />
         <Button type="submit" size="sm" disabled={busy || !draft.trim()} data-testid="advisor-send">
           Send

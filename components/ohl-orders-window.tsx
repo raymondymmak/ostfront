@@ -42,7 +42,7 @@ export function OhlOrdersWindow({
       onMove={onMove}
     >
       <div className="px-3 py-2.5">
-        <p data-testid="campaign-goal" className="text-sm leading-snug text-[#241c14]">
+        <p data-testid="campaign-goal" className="text-sm leading-snug text-ink">
           {goal}
         </p>
       </div>

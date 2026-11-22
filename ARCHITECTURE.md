@@ -67,6 +67,8 @@ Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints d
 | Below `lg` | Stacked map + Orders/Province `<aside>` tabs (unchanged). Map-corner Log stays above the legend through tablet widths (640–1023px). Campaign goal is a dismissible OHL strip, not the HUD strength block. |
 | `/teach` | Shared `Hud` keeps the goal line in the header (`teachMode`); no campaign window buttons; teaching-app three-column dock unchanged (Part 6). |
 
+**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`; faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`), paper-tab buttons, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
+
 ADR 010.
 
 ---

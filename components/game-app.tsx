@@ -553,10 +553,10 @@ export function GameApp() {
       />
       {!desktopShell && ohlOpen && (
         <div
-          className="flex items-start justify-between gap-3 border-b border-border bg-muted/40 px-3 py-2 sm:px-4"
+          className="flex items-start justify-between gap-3 border-b border-leather/35 bg-paper-deep px-3 py-2 sm:px-4"
           data-testid="ohl-orders-window"
         >
-          <p data-testid="campaign-goal" className="text-xs font-medium leading-snug text-foreground sm:text-sm">
+          <p data-testid="campaign-goal" className="text-xs font-medium leading-snug text-ink sm:text-sm">
             {campaignGoalLine(game.state.scenario)}
           </p>
           <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={() => setWindowOpen("ohl", false)}>
@@ -565,15 +565,22 @@ export function GameApp() {
         </div>
       )}
       {!desktopShell && !ohlOpen && (
-        <div className="border-b border-border px-3 py-1.5 sm:px-4">
-          <Button type="button" size="sm" variant="outline" data-testid="ohl-toggle" onClick={() => setWindowOpen("ohl", true)}>
+        <div className="border-b border-leather/35 bg-paper px-3 py-1.5 sm:px-4">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
+            data-testid="ohl-toggle"
+            onClick={() => setWindowOpen("ohl", true)}
+          >
             Orders from OHL
           </Button>
         </div>
       )}
       {busy && (
         <p
-          className="border-b border-border bg-muted px-4 py-2 text-sm"
+          className="border-b border-leather/35 bg-paper-deep px-4 py-2 text-sm text-ink"
           role="status"
           data-testid="stavka-deliberating"
         >
@@ -827,13 +834,13 @@ export function GameApp() {
           {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
-                className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border border-[#c6a15a]/45 bg-[#241c14]/92 px-3 py-2 text-[#f3e2a8] shadow-lg"
+                className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-sm border border-leather/50 bg-paper/95 px-3 py-2 text-ink shadow-[0_10px_24px_rgba(36,28,20,0.22)]"
                 data-testid="finale-banner"
                 role="status"
               >
                 <p className="text-sm" data-testid="finale-summary">
-                  <span className="tracking-wide text-[#c6a15a] uppercase">{FINAL_POSITIONS_LABEL}</span>
-                  <span className="mx-2 text-[#f3e2a8]/70">·</span>
+                  <span className="tracking-wide text-primary uppercase">{FINAL_POSITIONS_LABEL}</span>
+                  <span className="mx-2 text-muted-foreground">·</span>
                   <span className="font-display text-lg leading-none">{game.state.date}</span>
                 </p>
                 <Button type="button" size="sm" data-testid="see-result" onClick={() => setResultOpen(true)}>
@@ -872,13 +879,13 @@ export function GameApp() {
       </div>
       {phase === "result" && game.state.result && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-4"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-leather/45 p-4 backdrop-blur-[1px]"
           data-testid="endgame"
           role="dialog"
           aria-modal="true"
           aria-labelledby="endgame-title"
         >
-          <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg">
+          <div className="w-full max-w-md rounded-sm border border-leather/50 bg-paper p-6 text-ink shadow-[0_18px_40px_rgba(36,28,20,0.35)]">
             <p className="text-xs tracking-wide text-muted-foreground uppercase">
               {game.state.result.sudden ? "Sudden death" : "Campaign over"}
             </p>
