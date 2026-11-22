@@ -719,9 +719,11 @@ function buildSteps(cli, targets) {
             state: "visible",
             timeout: 10_000,
           })
-          await page.locator("[data-testid=chronicle-log-toggle]").click()
+          // Drawer covers the map-corner Log toggle; close via chrome, not the buried button.
+          await page.locator("[data-testid=chronicle-drawer]").getByRole("button", { name: "Close" }).click()
+          await page.locator("[data-testid=chronicle-drawer]").waitFor({ state: "hidden", timeout: 10_000 })
           await page.setViewportSize({ width: 768, height: 1024 })
-          await page.waitForTimeout(400)
+          await page.waitForTimeout(500)
           await page.locator("[data-testid=chronicle-log-toggle]").waitFor({ state: "visible", timeout: 10_000 })
           await page.locator("[data-testid=map-legend]").waitFor({ state: "visible", timeout: 10_000 })
           await assertNoOverlap(
