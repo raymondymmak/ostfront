@@ -20,6 +20,8 @@ type FloatingWindowProps = {
   children: ReactNode
 }
 
+const DRAG_HINT_EVENT = "ostfront-table-drag-hint-dismissed"
+
 function readDragHintSeen(): boolean {
   if (typeof window === "undefined") return true
   try {
@@ -96,6 +98,12 @@ export function FloatingWindow({
     }
   }, [open, x, y, onMove])
 
+  useEffect(() => {
+    const hide = () => setShowHint(false)
+    window.addEventListener(DRAG_HINT_EVENT, hide)
+    return () => window.removeEventListener(DRAG_HINT_EVENT, hide)
+  }, [])
+
   function dismissHint() {
     setShowHint(false)
     try {
@@ -103,23 +111,27 @@ export function FloatingWindow({
     } catch {
       /* private mode */
     }
+    window.dispatchEvent(new Event(DRAG_HINT_EVENT))
   }
 
   if (!open) return null
 
   const lift = dragging
-    ? "motion-safe:scale-[1.015] motion-safe:rotate-[0.7deg] shadow-[0_18px_36px_rgba(20,14,8,0.55)] motion-reduce:shadow-[0_14px_28px_rgba(20,14,8,0.5)]"
-    : "shadow-[0_8px_18px_rgba(20,14,8,0.35)]"
+    ? "motion-safe:scale-[1.02] motion-safe:rotate-[1deg] shadow-[0_20px_40px_rgba(20,14,8,0.58)] motion-reduce:shadow-[0_14px_28px_rgba(20,14,8,0.5)] motion-reduce:scale-100 motion-reduce:rotate-0"
+    : "shadow-[0_10px_22px_rgba(20,14,8,0.38)]"
 
   return (
     <div
       ref={rootRef}
-      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-sm border border-[#3d342b]/55 bg-[#f6f1e4] text-[#241c14] transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
+      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-[#4a3f33]/65 text-[#241c14] transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
       style={{
         left: x,
         top: y,
         zIndex: z,
         maxHeight: stageMaxHeight !== undefined ? stageMaxHeight : undefined,
+        backgroundColor: "#f3ead7",
+        backgroundImage:
+          "linear-gradient(180deg, rgba(255,250,240,0.55) 0%, rgba(243,234,215,0.2) 40%, rgba(214,198,168,0.35) 100%), radial-gradient(ellipse at 18% 12%, rgba(255,255,255,0.35), transparent 42%)",
       }}
       data-testid={testId}
       data-dragging={dragging ? "true" : undefined}
@@ -128,7 +140,8 @@ export function FloatingWindow({
       onMouseDown={onFocus}
     >
       <header
-        className="flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-[#3d342b]/25 bg-[#e8dfc8] px-2.5 py-1.5 active:cursor-grabbing"
+        className="relative flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-[#4a3f33]/30 bg-[#e4d7bb] px-2.5 py-1.5 active:cursor-grabbing before:pointer-events-none before:absolute before:right-0 before:top-0 before:h-0 before:w-0 before:border-l-[10px] before:border-t-[10px] before:border-l-transparent before:border-t-[#cbb892]/90"
+        style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35)" }}
         onPointerDown={(event) => {
           if (event.button !== 0) return
           const target = event.target as HTMLElement
@@ -180,13 +193,12 @@ export function FloatingWindow({
         <div className="flex min-w-0 items-center gap-2">
           <span
             aria-hidden
-            className="inline-flex h-5 w-3 shrink-0 flex-col justify-center gap-[3px]"
+            className="grid h-5 w-3.5 shrink-0 grid-cols-2 content-center gap-x-[3px] gap-y-[3px]"
             title="Drag to move"
           >
-            <span className="h-px w-full bg-[#5c5144]/70" />
-            <span className="h-px w-full bg-[#5c5144]/70" />
-            <span className="h-px w-full bg-[#5c5144]/70" />
-            <span className="h-px w-full bg-[#5c5144]/70" />
+            {Array.from({ length: 6 }).map((_, i) => (
+              <span key={i} className="size-[3px] rounded-full bg-[#5c5144]/75" />
+            ))}
           </span>
           <div className="min-w-0">
             <p className="font-display text-base leading-none text-[#241c14] select-none">{title}</p>
@@ -211,7 +223,7 @@ export function FloatingWindow({
           Close
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">{children}</div>
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-[rgba(255,252,245,0.35)]">{children}</div>
     </div>
   )
 }
