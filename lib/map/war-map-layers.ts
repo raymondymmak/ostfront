@@ -175,6 +175,20 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     filter: ["==", ["get", "id"], ""],
     paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
   })
+  // Rails: light casing + near-black track above fills, under borders/labels.
+  // Width ~1.5–2.5px with modest zoom growth (no sleeper ticks).
+  map.addLayer({
+    id: "rail-casing",
+    type: "line",
+    source: "rails",
+    filter: ["!=", ["get", "side"], "cut"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": RAIL_STYLE.casing,
+      "line-width": railWidthHot(2.35, 3.15),
+      "line-opacity": railFade(1),
+    },
+  })
   map.addLayer({
     id: "rail-track",
     type: "line",
@@ -182,20 +196,12 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     filter: ["!=", ["get", "side"], "cut"],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": [
-        "match",
-        ["get", "side"],
-        "central",
-        RAIL_STYLE.central,
-        "russia",
-        RAIL_STYLE.russia,
-        RAIL_STYLE.cut,
-      ],
-      // Subtle staff-map strokes; cap growth so zoom-in stays thin.
-      "line-width": railWidthHot(0.7, 1.05),
-      "line-opacity": railFade(0.62),
+      "line-color": RAIL_STYLE.track,
+      "line-width": railWidthHot(1.55, 2.35),
+      "line-opacity": railFade(1),
     },
   })
+  // Cut edges: same weight as held track, dashed (light casing would fill the gaps).
   map.addLayer({
     id: "rail-cut",
     type: "line",
@@ -204,9 +210,9 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": RAIL_STYLE.cut,
-      "line-width": railWidth(0.65, 0.95),
-      "line-dasharray": [1.1, 1.4],
-      "line-opacity": railFade(0.38),
+      "line-width": railWidth(1.55, 2.35),
+      "line-dasharray": [1.4, 1.6],
+      "line-opacity": railFade(1),
     },
   })
   map.addLayer({

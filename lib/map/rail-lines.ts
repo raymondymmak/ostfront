@@ -36,15 +36,22 @@ export type RailLine = {
   hotWidthScale: number
 }
 
-/** Thin staff-map rail strokes, tinted by the side that can use them. */
+/**
+ * Staff-map rails: near-black track with a thin light casing so the line reads
+ * on both Central (blue) and Russian (red) fills. No sleeper ticks.
+ */
 export const RAIL_STYLE = {
-  /** Kept for legend / SVG fallbacks; sleepers are no longer drawn on the map. */
-  sleeper: "#241c14",
-  tie: "#241c14",
-  central: "#10283c",
-  russia: "#4a1c16",
-  cut: "#6d675f",
+  /** Light casing under the track. */
+  casing: "#f4efe4",
+  /** Held-side track (both factions share the same high-contrast ink). */
+  track: "#1a1410",
+  central: "#1a1410",
+  russia: "#1a1410",
+  cut: "#2a241c",
   hot: "#f3e2a8",
+  /** Kept for SVG/legend aliases; sleepers are not drawn on the map. */
+  sleeper: "#1a1410",
+  tie: "#1a1410",
 } as const
 
 /** Same pairs the supply engine walks. Only the rail edges are drawn. */
@@ -96,8 +103,9 @@ export function railFeatureCollection(provinces: RailEnd[], selectedId: string |
 }
 
 export function railLineOpacity(zoom: number, side: RailSide = "central"): number {
-  const fade = provinceLabelOpacity(zoom)
-  return side === "cut" ? fade * 0.45 : fade
+  // Full opacity once labels are fully visible; cut rails stay dashed, not dimmed.
+  void side
+  return provinceLabelOpacity(zoom)
 }
 
 function anchorOf(province: RailEnd): [number, number] | null {

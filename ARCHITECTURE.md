@@ -49,7 +49,7 @@ Stack: Next.js App Router, React client components for the game shell, server ro
 | Piece | Role |
 | --- | --- |
 | `lib/map/province-label-layers.ts` | GeoJSON for `province-labels` / `province-counters`, glyph URL, counter pill image |
-| `lib/map/war-map-layers.ts` | Layer stack: rails under borders, symbol labels above selection outline, feature-state `role` fills |
+| `lib/map/war-map-layers.ts` | Layer stack: rail casing+track under borders, symbol labels above selection outline, feature-state `role` fills |
 | `lib/map/province-paint.ts` | Shared fill/lift/`roleFor` for MapLibre and `components/svg-map.tsx` fallback |
 | `lib/map/target-highlight.ts` | Feature-state roles + `target-fill` opacity pulse (snap + MapLibre paint transition) so selection switches fade like first select |
 | `lib/map/rail-lines.ts` + `shared-border.ts` | Rail paths via shared-border midpoints, not anchor-to-anchor chords |

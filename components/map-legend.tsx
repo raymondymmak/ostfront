@@ -72,7 +72,7 @@ export function MapLegend({
               </button>
             </div>
             <p className="mt-0.5 flex items-center gap-2">
-              <RailSwatch color={RAIL_STYLE.central} /> Held by one side
+              <RailSwatch color={RAIL_STYLE.track} /> Held by one side
             </p>
             <p className="mt-0.5 flex items-center gap-2">
               <RailSwatch color={RAIL_STYLE.cut} broken /> Cut between the two sides
@@ -182,6 +182,15 @@ function Ramp({
 function RailSwatch({ color, broken = false }: { color: string; broken?: boolean }) {
   return (
     <svg width="28" height="10" viewBox="0 0 28 10" aria-hidden className="shrink-0">
+      <line
+        x1="1"
+        y1="5"
+        x2="27"
+        y2="5"
+        stroke={RAIL_STYLE.casing}
+        strokeWidth="3.2"
+        strokeLinecap="round"
+      />
       {broken ? (
         <line
           x1="1"
@@ -189,12 +198,12 @@ function RailSwatch({ color, broken = false }: { color: string; broken?: boolean
           x2="27"
           y2="5"
           stroke={color}
-          strokeWidth="1.6"
+          strokeWidth="2"
           strokeDasharray="3 2.5"
           strokeLinecap="butt"
         />
       ) : (
-        <line x1="1" y1="5" x2="27" y2="5" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+        <line x1="1" y1="5" x2="27" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round" />
       )}
     </svg>
   )
