@@ -4,11 +4,15 @@ import {
   createDefaultTeachWindows,
   focusTeachWindow,
   isTeachWindowOpen,
+  openTeachWindowRects,
   openTeachWindowsOverlap,
+  rectsOverlap,
   TEACH_WINDOW_SIZE_HINTS,
+  teachWindowHeights,
   topmostTeachWindow,
   toggleTeachWindow,
 } from "@/lib/ui/teach-windows"
+import { TABLE_WINDOW_MARGIN } from "@/lib/ui/table-windows"
 
 describe("teach-windows", () => {
   it("defaults open Lesson, Orders, and Legend", () => {
@@ -19,7 +23,7 @@ describe("teach-windows", () => {
     expect(isTeachWindowOpen(windows, "province")).toBe(false)
   })
 
-  it("keeps open windows from overlapping at common desktop sizes", () => {
+  it("stacks Legend under Lesson in the left column without overlap", () => {
     for (const [w, h] of [
       [1440, 820],
       [1440, 900 - 80],
@@ -30,11 +34,29 @@ describe("teach-windows", () => {
       expect(openTeachWindowsOverlap(windows, w, h)).toBe(false)
       const lesson = windows.find((item) => item.id === "lesson")!
       const legend = windows.find((item) => item.id === "legend")!
-      // Legend sits to the right of the Lesson column, not under it.
-      expect(legend.x).toBeGreaterThanOrEqual(
-        lesson.x + TEACH_WINDOW_SIZE_HINTS.lesson.w,
-      )
+      const heights = teachWindowHeights(w, h)
+      // Same left edge; Legend starts below Lesson with a gap.
+      expect(legend.x).toBe(lesson.x)
+      expect(legend.x).toBe(TABLE_WINDOW_MARGIN)
+      expect(legend.y).toBeGreaterThanOrEqual(lesson.y + heights.lesson)
+      expect(legend.y + heights.legend).toBeLessThanOrEqual(h - TABLE_WINDOW_MARGIN + 1)
+      // Left column stays left of mid-stage so Kraków/Kielce/Lublin stay clear.
+      expect(lesson.x + TEACH_WINDOW_SIZE_HINTS.lesson.w).toBeLessThan(w * 0.45)
     }
+  })
+
+  it("keeps Lesson taller than Legend so Resolve has room in the left stack", () => {
+    const heights = teachWindowHeights(1440, 820)
+    expect(heights.lesson).toBeGreaterThan(heights.legend)
+    expect(heights.lesson).toBeGreaterThanOrEqual(360)
+  })
+
+  it("open rects for Lesson and Legend do not overlap at 1440×820", () => {
+    const windows = createDefaultTeachWindows(1440, 820)
+    const rects = openTeachWindowRects(windows, 1440, 820)
+    const lesson = rects.find((item) => item.id === "lesson")!
+    const legend = rects.find((item) => item.id === "legend")!
+    expect(rectsOverlap(lesson, legend, 12)).toBe(false)
   })
 
   it("Escape helper closes the topmost open teach window", () => {

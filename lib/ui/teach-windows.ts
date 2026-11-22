@@ -14,10 +14,11 @@ const BASE_Z = 20
 const GAP = 12
 
 export const TEACH_WINDOW_SIZE_HINTS: Record<TeachWindowId, { w: number; h: number }> = {
-  lesson: { w: 340, h: 380 },
+  lesson: { w: 340, h: 460 },
   orders: { w: 360, h: 480 },
   province: { w: 360, h: 480 },
-  legend: { w: 280, h: 300 },
+  /** Compact so it fits under Lesson in the left column without covering targets. */
+  legend: { w: 280, h: 220 },
 }
 
 export type TeachWindowRect = {
@@ -43,19 +44,34 @@ export function rectsOverlap(
   )
 }
 
-/** Budgeted heights for default placement at a map stage size. */
+/**
+ * Budgeted heights for default placement at a map stage size.
+ * Lesson + Legend share the left column; heights split so both fit with a gap.
+ */
 export function teachWindowHeights(mapWidth: number, mapHeight: number): Record<TeachWindowId, number> {
   void mapWidth
   const m = TABLE_WINDOW_MARGIN
   const belowMapMode = 100
-  const lessonH = Math.min(
-    TEACH_WINDOW_SIZE_HINTS.lesson.h,
-    Math.max(200, mapHeight - belowMapMode - m),
-  )
-  const legendH = Math.min(
-    TEACH_WINDOW_SIZE_HINTS.legend.h,
-    Math.max(180, Math.floor(mapHeight * 0.38)),
-  )
+  // Leave a few px so FloatingWindow chrome / rounding cannot clamp Legend up into Lesson.
+  const safety = 16
+  const columnBudget = Math.max(280, mapHeight - belowMapMode - m - safety)
+  const stackBudget = Math.max(260, columnBudget - GAP)
+
+  // Prefer a tall Lesson (Resolve stays reachable) and a compact Legend underneath.
+  let legendH = Math.min(TEACH_WINDOW_SIZE_HINTS.legend.h, Math.max(160, Math.floor(stackBudget * 0.3)))
+  let lessonH = Math.min(TEACH_WINDOW_SIZE_HINTS.lesson.h, stackBudget - legendH)
+  if (lessonH < 220) {
+    lessonH = Math.min(TEACH_WINDOW_SIZE_HINTS.lesson.h, Math.max(200, Math.floor(stackBudget * 0.62)))
+    legendH = Math.min(TEACH_WINDOW_SIZE_HINTS.legend.h, Math.max(150, stackBudget - lessonH))
+  }
+
+  // Final guard: Lesson + gap + Legend must fit under the map-mode strip.
+  const maxStack = Math.max(260, mapHeight - belowMapMode - m - safety)
+  if (lessonH + GAP + legendH > maxStack) {
+    legendH = Math.min(legendH, Math.max(150, maxStack - GAP - 240))
+    lessonH = Math.min(lessonH, Math.max(200, maxStack - GAP - legendH))
+  }
+
   const ordersH = Math.min(
     TEACH_WINDOW_SIZE_HINTS.orders.h,
     Math.max(220, mapHeight - belowMapMode - m),
@@ -117,8 +133,8 @@ export function openTeachWindowsOverlap(
 }
 
 /**
- * Default /teach desktop layout: Lesson top-left, Orders top-right,
- * Legend bottom-left but to the right of the Lesson column (never under it).
+ * Default /teach desktop layout: Lesson top-left, Legend directly under it in
+ * the same left column (keeps Kraków/Kielce/Lublin clear), Orders top-right.
  */
 export function createDefaultTeachWindows(
   mapWidth = 1440,
@@ -127,29 +143,15 @@ export function createDefaultTeachWindows(
   const m = TABLE_WINDOW_MARGIN
   const belowMapMode = 100
   const heights = teachWindowHeights(mapWidth, mapHeight)
-  const lessonHint = TEACH_WINDOW_SIZE_HINTS.lesson
   const ordersHint = TEACH_WINDOW_SIZE_HINTS.orders
-  const legendHint = TEACH_WINDOW_SIZE_HINTS.legend
 
   const lessonX = m
   const lessonY = belowMapMode
-  // Sit Legend beside the Lesson column so a tall Lesson cannot cover it.
-  const legendX = Math.min(
-    mapWidth - legendHint.w - m,
-    Math.max(m, lessonX + lessonHint.w + GAP),
-  )
-  const legendY = Math.max(m, mapHeight - heights.legend - m)
+  // Same left edge as Lesson — stacked, not covering the map targets mid-stage.
+  const legendX = lessonX
+  const legendY = lessonY + heights.lesson + GAP
 
-  const ordersX = Math.max(
-    legendX + legendHint.w + GAP,
-    mapWidth - ordersHint.w - m - 24,
-  )
-  // If the stage is too narrow for Orders right of Legend, keep Orders at the
-  // right edge (Legend stays left-of-center; Orders/Province share the right).
-  const ordersXFinal =
-    ordersX + ordersHint.w + m <= mapWidth
-      ? ordersX
-      : Math.max(m, mapWidth - ordersHint.w - m)
+  const ordersXFinal = Math.max(m, mapWidth - ordersHint.w - m - 24)
 
   const raw: TeachWindowState[] = [
     { id: "lesson", open: true, x: lessonX, y: lessonY, z: BASE_Z + 4 },

@@ -60,6 +60,7 @@ describe("top bar and map chrome", () => {
     const panel = readFileSync("components/order-panel.tsx", "utf8")
     expect(teach).toContain("createDefaultTeachWindows")
     expect(teach).toContain("FloatingWindow")
+    expect(teach).toContain("bodyScroll={false}")
     expect(teach).toContain("lessonFocus=")
     expect(teach).toContain("tableShell={desktopShell}")
     expect(teach).toContain("hideEndTurn")

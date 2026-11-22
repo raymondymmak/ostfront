@@ -563,8 +563,9 @@ export function TeachingApp() {
                     y={win.y}
                     z={win.z}
                     widthClassName="w-[min(21.25rem,calc(100%-1.5rem))]"
-                    maxHeightClassName="max-h-[min(48dvh,22.5rem)]"
+                    maxHeightClassName="max-h-[min(62dvh,30rem)]"
                     heightCap={lessonHeightCap}
+                    bodyScroll={false}
                     testId="teach-lesson-window"
                     onFocus={focus}
                     onClose={close}
@@ -622,7 +623,7 @@ export function TeachingApp() {
                     y={win.y}
                     z={win.z}
                     widthClassName="w-[min(17.5rem,calc(100%-1.5rem))]"
-                    maxHeightClassName="max-h-[min(40dvh,18.75rem)]"
+                    maxHeightClassName="max-h-[min(32dvh,14.5rem)]"
                     heightCap={legendHeightCap}
                     testId="legend-window"
                     onFocus={focus}

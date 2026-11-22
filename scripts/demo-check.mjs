@@ -977,6 +977,33 @@ function buildSteps(cli, targets) {
             `Teach windows overlap at 1440×900: lesson=${JSON.stringify(lessonBox)} legend=${JSON.stringify(legendBox)} orders=${JSON.stringify(ordersBox)}`,
           )
         }
+        // Legend defaults under Lesson in the left column (same edge, below).
+        if (Math.abs(legendBox.x - lessonBox.x) > 12) {
+          throw new Error(
+            `Expected Legend on the left under Lesson (same x), got lesson.x=${lessonBox.x} legend.x=${legendBox.x}`,
+          )
+        }
+        if (legendBox.y < lessonBox.y + lessonBox.height - 2) {
+          throw new Error(
+            `Expected Legend below Lesson, got lesson bottom=${lessonBox.y + lessonBox.height} legend.y=${legendBox.y}`,
+          )
+        }
+        // Left column should stay clear of mid-map targets (Kraków/Kielce/Lublin).
+        if (lessonBox.x + lessonBox.width > 1440 * 0.45) {
+          throw new Error(
+            `Left teach column reaches too far right (covers targets): right edge=${lessonBox.x + lessonBox.width}`,
+          )
+        }
+        const resolveBox = await page.locator("[data-testid=teach-resolve]").boundingBox()
+        if (!resolveBox) throw new Error("teach-resolve missing bounding box")
+        if (
+          resolveBox.y < lessonBox.y ||
+          resolveBox.y + resolveBox.height > lessonBox.y + lessonBox.height + 2
+        ) {
+          throw new Error(
+            `Resolve should be visible inside Lesson without scrolling: resolve=${JSON.stringify(resolveBox)} lesson=${JSON.stringify(lessonBox)}`,
+          )
+        }
         const map = page.locator("[data-testid=war-map]")
         await map.waitFor({ state: "visible", timeout: 15_000 })
         const lessonHighlights = await map.getAttribute("data-lesson-highlights")

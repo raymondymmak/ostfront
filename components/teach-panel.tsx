@@ -245,7 +245,7 @@ export function TeachPanel({
   if (embedded) {
     return (
       <div
-        className="flex min-h-0 flex-col"
+        className="flex h-full min-h-0 flex-1 flex-col"
         data-testid="teach-panel"
         data-teach-variant={variant}
       >
