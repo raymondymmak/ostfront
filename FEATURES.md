@@ -92,7 +92,7 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 | **End turn (button)** | **Close the fortnight** `[data-testid=end-turn]`. POST **`/api/turn`**. | `[data-testid=stavka-deliberating]` clears; new Chronicle date; `[data-testid=resolution-log]` includes **Resolved** / **Rejected**. |
 | **End turn (keyboard)** | **Ctrl+Enter** / **Cmd+Enter** with focus on the page. | Same as button. |
 | **GM narration** | Chronicle article after end turn. | Narration paragraphs; badge **Game master** (not **Staff simulation** when LLM ran). |
-| **Finale banner / end screen** | Not run in `demo-check` (needs a finished campaign). When `state.result` is set: `[data-testid=finale-banner]`, **See result** `[data-testid=see-result]`, modal `[data-testid=endgame]`. | Grade, reason, score; **Play again** → `[data-testid=scenario-picker]`. |
+| **Finale banner / end screen** | Not run in `demo-check` (needs a finished campaign). Closing the last fortnight (or sudden death) commits successfully; the client keeps the **final map** on the closing date (e.g. **11 July 1915**, Fortnight 6/6) with `[data-testid=finale-banner]` / **See result** `[data-testid=see-result]` before the grade modal `[data-testid=endgame]`. | Grade, reason, score; **Play again** → `[data-testid=scenario-picker]`. Calendar date stays on the fortnight that ended; turn index advances for server storage. |
 | **Restart** | HUD **Options** `[data-testid=hud-options]` → **Restart** `[data-testid=hud-options-restart]` → **Confirm restart** (same menu item). Menu also lists disabled **Settings (soon)** `[data-testid=hud-options-settings]`. | `[data-testid=scenario-picker]` opens. |
 
 ## Automated demo path
