@@ -28,8 +28,8 @@ Browser updates map, optional Log drawer chronicle, clears order queue
 | Layer | Role | Search here |
 | --- | --- | --- |
 | `app/` | Pages and HTTP routes | `app/api/*/route.ts` |
-| `components/` | Map, HUD, panels | `game-app.tsx` (branches to `campaign-start.tsx` pre-Begin), `war-map.tsx`, `floating-window.tsx`, `ohl-orders-window.tsx`, `odds-bar.tsx` |
-| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `table-windows.ts`, `use-desktop-shell.ts`, `map-hover.ts`, `map-target-style.ts`, `types.ts` |
+| `components/` | Map, HUD, panels | `game-app.tsx` (branches to `campaign-start.tsx` pre-Begin), `war-map.tsx`, `floating-window.tsx`, `document-tray.tsx`, `ohl-orders-window.tsx`, `odds-bar.tsx` |
+| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `table-windows.ts`, `teach-windows.ts`, `document-tray.ts`, `window-drag.ts`, `use-desktop-shell.ts`, `map-hover.ts`, `map-target-style.ts`, `types.ts` |
 | `lib/engine/` | Rules of war (ground truth) | `turn.ts`, `simultaneous.ts`, `combat.ts` |
 | `lib/gm/` | Orders → proposals, LLM cascade, advisor | `index.ts`, `interpret.ts`, `cascade.ts`, `advisor.ts` |
 | `lib/ai/` | Rule-based Stavka | `stavka.ts` |
@@ -65,13 +65,13 @@ Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints d
 
 | Viewport | Layout |
 | --- | --- |
-| Desktop (`lg+`, ≥1024px) | Full-width map; no fixed 23rem right dock. Slim HUD toggles parchment-document floating windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`): Orders, Province, Log, Legend, Chief of Staff, Orders from OHL. Header-only drag with grip + grab cursor; positions clamp to the map stage; bodies scroll under max-height. Default-open after Begin: Orders, Legend, OHL. Escape: news → topmost window → deselect. |
-| Below `lg` | Stacked map + Orders/Province `<aside>` tabs (unchanged). Map-corner Log stays above the legend through tablet widths (640–1023px). Campaign goal is a dismissible OHL strip, not the HUD strength block. |
-| `/teach` | Same general’s-table shell at `lg+`: full-width map; HUD toggles Lesson / Orders / Province / Legend (`lib/ui/teach-windows.ts`). Default-open: Lesson top-left, Legend stacked under it in the same left column (compact height), Orders top-right — keeps map targets clear; height caps prevent Lesson/Legend overlap. Escape: topmost teach window → deselect. HUD shows `[data-testid=teach-goal]` (lesson title) and hides campaign scoring. One Resolve control in Lesson (`teach-resolve`, pinned footer); Orders omits end-turn. Short map-first prompts; briefing/pedagogy behind expanders. Brass lesson-focus: solid target + dashed source outlines (`data-lesson-highlights`). Below `lg`: `h-dvh` overflow-hidden stack — capped map, bounded Lesson (`teach-lesson-stack`) with in-panel scroll and Resolve kept in-viewport, then Orders/Province tabs. |
+| Desktop (`lg+`, ≥1024px) | Full-width map; no fixed 23rem right dock. Parchment floating windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`): Orders, Province, Log, Legend, Chief of Staff, Orders from OHL. HUD keeps title / date / strength — **not** window toggles. Stowed papers sit in the bottom **document tray** (`components/document-tray.tsx`, `lib/ui/document-tray.ts`); click or drag-up restores; Stow / Escape / drag-into-tray stows. Header press–drag–release (`lib/ui/window-drag.ts`); height locked while dragging (optional resize handle); clamp above the tray. Default-open after Begin: Orders, Legend, OHL. Escape: news → stow topmost → deselect. SessionStorage remembers open/xy/z for the tab. |
+| Below `lg` | Stacked map + Orders/Province aside; tray is a bottom tab strip that swaps the panel. Map-corner Log stays above the legend through tablet widths (640–1023px). Campaign goal is a dismissible OHL strip, not the HUD strength block. |
+| `/teach` | Same tray model (`lib/ui/teach-windows.ts`): Lesson, Orders, Province, Legend. HUD shows `[data-testid=teach-goal]` (lesson title) and hides campaign scoring. Default-open: Lesson top-left, Legend under it, Orders top-right — height caps keep the left column clear of map targets. One Resolve in Lesson (`teach-resolve`, pinned footer); Orders omits end-turn. Brass lesson-focus outlines (`data-lesson-highlights`). Below `lg`: `h-dvh` stack — capped map, bounded Lesson (`teach-lesson-stack`) with Resolve in-viewport, then phone tray swapping Orders/Province/Legend. |
 
-**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`, `--brass-deep` / `--primary` (chrome text ≥4.5:1 on paper); faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`), paper-tab buttons, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
+**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`, `--brass-deep` / `--primary` (chrome text ≥4.5:1 on paper); faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`), tray paper-tabs, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
 
-ADR 010 (campaign), ADR 011 (`/teach`).
+ADR 010 (campaign), ADR 011 (`/teach`), ADR 012 (document tray).
 
 ---
 

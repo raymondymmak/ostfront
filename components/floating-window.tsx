@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
-import { clampWindowPosition, TABLE_WINDOW_MARGIN } from "@/lib/ui/table-windows"
+import { TABLE_WINDOW_MARGIN } from "@/lib/ui/table-windows"
+import {
+  DOCUMENT_TRAY_HEIGHT,
+  pointerInTrayZone,
+  positionAfterPointerDrag,
+  resolveWindowHeight,
+  stageHeightForWindows,
+} from "@/lib/ui/window-drag"
 
 type FloatingWindowProps = {
   title: string
@@ -11,19 +18,24 @@ type FloatingWindowProps = {
   y: number
   z: number
   widthClassName?: string
-  /** Preferred max height; actual height is also capped to remaining stage space. */
+  /** Preferred max height; actual height is locked so drag cannot grow the paper. */
   maxHeightClassName?: string
   /** Hard pixel cap (e.g. keep Lesson above Legend on /teach). */
   heightCap?: number
   /**
    * When false, the body does not scroll — children own overflow (e.g. Lesson
-   * pins Resolve in a footer while the middle scrolls).
+   * pins Resolve in a panel footer while the middle scrolls).
    */
   bodyScroll?: boolean
+  /** Show a bottom-right resize handle (height only; width stays CSS-driven). */
+  resizable?: boolean
   testId?: string
   onFocus: () => void
+  /** Stow into the document tray (Escape / Stow control). */
   onClose: () => void
   onMove: (x: number, y: number) => void
+  /** Optional: drop into the tray band while dragging. */
+  onStow?: () => void
   children: ReactNode
 }
 
@@ -36,9 +48,19 @@ function measureStage(node: HTMLElement | null): { width: number; height: number
   }
 }
 
+function parseCssMaxHeight(className: string, stageHeight: number): number {
+  // Prefer the numeric rem/dvh hints in our Tailwind max-h-[min(…)] classes.
+  const rem = className.match(/(\d+(?:\.\d+)?)rem/)
+  const dvh = className.match(/(\d+(?:\.\d+)?)dvh/)
+  const remPx = rem ? Number(rem[1]) * 16 : Number.POSITIVE_INFINITY
+  const dvhPx = dvh ? (Number(dvh[1]) / 100) * stageHeight : Number.POSITIVE_INFINITY
+  const preferred = Math.min(remPx, dvhPx)
+  return Number.isFinite(preferred) ? preferred : Math.min(576, stageHeight * 0.7)
+}
+
 /**
- * Draggable parchment document chrome (title, close, header drag, focus).
- * Header-only drag so MapLibre pan and arrow-draw keep working on the map.
+ * Draggable parchment document chrome (title, stow, header drag, optional resize).
+ * Press–drag–release on the header; size does not change while dragging.
  */
 export function FloatingWindow({
   title,
@@ -50,10 +72,12 @@ export function FloatingWindow({
   maxHeightClassName = "max-h-[min(70dvh,36rem)]",
   heightCap,
   bodyScroll = true,
+  resizable = true,
   testId,
   onFocus,
   onClose,
   onMove,
+  onStow,
   children,
 }: FloatingWindowProps) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -63,41 +87,66 @@ export function FloatingWindow({
     startY: number
     origX: number
     origY: number
+    width: number
+    height: number
   } | null>(null)
+  const resize = useRef<{
+    pointerId: number
+    startY: number
+    origHeight: number
+  } | null>(null)
+  const lockedHeightRef = useRef<number | null>(null)
   const [dragging, setDragging] = useState(false)
-  const [stageMaxHeight, setStageMaxHeight] = useState<number | undefined>(undefined)
+  const [resizing, setResizing] = useState(false)
+  const [heightPx, setHeightPx] = useState<number | undefined>(undefined)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      lockedHeightRef.current = null
+      return
+    }
     const node = rootRef.current
     if (!node) return
 
     const sync = () => {
-      const { width: stageW, height: stageH } = measureStage(node)
-      const remaining = Math.max(120, stageH - y - TABLE_WINDOW_MARGIN)
-      const capped =
-        heightCap !== undefined ? Math.min(remaining, Math.max(120, heightCap)) : remaining
-      setStageMaxHeight(capped)
+      const stage = measureStage(node)
+      const usableH = stageHeightForWindows(stage.height)
+      const preferredMax = parseCssMaxHeight(maxHeightClassName, stage.height)
+      const nextH = resolveWindowHeight({
+        lockedHeight: lockedHeightRef.current,
+        preferredMax,
+        heightCap,
+        stageHeight: usableH,
+        y,
+      })
+      if (lockedHeightRef.current === null && !dragging && !resizing) {
+        lockedHeightRef.current = nextH
+      }
+      setHeightPx((current) => (current === nextH ? current : nextH))
       const ww = node.offsetWidth || 320
-      // Prefer the budgeted cap over measured offsetHeight so a left-column
-      // stack (Lesson above Legend) is not clamped into overlap.
-      const wh = heightCap !== undefined ? capped : node.offsetHeight || 200
-      const next = clampWindowPosition(x, y, ww, wh, stageW, stageH)
-      if (next.x !== x || next.y !== y) onMove(next.x, next.y)
+      const wh = nextH
+      const maxY = Math.max(TABLE_WINDOW_MARGIN, usableH - wh - TABLE_WINDOW_MARGIN)
+      if (y > maxY || x < TABLE_WINDOW_MARGIN) {
+        const clampedX = Math.min(
+          Math.max(TABLE_WINDOW_MARGIN, x),
+          Math.max(TABLE_WINDOW_MARGIN, stage.width - ww - TABLE_WINDOW_MARGIN),
+        )
+        const clampedY = Math.min(Math.max(TABLE_WINDOW_MARGIN, y), maxY)
+        if (clampedX !== x || clampedY !== y) onMove(clampedX, clampedY)
+      }
     }
 
     const frame = window.requestAnimationFrame(sync)
     const parent = node.offsetParent as HTMLElement | null
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null
     if (parent && ro) ro.observe(parent)
-    ro?.observe(node)
     window.addEventListener("resize", sync)
     return () => {
       window.cancelAnimationFrame(frame)
       ro?.disconnect()
       window.removeEventListener("resize", sync)
     }
-  }, [open, x, y, heightCap, onMove])
+  }, [open, x, y, heightCap, maxHeightClassName, onMove, dragging, resizing])
 
   if (!open) return null
 
@@ -108,17 +157,13 @@ export function FloatingWindow({
   return (
     <div
       ref={rootRef}
-      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-leather/65 bg-paper text-ink transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
+      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-leather/65 bg-paper text-ink transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${lift}`}
       style={{
         left: x,
         top: y,
         zIndex: z,
-        maxHeight: stageMaxHeight !== undefined ? stageMaxHeight : undefined,
-        // Definite height when capped (Lesson/Legend stack) or when children own scroll.
-        height:
-          stageMaxHeight !== undefined && (!bodyScroll || heightCap !== undefined)
-            ? stageMaxHeight
-            : undefined,
+        height: heightPx,
+        maxHeight: heightPx,
         backgroundImage:
           "linear-gradient(180deg, rgba(255,250,240,0.55) 0%, rgba(243,234,215,0.2) 40%, rgba(214,198,168,0.35) 100%), radial-gradient(ellipse at 18% 12%, rgba(255,255,255,0.35), transparent 42%)",
       }}
@@ -129,8 +174,9 @@ export function FloatingWindow({
       onMouseDown={onFocus}
     >
       <header
-        className="relative flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-leather/30 bg-paper-deep px-2.5 py-1.5 active:cursor-grabbing"
+        className="relative flex shrink-0 cursor-grab items-center justify-between gap-2 border-b border-leather/30 bg-paper-deep px-2.5 py-1.5 touch-none active:cursor-grabbing"
         style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35)" }}
+        data-testid="floating-window-drag-handle"
         onPointerDown={(event) => {
           if (event.button !== 0) return
           const target = event.target as HTMLElement
@@ -138,6 +184,9 @@ export function FloatingWindow({
           event.preventDefault()
           event.stopPropagation()
           onFocus()
+          const node = rootRef.current
+          const width = node?.offsetWidth ?? 320
+          const height = heightPx ?? node?.offsetHeight ?? 200
           setDragging(true)
           drag.current = {
             pointerId: event.pointerId,
@@ -145,6 +194,8 @@ export function FloatingWindow({
             startY: event.clientY,
             origX: x,
             origY: y,
+            width,
+            height,
           }
           event.currentTarget.setPointerCapture(event.pointerId)
         }}
@@ -154,24 +205,35 @@ export function FloatingWindow({
           event.preventDefault()
           event.stopPropagation()
           const node = rootRef.current
-          const { width: stageW, height: stageH } = measureStage(node)
-          const ww = node?.offsetWidth ?? 320
-          const wh = node?.offsetHeight ?? 200
-          const dx = event.clientX - state.startX
-          const dy = event.clientY - state.startY
-          const next = clampWindowPosition(state.origX + dx, state.origY + dy, ww, wh, stageW, stageH)
+          const stage = measureStage(node)
+          const usableH = stageHeightForWindows(stage.height)
+          const next = positionAfterPointerDrag(
+            { x: state.origX, y: state.origY },
+            { clientX: state.startX, clientY: state.startY },
+            { clientX: event.clientX, clientY: event.clientY },
+            { w: state.width, h: state.height },
+            { width: stage.width, height: usableH },
+          )
           onMove(next.x, next.y)
         }}
         onPointerUp={(event) => {
-          if (drag.current?.pointerId === event.pointerId) {
-            drag.current = null
-            setDragging(false)
-            try {
-              event.currentTarget.releasePointerCapture(event.pointerId)
-            } catch {
-              /* already released */
-            }
+          if (drag.current?.pointerId !== event.pointerId) return
+          const node = rootRef.current
+          const stage = measureStage(node)
+          const parent = node?.offsetParent as HTMLElement | null
+          const parentTop = parent?.getBoundingClientRect().top ?? 0
+          const relativeY = event.clientY - parentTop
+          const shouldStow =
+            onStow &&
+            pointerInTrayZone(relativeY, stage.height, DOCUMENT_TRAY_HEIGHT)
+          drag.current = null
+          setDragging(false)
+          try {
+            event.currentTarget.releasePointerCapture(event.pointerId)
+          } catch {
+            /* already released */
           }
+          if (shouldStow) onStow()
         }}
         onPointerCancel={() => {
           drag.current = null
@@ -179,7 +241,11 @@ export function FloatingWindow({
         }}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <span aria-hidden className="grid h-5 w-3.5 shrink-0 grid-cols-2 content-center gap-x-[3px] gap-y-[3px]">
+          <span
+            aria-hidden
+            className="grid h-5 w-3.5 shrink-0 grid-cols-2 content-center gap-x-[3px] gap-y-[3px]"
+            title="Drag"
+          >
             {Array.from({ length: 6 }).map((_, i) => (
               <span key={i} className="size-[3px] rounded-full bg-ink-muted/75" />
             ))}
@@ -191,13 +257,14 @@ export function FloatingWindow({
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs text-leather hover:bg-leather/10 hover:text-ink"
-          aria-label={`Close ${title}`}
+          aria-label={`Stow ${title}`}
+          data-testid="paper-stow"
           onClick={(event) => {
             event.stopPropagation()
             onClose()
           }}
         >
-          Close
+          Stow
         </Button>
       </header>
       <div
@@ -207,6 +274,63 @@ export function FloatingWindow({
       >
         {children}
       </div>
+      {resizable ? (
+        <div
+          className="absolute right-0 bottom-0 z-10 h-4 w-4 cursor-ns-resize touch-none"
+          data-testid="floating-window-resize-handle"
+          aria-hidden
+          onPointerDown={(event) => {
+            if (event.button !== 0) return
+            event.preventDefault()
+            event.stopPropagation()
+            onFocus()
+            const current = heightPx ?? rootRef.current?.offsetHeight ?? 200
+            setResizing(true)
+            resize.current = {
+              pointerId: event.pointerId,
+              startY: event.clientY,
+              origHeight: current,
+            }
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }}
+          onPointerMove={(event) => {
+            const state = resize.current
+            if (!state || state.pointerId !== event.pointerId) return
+            event.preventDefault()
+            const stage = measureStage(rootRef.current)
+            const usableH = stageHeightForWindows(stage.height)
+            const preferredMax = parseCssMaxHeight(maxHeightClassName, stage.height)
+            const dy = event.clientY - state.startY
+            const next = resolveWindowHeight({
+              lockedHeight: state.origHeight + dy,
+              preferredMax,
+              heightCap,
+              stageHeight: usableH,
+              y,
+              minHeight: 140,
+            })
+            lockedHeightRef.current = next
+            setHeightPx(next)
+          }}
+          onPointerUp={(event) => {
+            if (resize.current?.pointerId === event.pointerId) {
+              resize.current = null
+              setResizing(false)
+              try {
+                event.currentTarget.releasePointerCapture(event.pointerId)
+              } catch {
+                /* already released */
+              }
+            }
+          }}
+          onPointerCancel={() => {
+            resize.current = null
+            setResizing(false)
+          }}
+        >
+          <span className="absolute right-1 bottom-1 block h-2 w-2 border-r-2 border-b-2 border-leather/55" />
+        </div>
+      ) : null}
     </div>
   )
 }

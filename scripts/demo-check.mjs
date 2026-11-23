@@ -190,17 +190,17 @@ async function krakowIsSelected(page) {
  * A second click on an already-selected province clears selection.
  * @param {import('playwright').Page} page
  */
-/** Close a desktop floating Province window so it cannot swallow map clicks. */
+/** Stow a desktop floating Province window so it cannot swallow map clicks. */
 async function closeFloatingProvinceIfOpen(page) {
   const win = page.locator('[role="dialog"][aria-label="Province"]')
   if (!(await win.isVisible().catch(() => false))) return
-  // Raise Province above Orders (same column) so Close is actionable.
+  // Raise Province above Orders (same column) so Stow is actionable.
   await page.locator("[data-testid=tab-province]").click()
-  const close = win.getByRole("button", { name: "Close Province" })
+  const stow = win.getByRole("button", { name: "Stow Province" })
   try {
-    await close.click({ timeout: 5_000 })
+    await stow.click({ timeout: 5_000 })
   } catch {
-    await close.click({ force: true, timeout: 5_000 })
+    await stow.click({ force: true, timeout: 5_000 })
   }
   await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
 }
@@ -555,6 +555,8 @@ function buildSteps(cli, targets) {
         await page.evaluate(() => {
           localStorage.removeItem("ostfront-1915-v1")
           sessionStorage.removeItem("ostfront-advisor-v1")
+          sessionStorage.removeItem("ostfront-windows-v1:campaign")
+          sessionStorage.removeItem("ostfront-windows-v1:teach")
         })
         const reload = await page.reload({ waitUntil: "domcontentloaded" })
         const status = reload?.status() ?? 0
@@ -656,6 +658,8 @@ function buildSteps(cli, targets) {
       id: "07-rails",
       name: "Toggle railways in map legend",
       async run({ page }) {
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 10_000 })
+        await page.locator("[data-testid=legend-toggle]").click()
         const toggle = page.locator("[data-testid=rail-toggle]")
         await toggle.waitFor({ state: "visible", timeout: 10_000 })
         const before = await toggle.textContent()
@@ -668,6 +672,60 @@ function buildSteps(cli, targets) {
           before,
           { timeout: 5_000 },
         )
+      },
+    },
+    {
+      id: "07a-document-tray",
+      name: "Document tray stow / restore on campaign",
+      async run({ page }) {
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 5_000 })
+        const orders = page.locator('[role="dialog"][aria-label="Orders"]')
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+        await orders.getByRole("button", { name: "Stow Orders" }).click()
+        await orders.waitFor({ state: "hidden", timeout: 5_000 })
+        const tab = page.locator("[data-testid=tab-orders]")
+        await expectAttr(tab, "data-stowed", "true")
+        await tab.click()
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+        await expectAttr(tab, "data-stowed", "false")
+      },
+    },
+    {
+      id: "07b-window-drag",
+      name: "Press-drag-release Orders without size change",
+      async run({ page }) {
+        const orders = page.locator('[role="dialog"][aria-label="Orders"]')
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+        await orders.locator("[data-testid=floating-window-drag-handle]").waitFor({ state: "visible" })
+        const before = await orders.boundingBox()
+        if (!before) throw new Error("Orders window missing bounding box")
+        const startX = before.x + Math.min(80, before.width / 2)
+        const startY = before.y + 12
+        await page.mouse.move(startX, startY)
+        await page.mouse.down()
+        await page.mouse.move(startX - 60, startY + 40, { steps: 8 })
+        await page.mouse.up()
+        await page.waitForTimeout(200)
+        const after = await orders.boundingBox()
+        if (!after) throw new Error("Orders window missing bounding box after drag")
+        if (Math.abs(after.width - before.width) > 2) {
+          throw new Error(`Orders width changed on drag: ${before.width} → ${after.width}`)
+        }
+        if (Math.abs(after.height - before.height) > 2) {
+          throw new Error(`Orders height changed on drag: ${before.height} → ${after.height}`)
+        }
+        if (Math.abs(after.x - before.x) < 20 && Math.abs(after.y - before.y) < 20) {
+          throw new Error(
+            `Orders did not move on press-drag-release: before=${JSON.stringify(before)} after=${JSON.stringify(after)}`,
+          )
+        }
+        // No extra click-to-place: window stays put after mouseup.
+        await page.waitForTimeout(150)
+        const settled = await orders.boundingBox()
+        if (!settled) throw new Error("Orders missing after settle")
+        if (Math.abs(settled.x - after.x) > 2 || Math.abs(settled.y - after.y) > 2) {
+          throw new Error("Orders kept moving after pointerup (expected press-drag-release)")
+        }
       },
     },
     {
@@ -944,6 +1002,7 @@ function buildSteps(cli, targets) {
         if (await page.locator("[data-testid=treasury]").count()) {
           throw new Error("Campaign treasury scoring still shown on /teach HUD")
         }
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 10_000 })
         await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 10_000 })
         await page.locator("[data-testid=teach-orders-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
@@ -1041,6 +1100,32 @@ function buildSteps(cli, targets) {
         )
         if (!targetFilter.includes("lublin")) {
           throw new Error(`Expected target outline filter for lublin, got: ${targetFilter}`)
+        }
+
+        // Tray stow / restore + press-drag-release on /teach (after layout asserts).
+        await page.locator("[data-testid=teach-orders-window]").getByRole("button", { name: "Stow Orders" }).click()
+        await page.locator("[data-testid=teach-orders-window]").waitFor({ state: "hidden", timeout: 5_000 })
+        await page.locator("[data-testid=tab-orders]").click()
+        await page.locator("[data-testid=teach-orders-window]").waitFor({ state: "visible", timeout: 5_000 })
+        const ordersWin = page.locator("[data-testid=teach-orders-window]")
+        const beforeDrag = await ordersWin.boundingBox()
+        if (!beforeDrag) throw new Error("teach Orders missing box before drag")
+        const ox = beforeDrag.x + Math.min(70, beforeDrag.width / 2)
+        const oy = beforeDrag.y + 12
+        await page.mouse.move(ox, oy)
+        await page.mouse.down()
+        await page.mouse.move(ox - 40, oy + 30, { steps: 6 })
+        await page.mouse.up()
+        await page.waitForTimeout(150)
+        const afterDrag = await ordersWin.boundingBox()
+        if (!afterDrag) throw new Error("teach Orders missing box after drag")
+        if (Math.abs(afterDrag.height - beforeDrag.height) > 2) {
+          throw new Error(
+            `Teach Orders height changed on drag: ${beforeDrag.height} → ${afterDrag.height}`,
+          )
+        }
+        if (Math.abs(afterDrag.x - beforeDrag.x) < 10 && Math.abs(afterDrag.y - beforeDrag.y) < 10) {
+          throw new Error("Teach Orders did not move on press-drag-release")
         }
 
         // Phone stacked shell: Resolve must stay in the viewport without page scroll.

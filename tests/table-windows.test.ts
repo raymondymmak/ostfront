@@ -53,10 +53,11 @@ describe("table-windows", () => {
     expect(isWindowOpen(windows, "orders")).toBe(true)
   })
 
-  it("clamps positions so windows stay inside the map stage", () => {
+  it("clamps positions so windows stay inside the map stage above the tray", () => {
     const clamped = clampWindowPosition(2000, 2000, 300, 200, 1024, 768)
     expect(clamped.x).toBe(1024 - 300 - TABLE_WINDOW_MARGIN)
-    expect(clamped.y).toBe(768 - 200 - TABLE_WINDOW_MARGIN)
+    // Usable height excludes DOCUMENT_TRAY_HEIGHT (48).
+    expect(clamped.y).toBe(768 - 48 - 200 - TABLE_WINDOW_MARGIN)
     const topLeft = clampWindowPosition(-40, -10, 300, 200, 1024, 768)
     expect(topLeft.x).toBe(TABLE_WINDOW_MARGIN)
     expect(topLeft.y).toBe(TABLE_WINDOW_MARGIN)

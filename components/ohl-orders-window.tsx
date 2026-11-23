@@ -13,6 +13,7 @@ type OhlOrdersWindowProps = {
   onFocus: () => void
   onClose: () => void
   onMove: (x: number, y: number) => void
+  onStow?: () => void
 }
 
 /** Dismissible Orders from OHL — campaign goal line lives here on the desktop shell. */
@@ -25,6 +26,7 @@ export function OhlOrdersWindow({
   onFocus,
   onClose,
   onMove,
+  onStow,
 }: OhlOrdersWindowProps) {
   const goal = campaignGoalLine(scenario)
   return (
@@ -40,6 +42,8 @@ export function OhlOrdersWindow({
       onFocus={onFocus}
       onClose={onClose}
       onMove={onMove}
+      onStow={onStow}
+      resizable={false}
     >
       <div className="px-3 py-2.5">
         <p data-testid="campaign-goal" className="text-sm leading-snug text-ink">

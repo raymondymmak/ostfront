@@ -18,9 +18,20 @@ export const DESKTOP_SHELL_MQ = "(min-width: 1024px)"
 
 export const TABLE_WINDOW_MARGIN = 8
 
+/** Bottom parchment tray strip — windows clamp above this band. */
+export const DOCUMENT_TRAY_HEIGHT = 48
+
+/** Stage height available for floating papers (excludes the tray strip). */
+export function stageHeightForWindows(
+  stageHeight: number,
+  trayHeight = DOCUMENT_TRAY_HEIGHT,
+): number {
+  return Math.max(160, stageHeight - trayHeight)
+}
+
 const BASE_Z = 20
 
-/** Keep the window fully inside the map stage (header stays reachable). */
+/** Keep the window fully inside the map stage above the document tray. */
 export function clampWindowPosition(
   x: number,
   y: number,
@@ -30,8 +41,9 @@ export function clampWindowPosition(
   stageHeight: number,
   margin = TABLE_WINDOW_MARGIN,
 ): { x: number; y: number } {
+  const usableH = stageHeightForWindows(stageHeight)
   const maxX = Math.max(margin, stageWidth - winWidth - margin)
-  const maxY = Math.max(margin, stageHeight - winHeight - margin)
+  const maxY = Math.max(margin, usableH - winHeight - margin)
   return {
     x: Math.min(maxX, Math.max(margin, x)),
     y: Math.min(maxY, Math.max(margin, y)),
@@ -54,11 +66,12 @@ export function createDefaultTableWindows(
   mapHeight = 820,
 ): TableWindowState[] {
   const m = TABLE_WINDOW_MARGIN
+  const usableH = stageHeightForWindows(mapHeight)
   // Leave the top-right MapMode + zoom strip clear (≈7rem wide, ≈6rem tall).
   const belowMapMode = 100
-  const legendH = Math.min(TABLE_WINDOW_SIZE_HINTS.legend.h, Math.max(200, mapHeight - belowMapMode - m * 2))
-  const ordersH = Math.min(TABLE_WINDOW_SIZE_HINTS.orders.h, Math.max(240, mapHeight - belowMapMode - m))
-  const logH = Math.min(TABLE_WINDOW_SIZE_HINTS.log.h, Math.max(200, mapHeight - m * 2))
+  const legendH = Math.min(TABLE_WINDOW_SIZE_HINTS.legend.h, Math.max(200, usableH - belowMapMode - m * 2))
+  const ordersH = Math.min(TABLE_WINDOW_SIZE_HINTS.orders.h, Math.max(240, usableH - belowMapMode - m))
+  const logH = Math.min(TABLE_WINDOW_SIZE_HINTS.log.h, Math.max(200, usableH - m * 2))
 
   const raw: TableWindowState[] = [
     { id: "ohl", open: true, x: Math.min(200, Math.max(m, mapWidth * 0.12)), y: m + 4, z: BASE_Z + 2 },
@@ -73,7 +86,7 @@ export function createDefaultTableWindows(
       id: "legend",
       open: true,
       x: m,
-      y: Math.max(m, mapHeight - legendH - m),
+      y: Math.max(m, usableH - legendH - m),
       z: BASE_Z + 1,
     },
     {
@@ -89,14 +102,14 @@ export function createDefaultTableWindows(
       // Sit to the right of the bottom-left Legend so open Log never covers it.
       open: false,
       x: Math.min(320, Math.max(200, mapWidth * 0.22)),
-      y: Math.max(m, mapHeight - logH - m),
+      y: Math.max(m, usableH - logH - m),
       z: BASE_Z + 5,
     },
     {
       id: "advisor",
       open: false,
       x: Math.max(m, mapWidth - TABLE_WINDOW_SIZE_HINTS.advisor.w - m - 24),
-      y: Math.max(m, mapHeight - TABLE_WINDOW_SIZE_HINTS.advisor.h - m),
+      y: Math.max(m, usableH - TABLE_WINDOW_SIZE_HINTS.advisor.h - m),
       z: BASE_Z + 6,
     },
   ]

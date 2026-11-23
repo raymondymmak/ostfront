@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { DocumentTray } from "@/components/document-tray"
 import { FloatingWindow } from "@/components/floating-window"
 import { Hud } from "@/components/hud"
 import { MapLegend } from "@/components/map-legend"
@@ -9,7 +10,15 @@ import { OrderPanel } from "@/components/order-panel"
 import { ProvincePanel } from "@/components/province-panel"
 import { TeachPanel } from "@/components/teach-panel"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  applyPersistedLayout,
+  loadWindowSession,
+  saveWindowSession,
+  stowTopmostWindow,
+  stowWindow,
+  TEACH_PHONE_TRAY_ITEMS,
+  TEACH_TRAY_ITEMS,
+} from "@/lib/ui/document-tray"
 import { WarMap, type MapProvince } from "@/components/war-map"
 import { toggleSelection } from "@/lib/ui/selection"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
@@ -21,19 +30,19 @@ import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lesson
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { teachSelectedProvinceIds } from "@/lib/teach/selected-provinces"
 import {
-  closeTeachWindow,
-  closeTopmostTeachWindow,
   createDefaultTeachWindows,
   focusTeachWindow,
   isTeachWindowOpen,
   moveTeachWindow,
   teachLegendHeightCap,
   teachLessonHeightCap,
+  TEACH_WINDOW_SIZE_HINTS,
   TEACH_WINDOW_TITLES,
   type TeachWindowId,
   type TeachWindowState,
 } from "@/lib/ui/teach-windows"
 import { useDesktopShell } from "@/lib/ui/use-desktop-shell"
+import { restorePositionAboveTray } from "@/lib/ui/window-drag"
 import type { GameState, PlayerOrder, TurnRecord, UnitKind } from "@/lib/types"
 
 type SessionPayload = {
@@ -157,7 +166,8 @@ export function TeachingApp() {
     const height =
       node?.clientHeight ||
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
-    setWindows(createDefaultTeachWindows(width, height))
+    const defaults = createDefaultTeachWindows(width, height)
+    setWindows(applyPersistedLayout(defaults, loadWindowSession("teach")))
     setLessonHeightCap(teachLessonHeightCap(height))
     setLegendHeightCap(teachLegendHeightCap(height))
   }
@@ -169,6 +179,11 @@ export function TeachingApp() {
   }, [setupOpen, desktopShell])
 
   useEffect(() => {
+    if (setupOpen || !desktopShell) return
+    saveWindowSession("teach", windows)
+  }, [windows, setupOpen, desktopShell])
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       if (!desktopShell) {
@@ -176,7 +191,7 @@ export function TeachingApp() {
         return
       }
       if (windows.some((item) => item.open)) {
-        setWindows((current) => closeTopmostTeachWindow(current))
+        setWindows((current) => stowTopmostWindow(current))
         return
       }
       setSelectedId(null)
@@ -186,12 +201,30 @@ export function TeachingApp() {
   }, [desktopShell, windows])
 
   function setWindowOpen(id: TeachWindowId, open: boolean) {
-    setWindows((current) => (open ? focusTeachWindow(current, id) : closeTeachWindow(current, id)))
+    setWindows((current) => (open ? focusTeachWindow(current, id) : stowWindow(current, id)))
   }
 
-  function onToggleTeachWindow(id: TeachWindowId) {
-    // Open or focus only (Close is on the window chrome; demo-check re-clicks tab-orders).
+  function onTrayRestore(id: TeachWindowId) {
     setWindows((current) => focusTeachWindow(current, id))
+  }
+
+  function onTrayRestoreAt(id: TeachWindowId, clientX: number, clientY: number) {
+    const node = mapStageRef.current
+    if (!node) {
+      onTrayRestore(id)
+      return
+    }
+    const rect = node.getBoundingClientRect()
+    const hint = TEACH_WINDOW_SIZE_HINTS[id]
+    const preferred = restorePositionAboveTray(
+      { x: clientX - rect.left - hint.w / 2, y: clientY - rect.top - 24 },
+      hint,
+      { width: rect.width, height: rect.height },
+    )
+    setWindows((current) => {
+      const focused = focusTeachWindow(current, id)
+      return moveTeachWindow(focused, id, preferred.x, preferred.y)
+    })
   }
 
   const attacking = new Set(
@@ -503,8 +536,6 @@ export function TeachingApp() {
         teachMode
         teachGoal={session.meta.title}
         tableShell={desktopShell}
-        teachWindowOpen={teachWindowOpen}
-        onToggleTeachWindow={onToggleTeachWindow}
       />
       {error && (
         <p
@@ -558,7 +589,7 @@ export function TeachingApp() {
             windows.map((win) => {
               if (!win.open) return null
               const focus = () => setWindows((current) => focusTeachWindow(current, win.id))
-              const close = () => setWindowOpen(win.id, false)
+              const stow = () => setWindowOpen(win.id, false)
               const onMove = (x: number, y: number) =>
                 setWindows((current) => moveTeachWindow(current, win.id, x, y))
               if (win.id === "lesson") {
@@ -576,8 +607,9 @@ export function TeachingApp() {
                     bodyScroll={false}
                     testId="teach-lesson-window"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    onStow={stow}
                   >
                     {teachPanel}
                   </FloatingWindow>
@@ -595,8 +627,9 @@ export function TeachingApp() {
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
                     testId="teach-orders-window"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    onStow={stow}
                   >
                     <aside className="flex min-h-0 flex-col">{orderPanel}</aside>
                   </FloatingWindow>
@@ -614,8 +647,9 @@ export function TeachingApp() {
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
                     testId="teach-province-window"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    onStow={stow}
                   >
                     <aside className="flex min-h-0 flex-col">{provincePanel}</aside>
                   </FloatingWindow>
@@ -635,8 +669,9 @@ export function TeachingApp() {
                     heightCap={legendHeightCap}
                     testId="legend-window"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    onStow={stow}
                   >
                     <MapLegend
                       embedded
@@ -649,6 +684,17 @@ export function TeachingApp() {
               }
               return null
             })}
+          {desktopShell && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[40]">
+              <DocumentTray
+                items={TEACH_TRAY_ITEMS}
+                openById={teachWindowOpen}
+                onRestore={onTrayRestore}
+                onStow={(id) => setWindowOpen(id, false)}
+                onRestoreAt={onTrayRestoreAt}
+              />
+            </div>
+          )}
         </div>
         {!desktopShell && (
           <>
@@ -659,23 +705,40 @@ export function TeachingApp() {
             >
               {teachPanel}
             </div>
-            <aside className="flex max-h-[min(28vh,11rem)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-border lg:max-h-none">
-              <Tabs value={sideTab} onValueChange={setSideTab} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <TabsList className="mx-3 mt-2 w-[calc(100%-1.5rem)] shrink-0">
-                  <TabsTrigger value="orders" data-testid="tab-orders">
-                    Orders
-                  </TabsTrigger>
-                  <TabsTrigger value="front" data-testid="tab-province">
-                    Province
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto">
-                  {orderPanel}
-                </TabsContent>
-                <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto">
-                  {provincePanel}
-                </TabsContent>
-              </Tabs>
+            <aside className="flex max-h-[min(28vh,11rem)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-border">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {sideTab === "orders" ? orderPanel : null}
+                  {sideTab === "front" ? provincePanel : null}
+                  {sideTab === "legend" ? (
+                    <MapLegend
+                      embedded
+                      showRails={showRails}
+                      onToggleRails={() => setShowRails((value) => !value)}
+                      overlay={overlay}
+                    />
+                  ) : null}
+                </div>
+                <DocumentTray
+                  variant="phone"
+                  items={TEACH_PHONE_TRAY_ITEMS}
+                  openById={{
+                    orders: sideTab === "orders",
+                    province: sideTab === "front",
+                    legend: sideTab === "legend",
+                  }}
+                  activeId={
+                    sideTab === "front" ? "province" : sideTab === "legend" ? "legend" : "orders"
+                  }
+                  onRestore={(id) => {
+                    if (id === "province") setSideTab("front")
+                    else if (id === "legend") setSideTab("legend")
+                    else setSideTab("orders")
+                  }}
+                  onStow={() => {}}
+                  className="shrink-0"
+                />
+              </div>
             </aside>
           </>
         )}
