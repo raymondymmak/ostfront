@@ -571,6 +571,35 @@ describe("campaign coach", () => {
     expect(result.reply).not.toMatch(/Lemberg push/i)
   })
 
+  it("pairs the conflicting fortify+attack provinces, not the first queue entries", async () => {
+    const state = createInitialState()
+    const map = staffMap(state)
+    const krakowIds = map.provinces
+      .find((province) => province.id === "krakow")!
+      .units.filter((unit) => unit.faction === "central")
+      .map((unit) => unit.id)
+    // Unrelated fortify first, then a Kraków attack, then the conflicting Kraków fortify.
+    const queued: PlayerOrder[] = [
+      { type: "fortify", provinceId: "katowice" },
+      { type: "attack", from: "krakow", target: "kielce", unitIds: krakowIds },
+      { type: "fortify", provinceId: "krakow" },
+    ]
+    const conflicts = detectQueuedOrderConflicts(map, queued)
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0]?.provinceId).toBe("krakow")
+    expect(conflicts[0]?.targetId).toBe("kielce")
+    const result = await coachCampaign({
+      state,
+      log: [],
+      messages: [{ role: "user", content: "Does my queued plan look sound?" }],
+      queuedOrders: queued,
+    })
+    expect(result.reply).toMatch(/Kraków/i)
+    expect(result.reply).toMatch(/Kielce/i)
+    expect(result.reply).not.toMatch(/Katowice/i)
+    expect(result.highlights[0]?.provinceId).toBe("krakow")
+  })
+
   it("scrubs before-the-dice on general advice and refusal prompts", async () => {
     const advice = await coachCampaign({
       state: createInitialState(),

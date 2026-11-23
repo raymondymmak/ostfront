@@ -139,7 +139,7 @@ export async function coachCampaign(input: {
     dispatch,
     "",
     "QUEUE_CONFLICTS",
-    queueConflicts.length ? queueConflicts.join("\n") : "None.",
+    queueConflicts.length ? queueConflicts.map((item) => item.detail).join("\n") : "None.",
     "",
     "QUEUED_RESOLUTION_ODDS",
     queuedOdds,
@@ -880,9 +880,16 @@ export function queuedAttackPreview(
   return null
 }
 
+export type QueuedOrderConflict = {
+  provinceId: string
+  targetId: string
+  detail: string
+}
+
 /** Fortify + attack (or overlapping commitments) the player queued on the same garrison. */
-export function detectQueuedOrderConflicts(map: GameState, queued: PlayerOrder[]): string[] {
-  const conflicts: string[] = []
+export function detectQueuedOrderConflicts(map: GameState, queued: PlayerOrder[]): QueuedOrderConflict[] {
+  const conflicts: QueuedOrderConflict[] = []
+  const seen = new Set<string>()
   const attacks = queued.filter(
     (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
   )
@@ -892,12 +899,17 @@ export function detectQueuedOrderConflicts(map: GameState, queued: PlayerOrder[]
   for (const fort of fortifies) {
     for (const attack of attacks) {
       if (attack.from !== fort.provinceId) continue
-      conflicts.push(
-        `Fortify ${provinceLabel(fort.provinceId)} conflicts with attack from ${provinceLabel(attack.from)} into ${provinceLabel(attack.target)} — the same garrison cannot dig in and march this fortnight.`,
-      )
+      const key = `${fort.provinceId}->${attack.target}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      conflicts.push({
+        provinceId: fort.provinceId,
+        targetId: attack.target,
+        detail: `Fortify ${provinceLabel(fort.provinceId)} conflicts with attack from ${provinceLabel(attack.from)} into ${provinceLabel(attack.target)} — the same garrison cannot dig in and march this fortnight.`,
+      })
     }
   }
-  return [...new Set(conflicts)]
+  return conflicts
 }
 
 /** Varied intent openers — avoid a stock Kielce/Lemberg line on every turn. */
@@ -957,21 +969,13 @@ function rulesCoach(
   }
 
   if (conflicts.length) {
-    const fort = queued.find((order) => order.type === "fortify")
-    const attack = queued.find((order) => order.type === "attack")
-    const provinceId =
-      fort && fort.type === "fortify"
-        ? fort.provinceId
-        : attack && attack.type === "attack"
-          ? attack.from
-          : null
-    const name = provinceId ? provinceLabel(provinceId) : "that province"
-    const target =
-      attack && attack.type === "attack" ? provinceLabel(attack.target) : "the objective"
+    const conflict = conflicts[0]!
+    const name = provinceLabel(conflict.provinceId)
+    const target = provinceLabel(conflict.targetId)
     return {
       reply: `Which job should that ${name} garrison keep — digging in or marching on ${target}? Your queue both fortifies ${name} and attacks from it.`,
       followUp: null,
-      highlights: provinceId ? [{ provinceId }] : [{ uiId: "queued-orders" }],
+      highlights: [{ provinceId: conflict.provinceId }],
     }
   }
 
