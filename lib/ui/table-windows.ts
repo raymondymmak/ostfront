@@ -38,10 +38,11 @@ export function stageHeightForWindows(
 
 /**
  * Papers paint above the document tray (`DOCUMENT_TRAY_Z` / CSS `z-[40]`).
- * A paper must never render behind the tray bar.
+ * A paper must never render behind the tray bar — including session-restored z.
  */
 export const DOCUMENT_TRAY_Z = 40
-const BASE_Z = DOCUMENT_TRAY_Z + 10
+export const PAPER_Z_FLOOR = DOCUMENT_TRAY_Z + 10
+const BASE_Z = PAPER_Z_FLOOR
 
 export type ClampWindowOptions = {
   /**
@@ -164,7 +165,12 @@ export function isWindowOpen(windows: TableWindowState[], id: TableWindowId): bo
 }
 
 function nextZ(windows: TableWindowState[]): number {
-  return windows.reduce((max, item) => Math.max(max, item.z), BASE_Z) + 1
+  return Math.max(PAPER_Z_FLOOR, windows.reduce((max, item) => Math.max(max, item.z), BASE_Z)) + 1
+}
+
+/** Ensure a paper's stacking order stays above the document tray. */
+export function ensurePaperZ(z: number): number {
+  return Math.max(PAPER_Z_FLOOR, z)
 }
 
 /** Raise z and ensure open. */

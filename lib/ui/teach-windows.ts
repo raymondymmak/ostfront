@@ -2,7 +2,7 @@
 
 import {
   clampWindowPosition,
-  DOCUMENT_TRAY_Z,
+  PAPER_Z_FLOOR,
   stageHeightForWindows,
   TABLE_WINDOW_MARGIN,
   type StackedWindow,
@@ -13,7 +13,7 @@ export type TeachWindowId = "orders" | "province" | "legend" | "lesson"
 export type TeachWindowState = StackedWindow<TeachWindowId>
 
 /** Papers paint above the document tray (`z-[40]`). */
-const BASE_Z = DOCUMENT_TRAY_Z + 10
+const BASE_Z = PAPER_Z_FLOOR
 const GAP = 12
 
 export const TEACH_WINDOW_SIZE_HINTS: Record<TeachWindowId, { w: number; h: number }> = {
@@ -184,7 +184,7 @@ export function isTeachWindowOpen(windows: TeachWindowState[], id: TeachWindowId
 }
 
 function nextZ(windows: TeachWindowState[]): number {
-  return windows.reduce((max, item) => Math.max(max, item.z), BASE_Z) + 1
+  return Math.max(PAPER_Z_FLOOR, windows.reduce((max, item) => Math.max(max, item.z), BASE_Z)) + 1
 }
 
 export function focusTeachWindow(

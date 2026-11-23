@@ -789,10 +789,14 @@ function buildSteps(cli, targets) {
         await expectAttr(tab, "data-stowed", "true")
         await restoreTrayTab(page, "ohl-toggle")
         await ohl.waitFor({ state: "visible", timeout: 5_000 })
-        const after = await ohl.evaluate((el) => el.offsetTop)
-        const trayTop = await tray.evaluate((el) => el.offsetTop)
-        if (after + 36 > trayTop) {
-          throw new Error(`OHL header still overlaps tray after restore: y=${after} trayTop=${trayTop}`)
+        // Compare viewport boxes — offsetTop is not stage-relative for the tray wrapper.
+        const restored = await ohl.boundingBox()
+        const trayAfter = await tray.boundingBox()
+        if (!restored || !trayAfter) throw new Error("OHL or tray missing after restore")
+        if (restored.y + 36 > trayAfter.y + 1) {
+          throw new Error(
+            `OHL header still overlaps tray after restore: headerBottom=${restored.y + 36} trayTop=${trayAfter.y}`,
+          )
         }
       },
     },

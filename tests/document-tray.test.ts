@@ -110,11 +110,12 @@ describe("document-tray", () => {
     const stuckY = trayTopY(stageH) - WINDOW_HEADER_HEIGHT + 12
     let windows = createDefaultTableWindows(1440, stageH)
     windows = windows.map((item) =>
-      item.id === "ohl" ? { ...item, open: true, y: stuckY } : item,
+      item.id === "ohl" ? { ...item, open: true, y: stuckY, z: 22 } : item,
     )
     const lifted = liftPersistedWindowsAboveTray(windows, stageH)
     const ohl = lifted.find((item) => item.id === "ohl")
     expect(ohl).toBeTruthy()
     expect(ohl!.y + WINDOW_HEADER_HEIGHT).toBeLessThanOrEqual(trayTopY(stageH))
+    expect(ohl!.z).toBeGreaterThan(40)
   })
 })

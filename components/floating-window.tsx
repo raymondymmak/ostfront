@@ -1,7 +1,12 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { TABLE_WINDOW_MARGIN, WINDOW_HEADER_HEIGHT } from "@/lib/ui/table-windows"
+import {
+  DOCUMENT_TRAY_Z,
+  ensurePaperZ,
+  TABLE_WINDOW_MARGIN,
+  WINDOW_HEADER_HEIGHT,
+} from "@/lib/ui/table-windows"
 import {
   DOCUMENT_TRAY_HEIGHT,
   liftYAboveTray,
@@ -204,7 +209,8 @@ export function FloatingWindow({
       style={{
         left: x,
         top: y,
-        zIndex: z,
+        // Never paint behind the document tray (`z-[40]`), even with stale session z.
+        zIndex: Math.max(ensurePaperZ(z), DOCUMENT_TRAY_Z + 1),
         width: widthPx,
         height: heightPx,
         maxHeight: heightPx,

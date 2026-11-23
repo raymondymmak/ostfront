@@ -15,10 +15,12 @@ import {
 import {
   DOCUMENT_TRAY_HEIGHT,
   DOCUMENT_TRAY_Z,
+  ensurePaperZ,
+  PAPER_Z_FLOOR,
   TABLE_WINDOW_MARGIN,
   WINDOW_HEADER_HEIGHT,
+  createDefaultTableWindows,
 } from "@/lib/ui/table-windows"
-import { createDefaultTableWindows } from "@/lib/ui/table-windows"
 
 describe("window-drag", () => {
   it("press-drag-release moves by pointer delta without an extra place click", () => {
@@ -112,6 +114,9 @@ describe("window-drag", () => {
     const windows = createDefaultTableWindows(1440, 820)
     for (const win of windows) {
       expect(win.z).toBeGreaterThan(DOCUMENT_TRAY_Z)
+      expect(win.z).toBeGreaterThanOrEqual(PAPER_Z_FLOOR)
     }
+    expect(ensurePaperZ(22)).toBe(PAPER_Z_FLOOR)
+    expect(ensurePaperZ(80)).toBe(80)
   })
 })
