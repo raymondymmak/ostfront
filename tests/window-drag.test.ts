@@ -14,7 +14,6 @@ import {
   trayTopY,
 } from "@/lib/ui/window-drag"
 import {
-  DOCUMENT_TRAY_HEIGHT,
   DOCUMENT_TRAY_Z,
   ensurePaperZ,
   PAPER_Z_FLOOR,
