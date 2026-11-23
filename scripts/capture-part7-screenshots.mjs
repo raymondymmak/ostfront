@@ -14,13 +14,6 @@ const VIEWPORTS = [
   { name: "390x844", width: 390, height: 844 },
 ]
 
-async function dismissIfPresent(page, testId) {
-  const el = page.locator(`[data-testid=${testId}]`)
-  if (await el.isVisible().catch(() => false)) {
-    await el.click().catch(() => {})
-  }
-}
-
 async function beginCampaign(page) {
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" })
   await page.evaluate(() => {
