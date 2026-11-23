@@ -785,25 +785,36 @@ function buildSteps(cli, targets) {
         await handle.waitFor({ state: "visible" })
         const before = await orders.boundingBox()
         if (!before) throw new Error("Orders window missing bounding box")
-        const startX = before.x + Math.min(80, before.width / 2)
-        const startY = before.y + 12
-        // Drag via the handle so pointer events hit the Orders header, not a covering paper.
-        await handle.hover({ position: { x: Math.min(80, before.width / 2), y: 12 } })
+        // If Enter restored a paper still sitting on the tray, lift it first.
+        const trayBox0 = await page.locator("[data-testid=document-tray]").boundingBox()
+        if (trayBox0 && before.y + 20 > trayBox0.y) {
+          await page.mouse.move(before.x + 40, Math.max(40, trayBox0.y - 80))
+          await page.mouse.down()
+          await page.mouse.move(before.x + 40, 120, { steps: 6 })
+          await page.mouse.up()
+          await page.waitForTimeout(150)
+        }
+        const ready = await orders.boundingBox()
+        if (!ready) throw new Error("Orders missing after lift")
+        const startX = ready.x + Math.min(80, ready.width / 2)
+        const startY = ready.y + 12
+        // Use raw mouse coords (avoid hover — tray can intercept when papers sit low).
+        await page.mouse.move(startX, startY)
         await page.mouse.down()
         await page.mouse.move(startX - 60, startY + 40, { steps: 8 })
         await page.mouse.up()
         await page.waitForTimeout(200)
         const after = await orders.boundingBox()
         if (!after) throw new Error("Orders window missing bounding box after drag")
-        if (Math.abs(after.width - before.width) > 2) {
-          throw new Error(`Orders width changed on drag: ${before.width} → ${after.width}`)
+        if (Math.abs(after.width - ready.width) > 2) {
+          throw new Error(`Orders width changed on drag: ${ready.width} → ${after.width}`)
         }
-        if (Math.abs(after.height - before.height) > 2) {
-          throw new Error(`Orders height changed on drag: ${before.height} → ${after.height}`)
+        if (Math.abs(after.height - ready.height) > 2) {
+          throw new Error(`Orders height changed on drag: ${ready.height} → ${after.height}`)
         }
-        if (Math.abs(after.x - before.x) < 20 && Math.abs(after.y - before.y) < 20) {
+        if (Math.abs(after.x - ready.x) < 20 && Math.abs(after.y - ready.y) < 20) {
           throw new Error(
-            `Orders did not move on press-drag-release: before=${JSON.stringify(before)} after=${JSON.stringify(after)}`,
+            `Orders did not move on press-drag-release: before=${JSON.stringify(ready)} after=${JSON.stringify(after)}`,
           )
         }
         // No extra click-to-place: window stays put after mouseup.

@@ -228,7 +228,22 @@ export function GameApp() {
   }
 
   function onTrayRestore(id: TableWindowId) {
-    setWindows((current) => focusWindow(current, id))
+    const node = mapStageRef.current
+    setWindows((current) => {
+      const focused = focusWindow(current, id)
+      const item = focused.find((entry) => entry.id === id)
+      if (!node || !item) return focused
+      const rect = node.getBoundingClientRect()
+      const hint = TABLE_WINDOW_SIZE_HINTS[id]
+      const size = { w: item.width ?? hint.w, h: item.height ?? hint.h }
+      // Soft restore (Enter): keep x/size but lift above the tray so the grip is free.
+      const preferred = restorePositionAboveTray(
+        { x: item.x, y: item.y },
+        size,
+        { width: rect.width, height: rect.height },
+      )
+      return moveWindow(focused, id, preferred.x, preferred.y)
+    })
   }
 
   function onTrayRestoreAt(id: TableWindowId, clientX: number, clientY: number) {

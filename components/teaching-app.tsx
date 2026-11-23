@@ -207,7 +207,21 @@ export function TeachingApp() {
   }
 
   function onTrayRestore(id: TeachWindowId) {
-    setWindows((current) => focusTeachWindow(current, id))
+    const node = mapStageRef.current
+    setWindows((current) => {
+      const focused = focusTeachWindow(current, id)
+      const item = focused.find((entry) => entry.id === id)
+      if (!node || !item) return focused
+      const rect = node.getBoundingClientRect()
+      const hint = TEACH_WINDOW_SIZE_HINTS[id]
+      const size = { w: item.width ?? hint.w, h: item.height ?? hint.h }
+      const preferred = restorePositionAboveTray(
+        { x: item.x, y: item.y },
+        size,
+        { width: rect.width, height: rect.height },
+      )
+      return moveTeachWindow(focused, id, preferred.x, preferred.y)
+    })
   }
 
   function onTrayRestoreAt(id: TeachWindowId, clientX: number, clientY: number) {
