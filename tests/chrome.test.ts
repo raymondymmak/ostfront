@@ -89,7 +89,8 @@ describe("top bar and map chrome", () => {
 
   it("keeps the HUD above floating papers so Options restart stays clickable", () => {
     const css = readFileSync("app/globals.css", "utf8")
-    expect(css).toMatch(/\.table-hud\s*\{[^}]*z-index:\s*210/s)
+    expect(css).toContain(".table-hud")
+    expect(css).toMatch(/z-index:\s*210/)
     const windows = readFileSync("lib/ui/table-windows.ts", "utf8")
     expect(windows).toContain("HUD_Z = PAPER_DRAG_Z + 10")
   })

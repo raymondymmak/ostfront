@@ -13,7 +13,7 @@ import { legalTargets } from "@/lib/ui/legal-targets"
  */
 describe("late-fortnight province Attack/Fortify", () => {
   it("still allows Fortify and Attack from Kraków after fortnights 3–6", () => {
-    let state = createInitialState("normal", 1915)
+    let state = createInitialState("normal")
     for (let turn = 0; turn < 4; turn++) {
       expect(state.result).toBeFalsy()
       const gm = stavkaTurn(state, [])
