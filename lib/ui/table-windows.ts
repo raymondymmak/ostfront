@@ -45,6 +45,11 @@ export const DOCUMENT_TRAY_Z = 30
 export const PAPER_Z_FLOOR = DOCUMENT_TRAY_Z + 20
 /** While dragging over the tray, lift further so short papers stay visible on top. */
 export const PAPER_DRAG_Z = 200
+/**
+ * Grade screen backdrop — above every paper (incl. drag lift) and the tray/HUD.
+ * News cards use z 250; keep endgame just below so a leftover news card still wins.
+ */
+export const ENDGAME_OVERLAY_Z = 240
 const BASE_Z = PAPER_Z_FLOOR
 
 export type ClampWindowOptions = {

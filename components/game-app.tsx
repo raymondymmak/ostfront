@@ -30,13 +30,12 @@ import {
 } from "@/lib/ui/document-tray"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { CampaignStart } from "@/components/campaign-start"
+import { EndgameModal } from "@/components/endgame-modal"
 import { NewsCardQueue } from "@/components/news-card"
 import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
 import { independentFormations } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
-import { gradeLabel } from "@/lib/engine/victory"
 import {
-  BACK_TO_MAP_LABEL,
   FINAL_POSITIONS_LABEL,
   SEE_RESULT_LABEL,
   finalePhase,
@@ -661,8 +660,14 @@ export function GameApp() {
     )
   }
 
+  const blockChrome = newsQueue.length > 0 || phase === "result"
+
   return (
-    <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden">
+    <>
+    <div
+      className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden"
+      {...(blockChrome ? { inert: true } : {})}
+    >
       <Hud
         state={game.state}
         armReset={armReset}
@@ -746,7 +751,6 @@ export function GameApp() {
       )}
       <div
         className={`grid min-h-0 flex-1 ${desktopShell ? "" : "lg:grid-cols-[minmax(0,1fr)_23rem]"}`}
-        {...(newsQueue.length > 0 ? { inert: true } : {})}
         data-testid="game-shell"
       >
         <div
@@ -1046,45 +1050,6 @@ export function GameApp() {
           </aside>
         )}
       </div>
-      {phase === "result" && game.state.result && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-leather/45 p-4 backdrop-blur-[1px]"
-          data-testid="endgame"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="endgame-title"
-        >
-          <div className="w-full max-w-md rounded-sm border border-leather/50 bg-paper p-6 text-ink shadow-[0_18px_40px_rgba(36,28,20,0.35)]">
-            <p className="text-xs tracking-wide text-muted-foreground uppercase">
-              {game.state.result.sudden ? "Sudden death" : "Campaign over"}
-            </p>
-            <h2 id="endgame-title" className="mt-2 font-display text-4xl leading-none">
-              {gradeLabel(game.state.result.grade)}
-            </h2>
-            <p className="mt-3 text-sm leading-6">{game.state.result.reason}</p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              {game.state.date} · Fortnight {Math.min(game.state.turn + 1, scenarioSpec(game.state.scenario).length)} / {scenarioSpec(game.state.scenario).length}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Score {game.state.result.score} · ★ {game.state.result.captured}/{game.state.result.available} victory points
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Button type="button" variant="outline" data-testid="back-to-map" onClick={() => setResultOpen(false)}>
-                {BACK_TO_MAP_LABEL}
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  setResultOpen(false)
-                  setSetupOpen(true)
-                }}
-              >
-                Play again
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
       {newsQueue.length > 0 && (
         <NewsCardQueue
           key={newsQueue.map((event) => event.id).join(":")}
@@ -1093,5 +1058,17 @@ export function GameApp() {
         />
       )}
     </div>
+    {phase === "result" && game.state.result && (
+      <EndgameModal
+        state={game.state}
+        result={game.state.result}
+        onBackToMap={() => setResultOpen(false)}
+        onPlayAgain={() => {
+          setResultOpen(false)
+          setSetupOpen(true)
+        }}
+      />
+    )}
+    </>
   )
 }
