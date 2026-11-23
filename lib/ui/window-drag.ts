@@ -60,7 +60,8 @@ export function resolveWindowHeight(args: {
       : args.preferredMax
   const stageCap = Math.max(minHeight, args.stageHeight - margin * 2)
   if (args.lockedHeight != null) {
-    return Math.min(args.lockedHeight, preferred, stageCap)
+    // Keep the locked size across drag; only a smaller stage can force a shrink.
+    return Math.min(args.lockedHeight, stageCap)
   }
   const remaining = Math.max(minHeight, args.stageHeight - args.y - margin)
   return Math.min(preferred, remaining, stageCap)

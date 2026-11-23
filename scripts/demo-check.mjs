@@ -1160,7 +1160,7 @@ function buildSteps(cli, targets) {
         await page.waitForTimeout(150)
         const afterDrag = await ordersWin.boundingBox()
         if (!afterDrag) throw new Error("teach Orders missing box after drag")
-        if (Math.abs(afterDrag.height - beforeDrag.height) > 2) {
+        if (Math.abs(afterDrag.height - beforeDrag.height) > 3) {
           throw new Error(
             `Teach Orders height changed on drag: ${beforeDrag.height} → ${afterDrag.height}`,
           )

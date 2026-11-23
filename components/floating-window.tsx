@@ -123,8 +123,7 @@ export function FloatingWindow({
         // Prefer the CSS/budgeted cap — never lock to an uncapped content height.
         lockedHeightRef.current = nextH
       }
-      const locked = lockedHeightRef.current ?? nextH
-      const applied = Math.min(locked, nextH)
+      const applied = lockedHeightRef.current ?? nextH
       setHeightPx((current) => (current === applied ? current : applied))
       const ww = node.offsetWidth || 320
       const wh = nextH
