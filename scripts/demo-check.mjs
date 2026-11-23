@@ -205,8 +205,24 @@ async function closeFloatingProvinceIfOpen(page) {
   await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
 }
 
-async function selectKrakowOnMap(page) {
+/** Stow open parchment papers that commonly cover western/central map clicks. */
+async function stowPapersForMapClick(page) {
   await closeFloatingProvinceIfOpen(page)
+  for (const label of ["Legend", "Orders", "Orders from OHL", "Lesson"]) {
+    const win = page.locator(`[role="dialog"][aria-label="${label}"]`)
+    if (!(await win.isVisible().catch(() => false))) continue
+    const stow = win.getByRole("button", { name: `Stow ${label}` })
+    try {
+      await stow.click({ timeout: 3_000 })
+    } catch {
+      await stow.click({ force: true, timeout: 3_000 }).catch(() => {})
+    }
+    await win.waitFor({ state: "hidden", timeout: 3_000 }).catch(() => {})
+  }
+}
+
+async function selectKrakowOnMap(page) {
+  await stowPapersForMapClick(page)
   if (!(await krakowIsSelected(page))) {
     const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
     if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
@@ -630,7 +646,7 @@ function buildSteps(cli, targets) {
       id: "05-map-click",
       name: "Select province via map click",
       async run({ page }) {
-        await closeFloatingProvinceIfOpen(page)
+        await stowPapersForMapClick(page)
         const point = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
         if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
         await page.mouse.click(point.x, point.y)
