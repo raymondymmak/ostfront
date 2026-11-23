@@ -1385,6 +1385,9 @@ function buildSteps(cli, targets) {
         await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-supply]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 10_000 })
+        // selectKrakowOnMap stows papers — bring Lesson back for reasoning / Resolve.
+        await page.locator("[data-testid=teach-lesson-toggle]").click()
+        await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=teach-reasoning]").fill(
           "Fed corps from Kraków hits harder than the starved heavy stack at Katowice because supply scales attack power.",
         )
