@@ -218,11 +218,16 @@ export const AdvisorMessageSchema = z.object({
   content: z.string().max(2000),
 })
 
-export const AdvisorRequestSchema = z.object({
-  state: GameStateSchema,
-  messages: z.array(AdvisorMessageSchema).max(12).default([]),
-  queuedOrders: z.array(PlayerOrderSchema).max(40).default([]),
-})
+/** Phase 2E coach: server loads state by gameId — client must not send GameState. */
+export const AdvisorRequestSchema = z
+  .object({
+    gameId: z.string().regex(/^[a-f0-9]{32}$/),
+    expectedTurn: z.number().int().min(0),
+    messages: z.array(AdvisorMessageSchema).max(12).default([]),
+    queuedOrders: z.array(PlayerOrderSchema).max(40).default([]),
+    selectedProvinceId: z.string().max(64).nullable().optional(),
+  })
+  .strict()
 
 export const TeachLessonIdSchema = z.enum(["converging-lublin", "supply-tradeoff"])
 

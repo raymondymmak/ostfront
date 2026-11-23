@@ -38,35 +38,24 @@ describe("AdvisorPanel state retention", () => {
     expect(app).toMatch(/!win\.open && win\.id !== "advisor"/)
     expect(app).toMatch(/keepMounted\s*\n\s*x=\{win\.x\}/)
     const paper = readFileSync("components/floating-window.tsx", "utf8")
-    expect(paper).toContain("keepMounted")
-    expect(paper).toContain("data-floating-window-kept")
+    expect(paper).toMatch(/keepMounted/)
+    expect(paper).toMatch(/data-floating-window-kept/)
   })
 
-  it("keeps draft, reply, and suggestion cards after open=false then open=true", async () => {
-    const state = createInitialState("normal")
-    const unitId = state.provinces.find((p) => p.id === "krakow")?.units[0]?.id ?? "g-kra-11"
-
+  it("keeps draft, reply, and highlights after open=false then open=true", async () => {
+    const state = createInitialState()
+    const onHighlights = vi.fn()
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            reply: "Press Kielce from Kraków.",
-            offline: false,
-            suggestions: [
-              {
-                id: "card-keep",
-                label: "Attack Kielce",
-                order: { type: "attack", from: "krakow", target: "kielce", unitIds: [unitId] },
-                companions: [],
-                queue: "new",
-                valid: true,
-                detail: "Favourable odds",
-              },
-            ],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+        Response.json({
+          reply: "Your queue presses Kielce. Engine odds are on the dispatch.",
+          source: "rules",
+          unavailable: false,
+          followUp: "Do you want one column only?",
+          highlights: [{ provinceId: "kielce", uiId: "queued-orders" }],
+          ordersClosed: false,
+        }),
       ),
     )
 
@@ -75,12 +64,14 @@ describe("AdvisorPanel state retention", () => {
         <AdvisorPanel
           open={open}
           embedded
+          gameId={"a".repeat(32)}
           state={state}
           queue={[]}
+          selectedProvinceId={null}
           closed={false}
           epoch={1}
           onClose={() => {}}
-          onAccept={() => ({ ok: true })}
+          onHighlights={onHighlights}
         />,
       )
     }
@@ -89,24 +80,19 @@ describe("AdvisorPanel state retention", () => {
       render(true)
     })
 
-    const starter = host.querySelector(
-      '[data-testid="advisor-starter-where"]',
-    ) as HTMLButtonElement | null
-    const starterBtn =
-      starter ?? (host.querySelector("[data-testid^=advisor-starter-]") as HTMLButtonElement)
+    const starterBtn = host.querySelector("[data-testid^=advisor-starter-]") as HTMLButtonElement
     expect(starterBtn).toBeTruthy()
 
     await act(async () => {
       starterBtn.click()
-      // Flush ask() → fetch → setState.
       await Promise.resolve()
       await Promise.resolve()
     })
 
-    expect(host.querySelector('[data-testid="advisor-reply"]')?.textContent).toContain("Press Kielce")
-    expect(host.querySelector('[data-testid="advisor-suggestion"]')?.textContent).toContain(
-      "Attack Kielce",
-    )
+    expect(host.querySelector('[data-testid="advisor-reply"]')?.textContent).toContain("Kielce")
+    expect(host.querySelector('[data-testid="advisor-suggestion"]')).toBeNull()
+    expect(host.querySelector('[data-testid="advisor-follow-up"]')?.textContent).toContain("column")
+    expect(onHighlights).toHaveBeenCalled()
 
     await act(async () => {
       const draft = host.querySelector('[data-testid="advisor-input"]') as HTMLTextAreaElement
@@ -116,7 +102,6 @@ describe("AdvisorPanel state retention", () => {
       "And then Lemberg?",
     )
 
-    // Hide (phone tab switch / desktop file) then show again — same React instance.
     await act(async () => {
       render(false)
     })
@@ -126,10 +111,8 @@ describe("AdvisorPanel state retention", () => {
       render(true)
     })
 
-    expect(host.querySelector('[data-testid="advisor-reply"]')?.textContent).toContain("Press Kielce")
-    expect(host.querySelector('[data-testid="advisor-suggestion"]')?.textContent).toContain(
-      "Attack Kielce",
-    )
+    expect(host.querySelector('[data-testid="advisor-reply"]')?.textContent).toContain("Kielce")
+    expect(host.querySelector('[data-testid="advisor-suggestion"]')).toBeNull()
     expect((host.querySelector('[data-testid="advisor-input"]') as HTMLTextAreaElement).value).toBe(
       "And then Lemberg?",
     )

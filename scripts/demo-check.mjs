@@ -1044,41 +1044,38 @@ function buildSteps(cli, targets) {
     },
     {
       id: "15-advisor-starter",
-      name: "Ask Falkenhayn starter (/api/advisor)",
+      name: "Ask Falkenhayn coach starter (/api/advisor)",
       async run({ page }) {
         await restoreTrayTab(page, "advisor-toggle")
         await page.locator("[data-testid=advisor-panel]").waitFor({ state: "visible" })
-        await page.locator("[data-testid=advisor-starter-weakest]").click()
+        await page.locator("[data-testid=advisor-starter-plan]").click()
         const reply = page.locator("[data-testid=advisor-reply]").last()
         await reply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
         const text = (await reply.textContent()) ?? ""
-        if (/unavailable offline/i.test(text)) {
+        if (/unavailable offline/i.test(text) && !/map|dispatch|queue|chronicle/i.test(text)) {
           throw new Error("Advisor offline fallback (no model key).")
         }
         if (!text.trim()) throw new Error("Empty advisor reply.")
+        if (await page.locator("[data-testid=advisor-suggestion]").count()) {
+          throw new Error("Coach must not show order suggestion cards.")
+        }
       },
     },
     {
-      id: "16-advisor-send-accept",
-      name: "Typed advisor question, Send, Accept suggestion",
+      id: "16-advisor-send-coach",
+      name: "Typed coach question, Send, no Accept cards",
       async run({ page, log }) {
-        const prompts = [
-          "What should I do this fortnight?",
-          "Name one fresh order I have not already queued—do not repeat fortify, recruit, or moves now in my queue.",
-        ]
-        /** @type {string | undefined} */
-        let lastReport
-        for (let attempt = 0; attempt < prompts.length; attempt++) {
-          await ensureAdvisorPanelOpen(page)
-          const container = await sendAdvisorQuestion(page, prompts[attempt])
-          const outcome = await acceptFirstValidAdvisorCard(page, container)
-          lastReport = outcome.report
-          log(`step 16 attempt ${attempt + 1}: ${lastReport}`)
-          if (outcome.ok) return
-          if (attempt < prompts.length - 1) continue
-          const message = `advisor returned no valid cards (${lastReport})`
-          if (cli.allowFallback) return `skipped: ${message}`
-          throw new Error(message)
+        await ensureAdvisorPanelOpen(page)
+        const container = await sendAdvisorQuestion(page, "What do you make of my queued plan?")
+        const reply = container.locator("[data-testid=advisor-reply]").last()
+        await reply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
+        const text = ((await reply.textContent()) ?? "").trim()
+        log(`step 16 coach reply length=${text.length}`)
+        if (!text) throw new Error("Empty coach reply.")
+        const cards = await container.locator("[data-testid=advisor-suggestion]").count()
+        if (cards > 0) throw new Error(`Coach returned ${cards} forbidden suggestion card(s).`)
+        if (await page.locator("[data-testid=advisor-accept]").count()) {
+          throw new Error("Coach must not expose Accept.")
         }
       },
     },

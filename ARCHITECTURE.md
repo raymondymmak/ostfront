@@ -165,28 +165,30 @@ Legacy Blob campaigns are not migrated.
 
 ---
 
-## Advisor flow (`POST /api/advisor`)
+## Advisor / campaign coach (`POST /api/advisor`)
 
-`components/advisor-panel.tsx` sends chat history, **full client `GameState`**, and queued orders. Route: `app/api/advisor/route.ts`.
+Phase **2E round 1** (ADR 015). `components/advisor-panel.tsx` sends `{ gameId, expectedTurn, messages, queuedOrders, selectedProvinceId? }` only — **no** client `GameState`. Route: `app/api/advisor/route.ts`.
 
-Same turn guard as turn (body limit, rate, origin/token) but **no** campaign storage check.
+Same turn guard as turn (body limit, rate, origin/token) **plus** campaign storage: `loadStoredCampaign` → 404 `unknown_game`; `expectedTurn` mismatch → 409 `stale_turn`; `withServerSeed` for the coach dispatch. Seed never returns to the client.
 
-`lib/gm/advisor.ts` `advise()`:
+`lib/gm/campaign-coach.ts` `coachCampaign()`:
 
-- Rebinds topology, builds a “dispatch” from engine previews (`engagementOdds`, supply, objectives).
-- If `llmConfigured()`, calls the model; else rules-only fallback (`source: "rules"`, `unavailable: true`).
-- Suggestions are validated with the same helpers as real orders; nothing is applied until the player accepts into the queue.
+- Builds the engine dispatch via `buildSituation` / `renderSituation` (`lib/gm/advisor.ts`) plus chronicle from `save.log` (`BattleFacts`, routine lines).
+- Optional LLM (`resolveLlmModels` cheap path); else rules fallback. Schema **forbids** `suggestions` / order objects.
+- Returns `{ reply, followUp, highlights, source, unavailable, ordersClosed }`. Highlights are province / `uiId` pointers; `game-app` maps them to `WarMap` `coachHighlightIds`.
 
-Advisor does **not** persist chat on the server in the campaign store.
+Coach does **not** persist chat on the server (sessionStorage only).
 
 ```mermaid
 flowchart LR
-  A["advisor-panel"] -->|"POST state + messages"| B["/api/advisor"]
-  B --> C["advise"]
-  C --> D["engine previews"]
+  A["advisor-panel"] -->|"POST gameId + messages + queue"| B["/api/advisor"]
+  B --> S["loadStoredCampaign"]
+  S --> C["coachCampaign"]
+  C --> D["engine dispatch + chronicle"]
   C --> E["optional LLM"]
-  C --> F["AdvisorResponse JSON"]
+  C --> F["coach JSON + highlights"]
   F --> A
+  F --> M["WarMap coachHighlightIds"]
 ```
 
 ---

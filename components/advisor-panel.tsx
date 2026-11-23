@@ -2,16 +2,9 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import {
-  advisorCardAction,
-  type AdvisorCard,
-  type AdvisorChatMessage,
-  type AdvisorOrder,
-  type AdvisorResponse,
-} from "@/lib/gm/advisor-types"
-import { refreshAdvisorCards } from "@/lib/gm/advisor-cards"
-import { advisorOrdersQueueLineTexts, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
-import { snapshotAdvisorCardOrders } from "@/lib/queue-snapshot"
+import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
+import type { CampaignCoachResponse, CoachHighlight } from "@/lib/gm/campaign-coach"
+import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
 
 const STORAGE_KEY = "ostfront-advisor-v1"
@@ -28,53 +21,60 @@ function readHistory(): ChatTurn[] {
     return stored
       .filter((item) => item && (item.role === "user" || item.role === "advisor") && typeof item.content === "string")
       .slice(-HISTORY_KEEP)
-      .map((item) => ({ role: item.role, content: item.content }))
+      .map((item) => ({
+        role: item.role,
+        content: item.content,
+        followUp: typeof item.followUp === "string" ? item.followUp : null,
+        highlights: Array.isArray(item.highlights) ? item.highlights : undefined,
+      }))
   } catch {
     return []
   }
 }
 
 const STARTERS = [
-  { id: "weakest", label: "Where is the Russian line weakest?" },
-  { id: "fortnight", label: "What should I do this fortnight?" },
+  { id: "plan", label: "What do you make of my queued plan?" },
+  { id: "explain", label: "Explain the selected province." },
+  { id: "review", label: "Review the last battle from the chronicle." },
 ] as const
 
 type ChatTurn = AdvisorChatMessage & {
-  suggestions?: AdvisorCard[]
+  followUp?: string | null
+  highlights?: CoachHighlight[]
 }
 
 type AdvisorPanelProps = {
   open: boolean
+  gameId: string | undefined
   state: GameState
   queue: QueuedOrder[]
+  selectedProvinceId: string | null
   closed: boolean
   epoch: number
   onClose: () => void
-  onAccept: (orders: AdvisorOrder[], mode: "accept" | "override") => { ok: boolean; reason?: string }
+  onHighlights: (highlights: CoachHighlight[]) => void
   /** When true, fill a floating window (no absolute map-corner chrome). */
   embedded?: boolean
 }
 
 export function AdvisorPanel({
   open,
+  gameId,
   state,
   queue,
+  selectedProvinceId,
   closed,
   epoch,
   onClose,
-  onAccept,
+  onHighlights,
   embedded = false,
 }: AdvisorPanelProps) {
   const [messages, setMessages] = useState<ChatTurn[]>(readHistory)
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [offline, setOffline] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
   const thread = useRef<HTMLDivElement>(null)
   const seenEpoch = useRef<number | null>(null)
-  const seenTurn = useRef(state.turn)
-  const seenOver = useRef(Boolean(state.result))
-  const over = Boolean(state.result)
 
   useEffect(() => {
     if (seenEpoch.current === null) {
@@ -86,30 +86,21 @@ export function AdvisorPanel({
     setMessages([])
     setDraft("")
     setOffline(false)
-    setNotice(null)
+    onHighlights([])
     try {
       window.sessionStorage.removeItem(STORAGE_KEY)
     } catch {
       /* private mode */
     }
-  }, [epoch])
-
-  useEffect(() => {
-    if (seenTurn.current === state.turn && seenOver.current === over) return
-    seenTurn.current = state.turn
-    seenOver.current = over
-    setMessages((current) =>
-      current.map((message) => (message.suggestions ? { ...message, suggestions: undefined } : message)),
-    )
-  }, [state.turn, over])
-
-  const queuedOrders = queuedToPlayerOrders(queue)
+  }, [epoch, onHighlights])
 
   useEffect(() => {
     try {
       const slim = messages.slice(-HISTORY_KEEP).map((message) => ({
         role: message.role,
         content: message.content,
+        followUp: message.followUp ?? null,
+        highlights: message.highlights,
       }))
       window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(slim))
     } catch {
@@ -128,6 +119,19 @@ export function AdvisorPanel({
   async function ask(text: string) {
     const question = text.trim()
     if (!question || busy) return
+    if (!gameId) {
+      setMessages((current) =>
+        [
+          ...current,
+          { role: "user" as const, content: question },
+          {
+            role: "advisor" as const,
+            content: "Start a campaign before you ask the chief of staff.",
+          },
+        ].slice(-HISTORY_KEEP),
+      )
+      return
+    }
     const prior: AdvisorChatMessage[] = messages.map((message) => ({
       role: message.role,
       content: message.content,
@@ -136,28 +140,38 @@ export function AdvisorPanel({
     const history = [...prior, userTurn].slice(-HISTORY_SEND)
     setMessages((current) => [...current, userTurn].slice(-HISTORY_KEEP))
     setDraft("")
-    setNotice(null)
     setBusy(true)
     try {
       const response = await fetch("/api/advisor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          state,
+          gameId,
+          expectedTurn: state.turn,
           messages: history,
           queuedOrders: queuedToPlayerOrders(queue),
+          selectedProvinceId,
         }),
         signal: AbortSignal.timeout(25_000),
       })
-      const payload = (await response.json()) as Partial<AdvisorResponse> & { error?: string }
+      const payload = (await response.json()) as Partial<CampaignCoachResponse> & {
+        error?: string
+        suggestions?: unknown
+      }
       if (!response.ok || typeof payload.reply !== "string") {
         throw new Error(
           response.status === 429
             ? "The chief of staff has too many dispatches. Wait a minute."
-            : "The chief of staff is unavailable offline.",
+            : response.status === 404
+              ? "No campaign was found. Start a new campaign."
+              : "The chief of staff is unavailable offline.",
         )
       }
-      const suggestions = over || payload.ordersClosed ? [] : payload.suggestions ?? []
+      if ("suggestions" in payload && payload.suggestions != null) {
+        console.warn("[ostfront] coach returned forbidden suggestions; ignored")
+      }
+      const highlights = Array.isArray(payload.highlights) ? payload.highlights : []
+      onHighlights(highlights)
       setOffline(Boolean(payload.unavailable))
       setMessages((current) =>
         [
@@ -165,52 +179,26 @@ export function AdvisorPanel({
           {
             role: "advisor" as const,
             content: payload.reply as string,
-            suggestions,
+            followUp: payload.followUp ?? null,
+            highlights,
           },
         ].slice(-HISTORY_KEEP),
       )
-    } catch {
+    } catch (error) {
       setOffline(true)
+      onHighlights([])
       setMessages((current) =>
         [
           ...current,
           {
             role: "advisor" as const,
-            content: "The chief of staff is unavailable offline.",
+            content: error instanceof Error ? error.message : "The chief of staff is unavailable offline.",
           },
         ].slice(-HISTORY_KEEP),
       )
     } finally {
       setBusy(false)
     }
-  }
-
-  function fileCard(messageIndex: number, card: AdvisorCard, mode: "accept" | "override") {
-    const orders = [card.order, ...(card.companions ?? [])]
-    const result = onAccept(orders, mode)
-    if (result.ok) {
-      setNotice(null)
-      dismiss(messageIndex, card.id)
-      return
-    }
-    setNotice(result.reason ?? "Nothing was filed.")
-    setMessages((current) =>
-      current.map((message, index) =>
-        index === messageIndex && message.suggestions
-          ? { ...message, suggestions: refreshAdvisorCards(state, message.suggestions, queuedOrders) }
-          : message,
-      ),
-    )
-  }
-
-  function dismiss(messageIndex: number, cardId: string) {
-    setMessages((current) =>
-      current.map((message, index) =>
-        index === messageIndex
-          ? { ...message, suggestions: message.suggestions?.filter((card) => card.id !== cardId) }
-          : message,
-      ),
-    )
   }
 
   const shellClass = embedded
@@ -224,7 +212,7 @@ export function AdvisorPanel({
           <p className="text-[10px] tracking-[0.14em] text-primary uppercase">OHL</p>
           <h2 className="font-display text-lg leading-none">Erich von Falkenhayn</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Chief of the General Staff
+            Campaign coach
             {offline ? " · offline" : ""}
           </p>
         </div>
@@ -234,115 +222,32 @@ export function AdvisorPanel({
           </Button>
         )}
       </header>
-      {notice && (
-        <p className="border-b border-leather/30 px-3 py-2 text-xs text-ink" role="status" data-testid="advisor-notice">
-          {notice}
-        </p>
-      )}
       <div ref={thread} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3" aria-live="polite">
         {messages.length === 0 && (
           <p className="text-sm text-ink/80">
-            May to July 1915. I read the map the engine gives me. I do not issue orders, and I have not seen the Russian ones.
+            Ask about your queued plan, a selected province, or a chronicle battle. I do not issue orders.
           </p>
         )}
         {messages.map((message, index) => (
-          <div
-            key={`${message.role}-${index}`}
-            className="flex flex-col gap-2"
-            data-testid="advisor-exchange"
-          >
+          <div key={`${message.role}-${index}`} className="flex flex-col gap-1.5" data-testid="advisor-exchange">
             <p
               className={
-                message.role === "user"
-                  ? "text-sm text-ink/75"
-                  : "text-sm leading-6 whitespace-pre-wrap"
+                message.role === "user" ? "text-sm text-ink/75" : "text-sm leading-6 whitespace-pre-wrap"
               }
               data-testid={message.role === "advisor" ? "advisor-reply" : undefined}
             >
               {message.role === "user" ? `You. ${message.content}` : message.content}
             </p>
-            {refreshAdvisorCards(state, message.suggestions ?? [], queuedOrders).map((card) => {
-              const action = advisorCardAction(card)
-              const queueLineTexts = advisorOrdersQueueLineTexts(state, [
-                card.order,
-                ...(card.companions ?? []),
-              ])
-              const orderSnapshots = snapshotAdvisorCardOrders(state, [
-                card.order,
-                ...(card.companions ?? []),
-              ])
-              return (
-              <article
-                key={card.id}
-                className="rounded-md border border-leather/35 bg-paper-deep p-2.5"
-                data-testid="advisor-suggestion"
-                data-advisor-state={card.queue}
-                data-advisor-queue-lines={JSON.stringify(queueLineTexts)}
-                data-advisor-orders={JSON.stringify(orderSnapshots)}
-              >
-                <p className="text-sm">{card.label}</p>
-                {card.queue === "duplicate" && (
-                  <p className="mt-1 text-xs text-ink/75" data-testid="advisor-queue">
-                    Already queued
-                  </p>
-                )}
-                {card.queue === "conflict" && card.conflict && (
-                  <p className="mt-1 text-xs text-ink/75" data-testid="advisor-queue">
-                    Conflicts with: {card.conflict}
-                  </p>
-                )}
-                {card.valid && card.detail && (
-                  <p className="mt-1 text-xs text-ink/75" data-testid="advisor-odds">
-                    {card.detail}
-                  </p>
-                )}
-                {card.depotWarning && (
-                  <p className="mt-1 text-xs text-primary" data-testid="advisor-depot-warning">
-                    {card.depotWarning}
-                  </p>
-                )}
-                {!card.valid && card.note && (
-                  <p className="mt-1 text-xs text-destructive">The engine rejects this. {card.note}</p>
-                )}
-                <div className="mt-2 flex gap-2">
-                  {action === "accept" && !closed && (
-                    <Button
-                      type="button"
-                      size="xs"
-                      data-testid="advisor-accept"
-                      onClick={() => fileCard(index, card, "accept")}
-                    >
-                      {card.companions?.length ? "Accept all" : "Accept"}
-                    </Button>
-                  )}
-                  {action === "override" && !closed && (
-                    <Button
-                      type="button"
-                      size="xs"
-                      data-testid="advisor-override"
-                      onClick={() => fileCard(index, card, "override")}
-                    >
-                      Override
-                    </Button>
-                  )}
-                  {action === "disabled" && !closed && (
-                    <Button type="button" size="xs" data-testid="advisor-accept" disabled>
-                      Accept
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    data-testid="advisor-dismiss"
-                    onClick={() => dismiss(index, card.id)}
-                  >
-                    Dismiss
-                  </Button>
-                </div>
-              </article>
-              )
-            })}
+            {message.role === "advisor" && message.followUp ? (
+              <p className="text-xs text-muted-foreground" data-testid="advisor-follow-up">
+                {message.followUp}
+              </p>
+            ) : null}
+            {message.role === "advisor" && message.highlights?.length ? (
+              <p className="sr-only" data-testid="advisor-highlights">
+                {JSON.stringify(message.highlights)}
+              </p>
+            ) : null}
           </div>
         ))}
         {busy && (
@@ -375,9 +280,7 @@ export function AdvisorPanel({
         }}
       >
         {closed && (
-          <p className="text-xs text-muted-foreground">
-            The campaign is over. I can still read the final map. Suggestions are closed.
-          </p>
+          <p className="text-xs text-muted-foreground">The campaign is over. I can still read the final map and chronicle.</p>
         )}
         <label className="sr-only" htmlFor="advisor-draft">
           Message to Falkenhayn
