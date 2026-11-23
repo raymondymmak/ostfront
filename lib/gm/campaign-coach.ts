@@ -236,9 +236,21 @@ export function splitCoachSentences(text: string): string[] {
   return parts
 }
 
+/** Drop raw supply ledger pairs (e.g. "159 against 56") unless left alone after scrubbing. */
+export function scrubCoachLedgerNoise(reply: string): string {
+  let out = reply
+  out = out.replace(
+    /\s*(?:,|;|:)?\s*(?:and\s+)?(?:(?:the|our|their)\s+)?over[- ]supply(?:\s+of|\s+line(?:\s+reads)?)?\s+\d+\s+against\s+(?:their\s+)?\d+/gi,
+    "",
+  )
+  out = out.replace(/\b\d{2,3}\s+against\s+\d{2,3}\b/g, "")
+  out = out.replace(/\s{2,}/g, " ").replace(/\s+([,;:.!?])/g, "$1").trim()
+  return out
+}
+
 /** Enforce 2–3 short sentences (and a hard character cap) on player-facing coach prose. */
 export function capCoachReply(reply: string): string {
-  const cleaned = reply.replace(/\s+/g, " ").trim()
+  const cleaned = scrubCoachLedgerNoise(reply.replace(/\s+/g, " ").trim())
   if (!cleaned) return cleaned
   const kept = splitCoachSentences(cleaned).slice(0, COACH_MAX_SENTENCES)
   let out = kept.join(" ").trim()

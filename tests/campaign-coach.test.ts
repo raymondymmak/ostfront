@@ -17,6 +17,7 @@ import {
   queuedAttackPreview,
   renderChronicle,
   sanitizeHighlights,
+  splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
 import { staffMap } from "@/lib/gm/advisor"
 import { engagementOdds } from "@/lib/engine/turn"
@@ -357,9 +358,17 @@ describe("campaign coach", () => {
     const long =
       "One. Two. Three. Four more that should go. Five should also go. And a sixth."
     const capped = capCoachReply(long)
-    const sentences = capped.match(/[^.!?]+[.!?]+/g) ?? []
-    expect(sentences.length).toBe(3)
+    expect(splitCoachSentences(capped)).toHaveLength(3)
     expect(capped).not.toMatch(/Four more/)
+  })
+
+  it("scrubs supply ledger pairs from coach replies", () => {
+    const noisy =
+      "You took Kielce — the chronicle shows our over-supply of 159 against their 56 there. What did you expect?"
+    const cleaned = capCoachReply(noisy)
+    expect(cleaned).not.toMatch(/159 against 56/)
+    expect(cleaned).toMatch(/You took Kielce/)
+    expect(cleaned).toMatch(/What did you expect/)
   })
 
   it("quotes resolution-equivalent odds (staffMap), not higher pre-supply card odds", async () => {
