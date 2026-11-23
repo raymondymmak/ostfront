@@ -256,7 +256,7 @@ export function scrubCoachLedgerNoise(reply: string): string {
   const out: string[] = []
   for (const sentence of splitCoachSentences(reply)) {
     const before = sentence
-    let cleaned = sentence
+    const cleaned = sentence
       .replace(
         /\s*(?:,|;|:)?\s*(?:and\s+)?(?:(?:the|our|their)\s+)?over[- ]supply(?:\s+of|\s+line(?:\s+reads)?)?\s+\d+\s+against\s+(?:their\s+)?\d+/gi,
         "",
@@ -380,7 +380,7 @@ export function fitCoachReplyLength(reply: string, maxChars = COACH_REPLY_MAX_CH
   while (sentences.length > 1 && sentences.join(" ").length > maxChars) {
     sentences = sentences.slice(0, -1)
   }
-  let out = sentences.join(" ").trim()
+  const out = sentences.join(" ").trim()
   if (out.length <= maxChars) return out
   // One long sentence: keep a complete leading clause if possible, else word-boundary ellipsis.
   const clauseCut = out.search(/,\s+(?:while|though|although|and|but)\b/i)
