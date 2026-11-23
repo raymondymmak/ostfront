@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
 import {
@@ -53,7 +53,9 @@ export function SvgMap({
   const svgRef = useRef<SVGSVGElement>(null)
   const [originId, setOriginId] = useState<string | null>(null)
   const originIdRef = useRef<string | null>(null)
-  originIdRef.current = originId
+  useEffect(() => {
+    originIdRef.current = originId
+  }, [originId])
   const [preview, setPreview] = useState<[number, number] | null>(null)
   const [hoverTargetId, setHoverTargetId] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<string | null>(null)
