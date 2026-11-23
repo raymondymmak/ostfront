@@ -7,14 +7,19 @@ import {
   withServerSeed,
 } from "@/lib/campaign/store"
 import {
+  capCoachReply,
   coachCampaign,
+  extractPlayerPrediction,
   formatBattleForCoach,
   formatBattleReviewForPlayer,
   latestBattleFacts,
+  playerStatedIntent,
   queuedAttackPreview,
   renderChronicle,
   sanitizeHighlights,
 } from "@/lib/gm/campaign-coach"
+import { staffMap } from "@/lib/gm/advisor"
+import { engagementOdds } from "@/lib/engine/turn"
 import type { BattleFacts, TurnRecord } from "@/lib/types"
 import { playTurn } from "@/lib/gm"
 import { createInitialState } from "@/lib/data/scenario"
@@ -121,10 +126,10 @@ describe("campaign coach", () => {
       messages: [{ role: "user", content: "Review the last battle from the chronicle." }],
       queuedOrders: [],
     })
-    expect(review.reply).toMatch(/fortnight 1/i)
+    expect(review.reply).toMatch(/What did you expect at Kielce/i)
     expect(review.reply).toMatch(/Kielce/i)
     expect(review.reply).not.toMatch(/\b(attacker|defender|weWon|oursLost)=/)
-    expect(review.reply).not.toMatch(/unavailable offline/i)
+    expect(review.reply).not.toMatch(/unavailable offline|159 against/)
   })
 
   it("sanitizes highlights to catalog provinces and known ui ids", () => {
@@ -154,10 +159,9 @@ describe("campaign coach", () => {
       queuedOrders: queued,
       selectedProvinceId: "krakow",
     })
-    expect(result.reply.toLowerCase()).toMatch(/queue|kielce|plan|arrow/)
-    expect(result.highlights.some((item) => item.provinceId === "kielce" || item.uiId === "queued-orders")).toBe(
-      true,
-    )
+    expect(result.reply.toLowerCase()).toMatch(/kielce|expect|odds/)
+    expect(result.highlights).toHaveLength(1)
+    expect(result.highlights[0]?.provinceId).toBe("kielce")
   })
 
   it("labels ours/theirs from the Central Powers view when Russia attacked", () => {
@@ -196,9 +200,9 @@ describe("campaign coach", () => {
     const summary =
       "Attack from Kraków into Kielce succeeds, odds 5.48 (roll 6). Kielce passes to the Central Powers. The remnants retreat to Warsaw, shaken. Losses — attackers 7, defenders 30."
     const line = formatBattleReviewForPlayer(0, "2 May 1915", battle, summary)
-    expect(line).toMatch(/In fortnight 1 \(2 May 1915\) our assault from Kraków took Kielce at 5\.5:1 odds \(roll 6\)/i)
-    expect(line).toContain("We lost 7, they lost 30")
-    expect(line).toMatch(/remnants fell back to Warsaw/i)
+    expect(line).toMatch(/In fortnight 1 \(2 May 1915\) our assault from Kraków took Kielce at 5\.5:1 \(roll 6\)/i)
+    expect(line).toContain("we lost 7, they lost 30")
+    expect(line).not.toMatch(/159 against 56|remnants fell back/)
     expect(line).not.toMatch(/\b(attacker|defender|weWon|oursLost|theirsLost|kind)=/)
     expect(line).not.toMatch(/\.\./)
   })
@@ -268,14 +272,14 @@ describe("campaign coach", () => {
       queuedOrders: [],
     })
     expect(result.reply).toMatch(/Lublin/i)
-    expect(result.reply).toMatch(/fortnight 3/i)
+    expect(result.reply).toMatch(/What did you expect at Lublin/i)
     expect(result.reply).not.toMatch(/Kielce/i)
     expect(result.reply).not.toMatch(/\b(attacker|defender|weWon|oursLost|theirsLost)=/)
     expect(result.reply).not.toMatch(/unavailable offline/i)
-    expect(result.highlights.some((item) => item.provinceId === "lublin")).toBe(true)
+    expect(result.highlights).toEqual([{ provinceId: "lublin" }])
   })
 
-  it("describes queued plans in plain prose without offline disclaimer or double periods", async () => {
+  it("asks intent first on a queued plan, with one odds fact and one highlight", async () => {
     const state = createInitialState()
     const krakow = state.provinces.find((province) => province.id === "krakow")!
     const unitIds = krakow.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
@@ -289,36 +293,111 @@ describe("campaign coach", () => {
       queuedOrders: queued,
       selectedProvinceId: "krakow",
     })
-    expect(result.reply).toMatch(/from Kraków into Kielce/i)
-    expect(result.reply).toMatch(/odds about [\d.]+:1 before the dice/i)
-    expect(result.reply).not.toMatch(/Ordered:/)
-    expect(result.reply).not.toMatch(/unavailable offline|not from the wire/i)
+    expect(playerStatedIntent([{ role: "user", content: "What do you make of my queued plan?" }])).toBe(false)
+    expect(result.reply).toMatch(/What do you expect Kielce/i)
+    expect(result.reply).toMatch(/odds about [\d.]+:1 as the engine resolves this fortnight/i)
+    expect(result.reply).not.toMatch(/Ordered:|unavailable offline|159 against/)
     expect(result.reply).not.toMatch(/\.\./)
-    expect(result.reply).not.toMatch(/\b\w+=\w+/)
+    expect(result.highlights).toEqual([{ provinceId: "kielce" }])
+    const sentences = result.reply.match(/[^.!?]+[.!?]+/g) ?? []
+    expect(sentences.length).toBeLessThanOrEqual(3)
   })
 
-  it("names every queued attack target and non-attack orders in the fallback plan reply", async () => {
+  it("compares a stated prediction to the chronicle result on review", async () => {
+    const late: TurnRecord = {
+      turn: 0,
+      date: "2 May 1915",
+      narration: "",
+      diplomacy: [],
+      resolutions: [
+        {
+          proposal: { type: "attack", from: "krakow", target: "kielce", units: ["g-kra-11"] },
+          status: "applied",
+          summary:
+            "Attack from Kraków into Kielce succeeds, odds 5.48 (roll 6). Kielce passes to the Central Powers. Losses — attackers 7, defenders 30.",
+          battle: {
+            targetId: "kielce",
+            attacker: "central",
+            defender: "russia",
+            kind: "assault",
+            prongs: 1,
+            origins: ["krakow"],
+            attackerLoss: 7,
+            defenderLoss: 30,
+            encircled: false,
+            attackerWon: true,
+          },
+        },
+      ],
+      events: [],
+      controlChanges: [],
+      logistics: [],
+      notes: [],
+      gmSource: "mock",
+    }
+    const messages = [
+      { role: "user" as const, content: "I expect to take Kielce easily this fortnight." },
+      { role: "user" as const, content: "Review the last battle from the chronicle." },
+    ]
+    expect(extractPlayerPrediction(messages)).toMatch(/expect to take Kielce/i)
+    const result = await coachCampaign({
+      state: createInitialState(),
+      log: [late],
+      messages,
+      queuedOrders: [],
+    })
+    expect(result.reply).toMatch(/You expected/i)
+    expect(result.reply).toMatch(/took Kielce/i)
+    expect(result.reply).toMatch(/we lost 7, they lost 30/i)
+    expect(result.reply).not.toMatch(/159 against 56/)
+    expect(result.highlights).toEqual([{ provinceId: "kielce" }])
+  })
+
+  it("caps long coach replies to three sentences", () => {
+    const long =
+      "One. Two. Three. Four more that should go. Five should also go. And a sixth."
+    const capped = capCoachReply(long)
+    const sentences = capped.match(/[^.!?]+[.!?]+/g) ?? []
+    expect(sentences.length).toBe(3)
+    expect(capped).not.toMatch(/Four more/)
+  })
+
+  it("quotes resolution-equivalent odds (staffMap), not higher pre-supply card odds", async () => {
     const state = createInitialState()
     const krakow = state.provinces.find((province) => province.id === "krakow")!
-    const units = krakow.units.filter((unit) => unit.faction === "central")
-    expect(units.length).toBeGreaterThan(1)
+    const unitIds = krakow.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
     const queued: PlayerOrder[] = [
-      { type: "attack", from: "krakow", target: "kielce", unitIds: [units[0]!.id] },
-      { type: "attack", from: "krakow", target: "lublin", unitIds: [units[1]!.id] },
-      { type: "fortify", provinceId: "krakow" },
+      { type: "attack", from: "krakow", target: "kielce", unitIds },
     ]
+
+    const resolvedMap = staffMap(state)
+    const resolvedPreview = engagementOdds(resolvedMap, "krakow", "kielce", unitIds)
+    expect(resolvedPreview).toBeTruthy()
+
+    // Order-panel style preview that skips the resolve-time staffMap path and inflates launch supply.
+    const cardState = structuredClone(state)
+    const cardFrom = cardState.provinces.find((province) => province.id === "krakow")!
+    cardFrom.supply = 100
+    cardFrom.networkSupply = 100
+    const cardPreview = engagementOdds(cardState, "krakow", "kielce", unitIds)
+    expect(cardPreview).toBeTruthy()
+    expect(cardPreview!.ratio).toBeGreaterThan(resolvedPreview!.ratio)
+
+    const coachPreview = queuedAttackPreview(resolvedMap, queued)
+    expect(coachPreview?.odds).toMatch(/as the engine resolves this fortnight/)
+    const ratioMatch = coachPreview?.odds?.match(/odds about ([\d.]+):1/)
+    expect(ratioMatch).toBeTruthy()
+    const quoted = Number(ratioMatch![1])
+    expect(quoted).toBeCloseTo(Math.round(resolvedPreview!.ratio * 10) / 10, 5)
+    expect(quoted).toBeLessThan(Math.round(cardPreview!.ratio * 10) / 10)
+
     const result = await coachCampaign({
       state,
       log: [],
       messages: [{ role: "user", content: "What do you make of my queued plan?" }],
       queuedOrders: queued,
-      selectedProvinceId: "krakow",
     })
-    expect(result.reply).toMatch(/Kielce/i)
-    expect(result.reply).toMatch(/Lublin/i)
-    expect(result.reply).toMatch(/fortify Kraków/i)
-    expect(result.highlights.some((item) => item.provinceId === "kielce")).toBe(true)
-    expect(result.highlights.some((item) => item.provinceId === "lublin")).toBe(true)
+    expect(result.reply).toContain(`odds about ${quoted}:1 as the engine resolves this fortnight`)
   })
 
   it("does not attach unrelated combat odds when the queue has no attack", () => {

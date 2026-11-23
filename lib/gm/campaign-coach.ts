@@ -22,7 +22,9 @@ import type { BattleFacts, GameState, PlayerOrder, TurnRecord } from "@/lib/type
 import { z } from "zod"
 
 const COACH_TIMEOUT_MS = 20_000
-const COACH_MAX_TOKENS = 2_048
+const COACH_MAX_TOKENS = 512
+const COACH_MAX_SENTENCES = 3
+const COACH_REPLY_MAX_CHARS = 420
 
 /** Campaign UI ids the coach may point at (never screen pixels). */
 export const CAMPAIGN_COACH_UI_IDS = [
@@ -57,8 +59,9 @@ export type CampaignCoachResponse = {
 
 const CoachJsonSchema = z
   .object({
-    reply: z.string().min(1).max(2000),
-    followUp: z.string().max(400).nullable().optional(),
+    // Schema allows a little headroom; capCoachReply enforces 2–3 sentences / char cap.
+    reply: z.string().min(1).max(800),
+    followUp: z.string().max(160).nullable().optional(),
     highlights: z
       .array(
         z.object({
@@ -66,7 +69,7 @@ const CoachJsonSchema = z
           uiId: z.string().optional(),
         }),
       )
-      .max(6)
+      .max(1)
       .optional(),
   })
   .strict()
@@ -77,15 +80,19 @@ You do NOT issue orders. You never return suggestions, Accept cards, or order JS
 
 You know only the DISPATCH in the user message: engine map facts, the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say the map or chronicle does not show it.
 
-Accuracy rules:
-- Odds, supply figures, strengths, and battle results must come from the DISPATCH only. Never invent ratios or outcomes.
-- Post-battle questions must use CHRONICLE / BattleFacts lines, not a generic debrief.
-- Prefer pointing with highlights: provinceId from the catalog, or uiId from the allowed interface list in the DISPATCH. Never invent screen coordinates.
+Socratic style (strict):
+- At most 2–3 short sentences in "reply". Never dump a full staff brief.
+- If the player has not said their intent or expectation, open with one short question about it (e.g. "What do you expect Kielce to do for the Lemberg push?"), then give exactly one engine fact as evidence.
+- Return exactly one highlight that matches that evidence (one provinceId or one uiId). Never invent screen coordinates.
+- Post-battle: ask what they predicted. If they already stated a prediction in CONVERSATION, compare it to the chronicle result (odds, roll, losses, who holds the province). Do not recite ledger noise such as raw supply pairs (e.g. "159 against 56") unless that supply fact directly explains the outcome.
+- Odds in the DISPATCH are resolution-equivalent (after supply decay/capacity for this fortnight). Quote those figures; do not invent higher card-style odds.
 
-Speak in short staff prose, present tense, two to five sentences. Optional followUp is one short question or null.
+Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE. Never invent ratios.
+
+Optional followUp is one short question or null (prefer putting the intent question in "reply" itself).
 
 Return one JSON object and no markdown:
-{"reply":"...","followUp":null,"highlights":[{"provinceId":"kielce"},{"uiId":"tab-orders"}]}
+{"reply":"What do you expect Kielce to do for the Lemberg push? The engine rates that column at about 4.7:1 as it resolves this fortnight.","followUp":null,"highlights":[{"provinceId":"kielce"}]}
 
 Do not include a suggestions key. Do not include order objects.`
 
@@ -106,11 +113,11 @@ export async function coachCampaign(input: {
 
   if (!llmConfigured() && !fixtureEnabled()) {
     return {
-      reply: finishAdvisorReply(rules.reply),
+      reply: finishAdvisorReply(capCoachReply(rules.reply)),
       source: "fallback",
       unavailable: true,
       followUp: rules.followUp,
-      highlights: sanitizeHighlights(rules.highlights),
+      highlights: capCoachHighlights(rules.highlights),
       ordersClosed,
     }
   }
@@ -187,29 +194,101 @@ export async function coachCampaign(input: {
   }
 
   if (!parsed) {
-    const wire =
-      failure === "empty"
-        ? "The wire returned nothing I can file. Reasoning spent the dispatch before a reply was written."
-        : "The wire returned nothing I can file."
+    void failure
     return {
-      reply: finishAdvisorReply(`${wire}\n\n${rules.reply}`),
+      reply: finishAdvisorReply(capCoachReply(rules.reply)),
       source: "rules",
       unavailable: false,
       followUp: rules.followUp,
-      highlights: sanitizeHighlights(rules.highlights),
+      highlights: capCoachHighlights(rules.highlights),
       ordersClosed,
     }
   }
 
   const reply = scrubAdvisorReply(parsed.reply, map)
   return {
-    reply: finishAdvisorReply(reply || rules.reply),
+    reply: finishAdvisorReply(capCoachReply(reply || rules.reply)),
     source: "llm",
     unavailable: false,
-    followUp: parsed.followUp?.trim() ? parsed.followUp.trim() : null,
-    highlights: sanitizeHighlights(parsed.highlights ?? rules.highlights),
+    followUp: parsed.followUp?.trim() ? parsed.followUp.trim().slice(0, 160) : null,
+    highlights: capCoachHighlights(parsed.highlights ?? rules.highlights),
     ordersClosed,
   }
+}
+
+/** Split prose into sentences without treating decimal points (e.g. 5.8:1) as endings. */
+export function splitCoachSentences(text: string): string[] {
+  const parts: string[] = []
+  let buf = ""
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!
+    buf += ch
+    if (ch !== "." && ch !== "!" && ch !== "?") continue
+    const prev = text[i - 1]
+    const next = text[i + 1]
+    if (ch === "." && prev && /\d/.test(prev) && next && /\d/.test(next)) continue
+    const trimmed = buf.trim()
+    if (trimmed) parts.push(trimmed)
+    buf = ""
+  }
+  const tail = buf.trim()
+  if (tail) parts.push(tail)
+  return parts
+}
+
+/** Enforce 2–3 short sentences (and a hard character cap) on player-facing coach prose. */
+export function capCoachReply(reply: string): string {
+  const cleaned = reply.replace(/\s+/g, " ").trim()
+  if (!cleaned) return cleaned
+  const kept = splitCoachSentences(cleaned).slice(0, COACH_MAX_SENTENCES)
+  let out = kept.join(" ").trim()
+  if (out.length > COACH_REPLY_MAX_CHARS) {
+    out = `${out.slice(0, COACH_REPLY_MAX_CHARS - 1).replace(/\s+\S*$/, "").trim()}…`
+  }
+  return out
+}
+
+/** Socratic coach: keep a single map/UI pointer. */
+export function capCoachHighlights(raw: CoachHighlight[] | undefined): CoachHighlight[] {
+  return sanitizeHighlights(raw).slice(0, 1)
+}
+
+const STARTER_LIKE =
+  /what do you make of my queued plan|explain the selected province|review the last battle from the chronicle/i
+
+/** True when the player has stated an aim/expectation beyond a bare starter. */
+export function playerStatedIntent(messages: AdvisorChatMessage[]): boolean {
+  for (const message of messages) {
+    if (message.role !== "user") continue
+    const text = message.content.trim()
+    if (!text) continue
+    if (STARTER_LIKE.test(text) && text.length < 90) continue
+    if (
+      /expect|aim|goal|want|trying to|hoping|so that|for the .+ push|plan to (take|hold|open)|open the road/i.test(
+        text,
+      )
+    ) {
+      return true
+    }
+    if (text.length > 70 && !STARTER_LIKE.test(text)) return true
+  }
+  return false
+}
+
+/** Latest user prediction about a battle outcome, if any. */
+export function extractPlayerPrediction(messages: AdvisorChatMessage[]): string | null {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== "user") continue
+    const text = message.content.trim()
+    if (
+      /expect(ed|ing)?\s+(to\s+)?(take|hold|win|lose|fail|fall)|predict|should (take|fall|hold)|odds (will|should)/i.test(
+        text,
+      )
+    ) {
+      return text.slice(0, 160)
+    }
+  }
+  return null
 }
 
 function joinNames(names: string[]): string {
@@ -230,7 +309,10 @@ export function formatCoachOddsPhrase(preview: EngagementPreview | null): string
   if (preview.empty && preview.origins < 2) return "undefended before the dice"
   const ratio =
     preview.empty || !Number.isFinite(preview.ratio) ? null : trimRatio(String(preview.ratio))
-  const odds = ratio ? `odds about ${ratio}:1 before the dice` : "undefended before the dice"
+  // "as it resolves" = staffMap path (supply decay + capacity), matching resolveTurn.
+  const odds = ratio
+    ? `odds about ${ratio}:1 as the engine resolves this fortnight`
+    : "undefended as the engine resolves this fortnight"
   if (preview.origins >= 2) {
     const shape = preview.origins === 2 ? "two-pronged" : "concentric"
     const ring = preview.encircled ? ", and the defender is surrounded" : ""
@@ -262,8 +344,8 @@ export function formatBattleForCoach(battle: BattleFacts): string {
 }
 
 /**
- * Player-facing chronicle review — plain sentences only (no key=value debug fields).
- * Pulls odds/roll/retreat from the engine resolution summary when present.
+ * Compact chronicle evidence for a Socratic review (odds/roll/losses/control).
+ * No key=value fields and no raw supply ledger pairs.
  */
 export function formatBattleReviewForPlayer(
   turn: number,
@@ -277,36 +359,22 @@ export function formatBattleReviewForPlayer(
   const kind = battle.kind === "meeting" ? "meeting engagement" : "assault"
   const oddsMatch = summary.match(/odds\s+([\d.]+)\s+\(roll\s+(\d+)\)/i)
   const oddsPhrase = oddsMatch
-    ? ` at ${trimRatio(oddsMatch[1]!)}:1 odds (roll ${oddsMatch[2]})`
+    ? ` at ${trimRatio(oddsMatch[1]!)}:1 (roll ${oddsMatch[2]})`
     : /undefended/i.test(summary)
       ? " against an undefended garrison"
       : ""
-  const retreatMatch = summary.match(/remnants retreat to ([^,.\n]+)/i)
-  const retreat = retreatMatch?.[1]?.trim()
 
-  let lead: string
+  let outcome: string
   if (battle.attacker === "central" && weWon) {
-    lead = `In fortnight ${turn + 1} (${date}) our ${kind} from ${from} took ${target}${oddsPhrase}.`
+    outcome = `our ${kind} from ${from} took ${target}${oddsPhrase}`
   } else if (battle.attacker === "central" && !weWon) {
-    lead = `In fortnight ${turn + 1} (${date}) our ${kind} from ${from} into ${target} failed${oddsPhrase}.`
+    outcome = `our ${kind} from ${from} into ${target} failed${oddsPhrase}`
   } else if (battle.attacker === "russia" && !weWon) {
-    lead = `In fortnight ${turn + 1} (${date}) a Russian ${kind} from ${from} took ${target}${oddsPhrase}.`
+    outcome = `a Russian ${kind} from ${from} took ${target}${oddsPhrase}`
   } else {
-    lead = `In fortnight ${turn + 1} (${date}) we held ${target} against a Russian ${kind} from ${from}${oddsPhrase}.`
+    outcome = `we held ${target} against a Russian ${kind} from ${from}${oddsPhrase}`
   }
-
-  let losses = ` We lost ${ours}, they lost ${theirs}`
-  if (retreat) {
-    if (battle.attacker === "central" && weWon) {
-      losses += `, and their remnants fell back to ${retreat}`
-    } else if (battle.attacker === "russia" && !weWon) {
-      losses += `, and our remnants fell back to ${retreat}`
-    } else {
-      losses += `, and remnants fell back to ${retreat}`
-    }
-  }
-  losses += "."
-  return `${lead}${losses}`
+  return `In fortnight ${turn + 1} (${date}) ${outcome}; we lost ${ours}, they lost ${theirs}.`
 }
 
 function describeNonAttackOrders(map: GameState, queued: PlayerOrder[]): string[] {
@@ -509,18 +577,26 @@ function rulesCoach(
   const latest = [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
   const lower = latest.toLowerCase()
   const wantsReview = /battle|fought|last fortnight|chronicle|review|how did|losses|result/.test(lower)
-  const wantsPlan = /plan|queue|arrow|attack|compare|should i|what about|this fortnight/.test(lower)
-  const highlights: CoachHighlight[] = []
+  const hasIntent = playerStatedIntent(messages)
+  const prediction = extractPlayerPrediction(messages)
 
   if (wantsReview) {
     const battles = latestBattleFacts(log)
     if (battles.length) {
       const last = battles[battles.length - 1]!
-      highlights.push({ provinceId: last.battle.targetId, uiId: "chronicle-log-toggle" })
+      const target = provinceLabel(last.battle.targetId)
+      const evidence = formatBattleReviewForPlayer(last.turn, last.date, last.battle, last.summary)
+      if (prediction) {
+        return {
+          reply: `You expected ${prediction.replace(/\.$/, "")}; the chronicle shows ${evidence.replace(/^In /, "").replace(/\.$/, "")}.`,
+          followUp: null,
+          highlights: [{ provinceId: last.battle.targetId }],
+        }
+      }
       return {
-        reply: `${formatBattleReviewForPlayer(last.turn, last.date, last.battle, last.summary)} Ask if you want another province named.`,
-        followUp: "Which battle do you want to walk through?",
-        highlights,
+        reply: `What did you expect at ${target}? The chronicle shows ${evidence.replace(/^In fortnight \d+ \([^)]+\) /, "").replace(/\.$/, "")}.`,
+        followUp: null,
+        highlights: [{ provinceId: last.battle.targetId }],
       }
     }
   }
@@ -528,47 +604,63 @@ function rulesCoach(
   if (situation.queue.length) {
     const oddsByTarget = queuedAttackOddsByTarget(map, queued)
     if (oddsByTarget.size) {
-      for (const targetId of oddsByTarget.keys()) {
-        highlights.push({ provinceId: targetId, uiId: "queued-orders" })
+      const [targetId, oddsPhrase] = [...oddsByTarget.entries()][0]!
+      const target = provinceLabel(targetId)
+      const evidence = oddsPhrase
+        ? `The engine rates that column at ${oddsPhrase}.`
+        : `The engine has that column queued into ${target}.`
+      if (!hasIntent) {
+        return {
+          reply: `What do you expect ${target} to do for the Lemberg push? ${evidence}`,
+          followUp: null,
+          highlights: [{ provinceId: targetId }],
+        }
       }
       return {
-        reply: formatQueuedPlanForPlayer(map, queued, oddsByTarget),
-        followUp: wantsPlan ? "Do you want the same blow from one column only?" : null,
-        highlights,
+        reply: `Against that aim, ${evidence.charAt(0).toLowerCase()}${evidence.slice(1)}`,
+        followUp: null,
+        highlights: [{ provinceId: targetId }],
       }
     }
+    const other = describeNonAttackOrders(map, queued)
     return {
-      reply: formatQueuedPlanForPlayer(map, queued, null),
-      followUp: wantsPlan ? "Queue an attack if you want engine odds on an axis." : null,
+      reply: other.length
+        ? `What are you trying to achieve with ${other[0]}? I do not file orders.`
+        : "What are you trying to achieve with this queue? I do not file orders.",
+      followUp: null,
       highlights: [{ uiId: "queued-orders" }],
     }
   }
 
   if (!selected.startsWith("None")) {
     const id = selected.split(" ")[0]
-    if (id) highlights.push({ provinceId: id, uiId: "tab-province" })
     const province = map.provinces.find((item) => item.id === id)
     const name = province?.name ?? id
+    if (!hasIntent) {
+      return {
+        reply: `What are you weighing at ${name}? It is ${province?.controller ?? "unknown"}-held.`,
+        followUp: null,
+        highlights: id ? [{ provinceId: id }] : [{ uiId: "tab-province" }],
+      }
+    }
     return {
-      reply: `${name} is selected (${province?.controller ?? "unknown"} control, supply ${province?.supply ?? "—"}). Queue is ${situation.queue.length ? "not empty" : "empty"}. I advise only; you still draw the arrows.`,
-      followUp: "Ask about a neighbor attack or the last chronicle battle.",
-      highlights,
+      reply: `${name} is ${province?.controller ?? "unknown"}-held with fort ${province?.fort ?? 0}. I advise only; you draw the arrows.`,
+      followUp: null,
+      highlights: id ? [{ provinceId: id }] : [{ uiId: "tab-province" }],
     }
   }
 
   const weak = [...situation.contacts].sort((a, b) => b.ratio - a.ratio)[0]
   if (weak) {
-    highlights.push({ provinceId: weak.targetId, uiId: "tab-orders" })
-    const odds = weak.odds.replace(/\.\s*$/, "")
     return {
-      reply: `On the map the strongest engine contact is ${weak.fromName} into ${weak.targetName} (${odds}). That is a reading, not an order.`,
-      followUp: "Queue an arrow if you want me to discuss your plan.",
-      highlights,
+      reply: `What axis are you weighing this fortnight? The strongest engine contact is ${weak.fromName} into ${weak.targetName}.`,
+      followUp: null,
+      highlights: [{ provinceId: weak.targetId }],
     }
   }
 
   return {
-    reply: "The dispatch shows no open march into an enemy neighbor. Hold, dig, or raise troops from the yards listed.",
+    reply: "What are you trying to achieve this fortnight? The dispatch shows no open march into an enemy neighbor.",
     followUp: null,
     highlights: [{ uiId: "tab-orders" }],
   }
