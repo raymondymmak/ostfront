@@ -168,6 +168,10 @@ export function createDefaultTeachWindows(
     const hint = TEACH_WINDOW_SIZE_HINTS[item.id]
     const h = heights[item.id]
     const clamped = clampWindowPosition(item.x, item.y, hint.w, h, mapWidth, mapHeight)
+    // Lock Legend height so the whole box stays above the tray (content scrolls).
+    if (item.id === "legend") {
+      return { ...item, ...clamped, height: h }
+    }
     return { ...item, ...clamped }
   })
 }

@@ -1,6 +1,12 @@
 /** Document-tray model: stowed papers as tabs, restored as floating windows. */
 
-import { DOCUMENT_TRAY_HEIGHT, ensurePaperZ, type StackedWindow } from "@/lib/ui/table-windows"
+import {
+  DOCUMENT_TRAY_HEIGHT,
+  ensurePaperZ,
+  stageHeightForWindows,
+  TABLE_WINDOW_MARGIN,
+  type StackedWindow,
+} from "@/lib/ui/table-windows"
 import {
   headerOverlapsTray,
   liftYAboveTray,
@@ -144,18 +150,25 @@ export function applyPersistedLayout<Id extends string>(
 
 /**
  * Lift any paper whose saved Y puts the header under/behind the tray,
- * and bump z so session-restored papers never paint under the tray bar.
+ * and when a locked height is known keep the whole box above the tray.
+ * Bump z so session-restored papers never paint under the tray bar.
  * Call after applyPersistedLayout with the live map-stage height.
  */
 export function liftPersistedWindowsAboveTray<Id extends string>(
   windows: StackedWindow<Id>[],
   stageHeight: number,
 ): StackedWindow<Id>[] {
+  const usableH = stageHeightForWindows(stageHeight)
+  const m = TABLE_WINDOW_MARGIN
   return windows.map((item) => {
     const z = ensurePaperZ(item.z)
-    const y = headerOverlapsTray(item.y, stageHeight)
+    let y = headerOverlapsTray(item.y, stageHeight)
       ? liftYAboveTray(item.y, stageHeight)
       : item.y
+    if (item.height != null && item.height > 0) {
+      const maxY = Math.max(m, usableH - item.height - m)
+      y = Math.min(y, maxY)
+    }
     if (z === item.z && y === item.y) return item
     return { ...item, y, z }
   })

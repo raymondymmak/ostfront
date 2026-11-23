@@ -4,13 +4,20 @@ import {
   closeTopmostWindow,
   closeWindow,
   createDefaultTableWindows,
+  DOCUMENT_TRAY_HEIGHT,
   focusWindow,
   isWindowOpen,
   moveWindow,
   TABLE_WINDOW_MARGIN,
+  TABLE_WINDOW_SIZE_HINTS,
   toggleWindow,
   topmostOpenWindow,
 } from "@/lib/ui/table-windows"
+import {
+  createDefaultTeachWindows,
+  TEACH_WINDOW_SIZE_HINTS,
+  teachWindowHeights,
+} from "@/lib/ui/teach-windows"
 
 describe("table-windows", () => {
   it("defaults open Orders, Legend, and Orders from OHL", () => {
@@ -68,17 +75,52 @@ describe("table-windows", () => {
     expect(drag.y).toBe(768 - 36 - TABLE_WINDOW_MARGIN)
   })
 
-  it("places default Legend fully above the stage bottom at common desktop sizes", () => {
+  it("places default Legend fully above the tray at common desktop sizes", () => {
     for (const [w, h] of [
       [1440, 820],
       [1280, 700],
       [1024, 650],
+      // ~1024×726 viewport → map stage under the HUD
+      [1024, 606],
     ] as const) {
       const windows = createDefaultTableWindows(w, h)
       const legend = windows.find((item) => item.id === "legend")
       expect(legend).toBeTruthy()
+      expect(legend!.x).toBe(TABLE_WINDOW_MARGIN)
+      expect(legend!.height).toBeTypeOf("number")
+      const boxH = legend!.height!
+      const trayTop = h - DOCUMENT_TRAY_HEIGHT
       expect(legend!.y).toBeGreaterThanOrEqual(TABLE_WINDOW_MARGIN)
-      expect(legend!.y + 200).toBeLessThanOrEqual(h - TABLE_WINDOW_MARGIN)
+      expect(legend!.y + boxH).toBeLessThanOrEqual(trayTop - TABLE_WINDOW_MARGIN)
+    }
+  })
+
+  it("default open campaign and /teach rects do not overlap the tray", () => {
+    const stages = [
+      [1440, 820],
+      [1280, 700],
+      [1024, 650],
+      [1024, 606],
+    ] as const
+    for (const [w, h] of stages) {
+      const trayTop = h - DOCUMENT_TRAY_HEIGHT
+      const usableH = h - DOCUMENT_TRAY_HEIGHT
+      const belowMapMode = 100
+      const m = TABLE_WINDOW_MARGIN
+      const campaignH: Record<string, number> = {
+        legend: 0,
+        orders: Math.min(TABLE_WINDOW_SIZE_HINTS.orders.h, Math.max(240, usableH - belowMapMode - m)),
+        ohl: TABLE_WINDOW_SIZE_HINTS.ohl.h,
+      }
+      for (const win of createDefaultTableWindows(w, h).filter((item) => item.open)) {
+        const boxH = win.height ?? campaignH[win.id] ?? TABLE_WINDOW_SIZE_HINTS[win.id].h
+        expect(win.y + boxH, `${win.id} @ ${w}x${h}`).toBeLessThanOrEqual(trayTop)
+      }
+      const teachHeights = teachWindowHeights(w, h)
+      for (const win of createDefaultTeachWindows(w, h).filter((item) => item.open)) {
+        const boxH = win.height ?? teachHeights[win.id] ?? TEACH_WINDOW_SIZE_HINTS[win.id].h
+        expect(win.y + boxH, `${win.id} teach @ ${w}x${h}`).toBeLessThanOrEqual(trayTop)
+      }
     }
   })
 })

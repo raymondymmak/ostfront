@@ -96,7 +96,11 @@ export function createDefaultTableWindows(
   const usableH = stageHeightForWindows(mapHeight)
   // Leave the top-right MapMode + zoom strip clear (≈7rem wide, ≈6rem tall).
   const belowMapMode = 100
-  const legendH = Math.min(TABLE_WINDOW_SIZE_HINTS.legend.h, Math.max(200, usableH - belowMapMode - m * 2))
+  // Cap so the whole Legend box (not just the header) fits above the tray; body scrolls.
+  const legendH = Math.min(
+    TABLE_WINDOW_SIZE_HINTS.legend.h,
+    Math.max(120, usableH - m * 2),
+  )
   const ordersH = Math.min(TABLE_WINDOW_SIZE_HINTS.orders.h, Math.max(240, usableH - belowMapMode - m))
   const logH = Math.min(TABLE_WINDOW_SIZE_HINTS.log.h, Math.max(200, usableH - m * 2))
 
@@ -115,6 +119,7 @@ export function createDefaultTableWindows(
       x: m,
       y: Math.max(m, usableH - legendH - m),
       z: BASE_Z + 1,
+      height: legendH,
     },
     {
       // Same right column as Orders so opening Province does not cover map click targets.
@@ -147,7 +152,7 @@ export function createDefaultTableWindows(
       item.id === "orders" || item.id === "province"
         ? ordersH
         : item.id === "legend"
-          ? legendH
+          ? (item.height ?? legendH)
           : item.id === "log"
             ? logH
             : hint.h

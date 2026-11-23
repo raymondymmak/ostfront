@@ -118,4 +118,19 @@ describe("document-tray", () => {
     expect(ohl!.y + WINDOW_HEADER_HEIGHT).toBeLessThanOrEqual(trayTopY(stageH))
     expect(ohl!.z).toBeGreaterThan(30)
   })
+
+  it("lifts a locked-height Legend so the whole box stays above the tray", () => {
+    const stageH = 805
+    let windows = createDefaultTableWindows(1440, 820)
+    const legend = windows.find((item) => item.id === "legend")
+    expect(legend?.height).toBeTypeOf("number")
+    // Stale Y from a taller stage (820 defaults on an 805 stage).
+    windows = windows.map((item) =>
+      item.id === "legend" ? { ...item, y: 424, height: 340 } : item,
+    )
+    const lifted = liftPersistedWindowsAboveTray(windows, stageH)
+    const next = lifted.find((item) => item.id === "legend")!
+    expect(next.y + (next.height ?? 340)).toBeLessThanOrEqual(trayTopY(stageH) - 8)
+    expect(next.x).toBe(8)
+  })
 })
