@@ -128,6 +128,7 @@ export type TrayTabSlot = { left: number; width: number }
 /**
  * Insertion index among `slots` (left→right) for a pointer X.
  * Index runs 0…slots.length (before first … after last).
+ * `slots` must be the tabs being measured — exclude the dragged tab when reordering.
  */
 export function insertIndexAtClientX(clientX: number, slots: readonly TrayTabSlot[]): number {
   if (slots.length === 0) return 0
@@ -136,6 +137,24 @@ export function insertIndexAtClientX(clientX: number, slots: readonly TrayTabSlo
     if (clientX < slot.left + slot.width / 2) return i
   }
   return slots.length
+}
+
+/**
+ * Sideways reorder: measure midpoints of every visible tab EXCEPT the dragged one,
+ * then map that “among others” index onto the full visible list for the marker.
+ *
+ * `sourceIndex` is the dragged tab’s index in the full visible list (including itself).
+ * When the cursor is at/after the source gap (moving rightward), markerIndex is
+ * amongIndex+1 so it lines up with the still-laid-out dragged tab.
+ */
+export function trayReorderIndices(
+  clientX: number,
+  otherSlots: readonly TrayTabSlot[],
+  sourceIndex: number,
+): { amongIndex: number; markerIndex: number } {
+  const amongIndex = insertIndexAtClientX(clientX, otherSlots)
+  const markerIndex = amongIndex >= sourceIndex ? amongIndex + 1 : amongIndex
+  return { amongIndex, markerIndex }
 }
 
 /**
@@ -166,6 +185,18 @@ export function placeIdInOrder<Id extends string>(
   return next
 }
 
+/** True when placing `id` at `amongIndex` among `among` leaves `order` unchanged. */
+export function placeIdIsNoOp<Id extends string>(
+  order: readonly Id[],
+  id: Id,
+  amongIndex: number,
+  among: readonly Id[],
+): boolean {
+  const next = placeIdInOrder(order, id, amongIndex, among)
+  if (next.length !== order.length) return false
+  return next.every((entry, i) => entry === order[i])
+}
+
 /** Move a focused/stowed tab one slot left (−1) or right (+1) among visible tabs. */
 export function shiftTrayId<Id extends string>(
   order: readonly Id[],
@@ -176,10 +207,11 @@ export function shiftTrayId<Id extends string>(
   const visible = order.filter((entry) => !openById[entry])
   const idx = visible.indexOf(id)
   if (idx < 0) return [...order]
-  const dest = Math.max(0, Math.min(visible.length - 1, idx + delta))
-  if (dest === idx) return [...order]
   const among = visible.filter((entry) => entry !== id)
-  return placeIdInOrder(order, id, dest, among)
+  // Destination index among the others (collapsed list without `id`).
+  const amongDest = Math.max(0, Math.min(among.length, idx + delta))
+  if (placeIdIsNoOp(order, id, amongDest, among)) return [...order]
+  return placeIdInOrder(order, id, amongDest, among)
 }
 
 const SESSION_PREFIX = "ostfront-windows-v1:"

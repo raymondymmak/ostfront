@@ -3,10 +3,11 @@
 import { useRef, useState } from "react"
 import type { TrayItemSpec } from "@/lib/ui/document-tray"
 import {
-  insertIndexAtClientX,
   placeIdInOrder,
+  placeIdIsNoOp,
   pointerMovedEnough,
   shiftTrayId,
+  trayReorderIndices,
 } from "@/lib/ui/document-tray"
 import { DOCUMENT_TRAY_HEIGHT } from "@/lib/ui/window-drag"
 
@@ -59,9 +60,12 @@ export function DocumentTray<Id extends string>({
     startX: number
     startY: number
     moved: boolean
+    /** Insert index among other visible tabs (excludes dragged id). */
+    amongIndex: number | null
   } | null>(null)
   const [lifting, setLifting] = useState<Id | null>(null)
-  const [reorderInsert, setReorderInsert] = useState<number | null>(null)
+  /** Marker index in the full visible list (includes dragged tab’s slot). */
+  const [reorderMarker, setReorderMarker] = useState<number | null>(null)
 
   const desktopItems =
     variant === "desktop" ? items.filter((item) => !openById[item.id]) : items
@@ -83,11 +87,12 @@ export function DocumentTray<Id extends string>({
     return slots
   }
 
-  const markerIndex = reorderInsert ?? (dropHighlight ? insertIndex : null)
+  const markerIndex = reorderMarker ?? (dropHighlight ? insertIndex : null)
 
-  function commitPlace(id: Id, index: number, amongIds: Id[]) {
+  function commitPlace(id: Id, amongIndex: number, amongIds: Id[]) {
     if (!onTrayOrderChange) return
-    onTrayOrderChange(placeIdInOrder(order, id, index, amongIds))
+    if (placeIdIsNoOp(order, id, amongIndex, amongIds)) return
+    onTrayOrderChange(placeIdInOrder(order, id, amongIndex, amongIds))
   }
 
   return (
@@ -180,9 +185,10 @@ export function DocumentTray<Id extends string>({
                   startX: event.clientX,
                   startY: event.clientY,
                   moved: false,
+                  amongIndex: null,
                 }
                 setLifting(item.id)
-                setReorderInsert(null)
+                setReorderMarker(null)
                 event.currentTarget.setPointerCapture(event.pointerId)
               }}
               onPointerMove={(event) => {
@@ -201,26 +207,29 @@ export function DocumentTray<Id extends string>({
                 const dy = event.clientY - state.startY
                 // Upward lift preview — clear sideways marker.
                 if (dy < -TRAY_LIFT_MIN_PX) {
-                  setReorderInsert(null)
+                  state.amongIndex = null
+                  setReorderMarker(null)
                   return
                 }
-                const slots = measureVisibleSlots(state.id)
-                setReorderInsert(
-                  insertIndexAtClientX(
-                    event.clientX,
-                    slots.map(({ left, width }) => ({ left, width })),
-                  ),
+                const sourceIndex = desktopItems.findIndex((entry) => entry.id === state.id)
+                const otherSlots = measureVisibleSlots(state.id)
+                const { amongIndex, markerIndex: nextMarker } = trayReorderIndices(
+                  event.clientX,
+                  otherSlots.map(({ left, width }) => ({ left, width })),
+                  Math.max(0, sourceIndex),
                 )
+                state.amongIndex = amongIndex
+                setReorderMarker(nextMarker)
               }}
               onPointerUp={(event) => {
                 const state = drag.current
                 if (!state || state.pointerId !== event.pointerId) return
                 const moved = state.moved
                 const id = state.id
-                const insertAt = reorderInsert
+                const amongAt = state.amongIndex
                 drag.current = null
                 setLifting(null)
-                setReorderInsert(null)
+                setReorderMarker(null)
                 try {
                   event.currentTarget.releasePointerCapture(event.pointerId)
                 } catch {
@@ -232,19 +241,17 @@ export function DocumentTray<Id extends string>({
                   onRestoreAt(id, event.clientX, event.clientY)
                   return
                 }
-                if (insertAt != null && onTrayOrderChange) {
-                  const among = measureVisibleSlots(id).map((slot) => slot.id)
-                  // measure after lift cleared — use order of other visible items from props
+                if (amongAt != null && onTrayOrderChange) {
                   const amongIds = desktopItems
                     .map((entry) => entry.id)
                     .filter((entryId) => entryId !== id)
-                  commitPlace(id, insertAt, amongIds.length ? amongIds : among)
+                  commitPlace(id, amongAt, amongIds)
                 }
               }}
               onPointerCancel={() => {
                 drag.current = null
                 setLifting(null)
-                setReorderInsert(null)
+                setReorderMarker(null)
               }}
             >
               <span className="block max-w-[9rem] truncate">{item.label}</span>

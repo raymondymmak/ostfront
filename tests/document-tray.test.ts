@@ -9,6 +9,7 @@ import {
   normalizeTrayOrder,
   orderTrayItems,
   placeIdInOrder,
+  placeIdIsNoOp,
   pointerMovedEnough,
   restoreWindow,
   saveWindowSession,
@@ -17,6 +18,7 @@ import {
   shiftTrayId,
   stowTopmostWindow,
   stowWindow,
+  trayReorderIndices,
 } from "@/lib/ui/document-tray"
 import { trayTopY } from "@/lib/ui/window-drag"
 import { WINDOW_HEADER_HEIGHT } from "@/lib/ui/table-windows"
@@ -134,6 +136,38 @@ describe("document-tray", () => {
     expect(visible).toEqual(["province", "log", "orders", "legend", "advisor"])
   })
 
+  it("files a paper at both ends and past one/two tabs from the map", () => {
+    const among = ["province", "log", "orders", "advisor"] as const
+    // province 0–100, log 110–210, orders 220–320, advisor 330–430
+    const slots = [
+      { left: 0, width: 100 },
+      { left: 110, width: 100 },
+      { left: 220, width: 100 },
+      { left: 330, width: 100 },
+    ]
+    const order = ["ohl", "province", "log", "orders", "advisor", "legend"] as const
+    // Left end
+    expect(insertIndexAtClientX(10, slots)).toBe(0)
+    expect(placeIdInOrder([...order], "legend", 0, [...among]).filter((id) => id !== "ohl")).toEqual([
+      "legend",
+      "province",
+      "log",
+      "orders",
+      "advisor",
+    ])
+    // Right end
+    expect(insertIndexAtClientX(500, slots)).toBe(4)
+    expect(
+      placeIdInOrder([...order], "legend", 4, [...among]).filter((id) =>
+        [...among, "legend"].includes(id as (typeof among)[number] | "legend"),
+      ),
+    ).toEqual(["province", "log", "orders", "advisor", "legend"])
+    // Past one tab (after province mid 50, before log mid 160)
+    expect(insertIndexAtClientX(100, slots)).toBe(1)
+    // Past two tabs (after log mid 160, before orders mid 270)
+    expect(insertIndexAtClientX(200, slots)).toBe(2)
+  })
+
   it("reorders a tab sideways among visible slots", () => {
     const order = ["orders", "province", "log", "legend", "advisor", "ohl"] as const
     const openById = { orders: true, ohl: true }
@@ -141,6 +175,85 @@ describe("document-tray", () => {
     const shifted = shiftTrayId([...order], "log", 1, openById)
     const visible = shifted.filter((id) => !openById[id as keyof typeof openById])
     expect(visible).toEqual(["province", "legend", "log", "advisor"])
+  })
+
+  it("sideways reorder: drag right/left past one and two tabs; ends; no-op home", () => {
+    // Visible layout (full list including dragged Province at sourceIndex 0):
+    // province 0–100, orders 110–210, log 220–320, advisor 330–430
+    // Other slots exclude province:
+    const others = [
+      { left: 110, width: 100 }, // orders
+      { left: 220, width: 100 }, // log
+      { left: 330, width: 100 }, // advisor
+    ]
+    const sourceIndex = 0
+    const order = ["province", "orders", "log", "advisor"] as const
+    const among = ["orders", "log", "advisor"] as const
+
+    // Right of Orders (past orders mid 160) → amongIndex 1, marker after Orders in full list
+    const pastOne = trayReorderIndices(200, others, sourceIndex)
+    expect(pastOne).toEqual({ amongIndex: 1, markerIndex: 2 })
+    expect(placeIdInOrder([...order], "province", pastOne.amongIndex, [...among])).toEqual([
+      "orders",
+      "province",
+      "log",
+      "advisor",
+    ])
+
+    // Right of Log (past log mid 270) → amongIndex 2, marker before advisor
+    const pastTwo = trayReorderIndices(300, others, sourceIndex)
+    expect(pastTwo).toEqual({ amongIndex: 2, markerIndex: 3 })
+    expect(placeIdInOrder([...order], "province", pastTwo.amongIndex, [...among])).toEqual([
+      "orders",
+      "log",
+      "province",
+      "advisor",
+    ])
+
+    // Far right end
+    const atEnd = trayReorderIndices(500, others, sourceIndex)
+    expect(atEnd).toEqual({ amongIndex: 3, markerIndex: 4 })
+    expect(placeIdInOrder([...order], "province", atEnd.amongIndex, [...among])).toEqual([
+      "orders",
+      "log",
+      "advisor",
+      "province",
+    ])
+
+    // Drag Orders (sourceIndex 1) left past Province (others: province, log, advisor)
+    const othersFromOrders = [
+      { left: 0, width: 100 },
+      { left: 220, width: 100 },
+      { left: 330, width: 100 },
+    ]
+    const leftOne = trayReorderIndices(40, othersFromOrders, 1)
+    expect(leftOne).toEqual({ amongIndex: 0, markerIndex: 0 })
+    expect(
+      placeIdInOrder([...order], "orders", leftOne.amongIndex, ["province", "log", "advisor"]),
+    ).toEqual(["orders", "province", "log", "advisor"])
+
+    // Left past two: from advisor (source 3) past province+orders → before log
+    // visible [province, orders, log, advisor]; others for advisor = first three
+    const othersFromAdvisor = [
+      { left: 0, width: 100 },
+      { left: 110, width: 100 },
+      { left: 220, width: 100 },
+    ]
+    const leftTwo = trayReorderIndices(200, othersFromAdvisor, 3)
+    expect(leftTwo).toEqual({ amongIndex: 2, markerIndex: 2 })
+    expect(
+      placeIdInOrder([...order], "advisor", leftTwo.amongIndex, ["province", "orders", "log"]),
+    ).toEqual(["province", "orders", "advisor", "log"])
+
+    // Left end while dragging advisor
+    const leftEnd = trayReorderIndices(10, othersFromAdvisor, 3)
+    expect(leftEnd).toEqual({ amongIndex: 0, markerIndex: 0 })
+
+    // Drag province back to original spot (amongIndex 0) → no-op
+    const home = trayReorderIndices(50, others, sourceIndex)
+    expect(home.amongIndex).toBe(0)
+    expect(placeIdIsNoOp([...order], "province", home.amongIndex, [...among])).toBe(true)
+    expect(placeIdInOrder([...order], "province", home.amongIndex, [...among])).toEqual([...order])
   })
 
   it("persists trayOrder in sessionStorage with window layout", () => {
