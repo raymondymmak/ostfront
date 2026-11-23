@@ -107,7 +107,11 @@ export function FloatingWindow({
     origY: number
     width: number
     height: number
+    lastClientY: number
+    lastRelativeY: number
+    overTray: boolean
   } | null>(null)
+  const finishingDrag = useRef(false)
   const resize = useRef<{
     pointerId: number
     startY: number
@@ -150,10 +154,8 @@ export function FloatingWindow({
         setLocalHeight((current) => (current === applied ? current : applied))
       }
       const ww = widthPx ?? (node.offsetWidth || 320)
-      // While dragging, header may enter the tray band; at rest it must stay fully above.
-      const maxY = dragging
-        ? Math.max(TABLE_WINDOW_MARGIN, stage.height - WINDOW_HEADER_HEIGHT - TABLE_WINDOW_MARGIN)
-        : liftYAboveTray(Number.POSITIVE_INFINITY, stage.height)
+      // Header grip never goes under the tray — while dragging or at rest.
+      const maxY = liftYAboveTray(Number.POSITIVE_INFINITY, stage.height)
       const maxX = Math.max(TABLE_WINDOW_MARGIN, stage.width - ww - TABLE_WINDOW_MARGIN)
       const clampedX = Math.min(Math.max(TABLE_WINDOW_MARGIN, x), maxX)
       const clampedY = Math.min(Math.max(TABLE_WINDOW_MARGIN, y), maxY)
@@ -192,6 +194,68 @@ export function FloatingWindow({
     widthPx,
     heightProp,
   ])
+
+  /**
+   * End a paper drag from pointerup, pointercancel, or lostpointercapture.
+   * Files when the pointer is on/below the tray or at/past the viewport bottom.
+   * Re-entrant safe so releasePointerCapture → lostpointercapture does not double-fire.
+   */
+  function finishPaperDrag(
+    target: HTMLElement,
+    pointerId: number,
+    opts: {
+      clientY?: number
+      relativeY?: number
+      /** When true (cancel / lost capture), file if last hover was already armed. */
+      preferFileIfArmed?: boolean
+    } = {},
+  ) {
+    if (finishingDrag.current) return
+    const state = drag.current
+    if (!state || state.pointerId !== pointerId) return
+    finishingDrag.current = true
+
+    const node = rootRef.current
+    const stage = measureStage(node)
+    const parent = node?.offsetParent as HTMLElement | null
+    const parentTop = parent?.getBoundingClientRect().top ?? 0
+    const clientY = opts.clientY ?? state.lastClientY
+    const relativeY = opts.relativeY ?? clientY - parentTop
+    const viewportHeight =
+      typeof window !== "undefined" ? window.innerHeight : stage.height
+
+    const shouldStow = Boolean(
+      onStow &&
+        (shouldFileIntoTray({
+          pointerY: relativeY,
+          windowY: y,
+          stageHeight: stage.height,
+          trayHeight: DOCUMENT_TRAY_HEIGHT,
+          clientY,
+          viewportHeight,
+        }) ||
+          (opts.preferFileIfArmed && state.overTray)),
+    )
+
+    drag.current = null
+    setDragging(false)
+    setOverTray(false)
+    onTrayHover?.(false)
+    try {
+      target.releasePointerCapture(pointerId)
+    } catch {
+      /* already released or never captured */
+    }
+
+    if (shouldStow) {
+      onStow?.()
+      finishingDrag.current = false
+      return
+    }
+    const lifted = liftYAboveTray(y, stage.height)
+    if (lifted !== y) onMove(x, lifted)
+    finishingDrag.current = false
+  }
 
   if (!open) return null
 
@@ -237,6 +301,9 @@ export function FloatingWindow({
           const node = rootRef.current
           const width = widthPx ?? node?.offsetWidth ?? 320
           const height = heightPx ?? node?.offsetHeight ?? 200
+          const parent = node?.offsetParent as HTMLElement | null
+          const parentTop = parent?.getBoundingClientRect().top ?? 0
+          finishingDrag.current = false
           setDragging(true)
           drag.current = {
             pointerId: event.pointerId,
@@ -246,6 +313,9 @@ export function FloatingWindow({
             origY: y,
             width,
             height,
+            lastClientY: event.clientY,
+            lastRelativeY: event.clientY - parentTop,
+            overTray: false,
           }
           event.currentTarget.setPointerCapture(event.pointerId)
         }}
@@ -267,12 +337,19 @@ export function FloatingWindow({
           const parent = node?.offsetParent as HTMLElement | null
           const parentTop = parent?.getBoundingClientRect().top ?? 0
           const relativeY = event.clientY - parentTop
+          const viewportHeight =
+            typeof window !== "undefined" ? window.innerHeight : stage.height
           const hovering = shouldFileIntoTray({
             pointerY: relativeY,
             windowY: next.y,
             stageHeight: stage.height,
             trayHeight: DOCUMENT_TRAY_HEIGHT,
+            clientY: event.clientY,
+            viewportHeight,
           })
+          state.lastClientY = event.clientY
+          state.lastRelativeY = relativeY
+          state.overTray = hovering
           if (hovering !== overTray) {
             setOverTray(hovering)
             onTrayHover?.(hovering)
@@ -280,46 +357,18 @@ export function FloatingWindow({
         }}
         onPointerUp={(event) => {
           if (drag.current?.pointerId !== event.pointerId) return
-          const node = rootRef.current
-          const stage = measureStage(node)
-          const parent = node?.offsetParent as HTMLElement | null
-          const parentTop = parent?.getBoundingClientRect().top ?? 0
-          const relativeY = event.clientY - parentTop
-          const shouldStow = Boolean(
-            onStow &&
-              shouldFileIntoTray({
-                pointerY: relativeY,
-                windowY: y,
-                stageHeight: stage.height,
-                trayHeight: DOCUMENT_TRAY_HEIGHT,
-              }),
-          )
-          drag.current = null
-          setDragging(false)
-          setOverTray(false)
-          onTrayHover?.(false)
-          try {
-            event.currentTarget.releasePointerCapture(event.pointerId)
-          } catch {
-            /* already released */
-          }
-          if (shouldStow) {
-            onStow?.()
-            return
-          }
-          // Missed the tray: never leave the grip hidden behind the bar.
-          const lifted = liftYAboveTray(y, stage.height)
-          if (lifted !== y) onMove(x, lifted)
+          finishPaperDrag(event.currentTarget, event.pointerId, {
+            clientY: event.clientY,
+          })
         }}
-        onPointerCancel={() => {
-          const node = rootRef.current
-          const stage = measureStage(node)
-          drag.current = null
-          setDragging(false)
-          setOverTray(false)
-          onTrayHover?.(false)
-          const lifted = liftYAboveTray(y, stage.height)
-          if (lifted !== y) onMove(x, lifted)
+        onPointerCancel={(event) => {
+          if (drag.current && drag.current.pointerId !== event.pointerId) return
+          finishPaperDrag(event.currentTarget, event.pointerId, { preferFileIfArmed: true })
+        }}
+        onLostPointerCapture={(event) => {
+          if (!drag.current || drag.current.pointerId !== event.pointerId) return
+          // Pointer left the window / capture stolen — still file if aimed at the tray.
+          finishPaperDrag(event.currentTarget, event.pointerId, { preferFileIfArmed: true })
         }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2">

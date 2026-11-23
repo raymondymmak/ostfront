@@ -6,6 +6,7 @@ import {
   liftYAboveTray,
   maxRestingYAboveTray,
   pointerInTrayZone,
+  pointerPastViewportBottom,
   positionAfterPointerDrag,
   resolveWindowHeight,
   shouldFileIntoTray,
@@ -33,7 +34,7 @@ describe("window-drag", () => {
     expect(dragPreservesSize(size, size)).toBe(true)
   })
 
-  it("header-only Y clamp lets the body reach the tray while the grip stays on-screen", () => {
+  it("while dragging, clamps Y so the header never goes under the tray", () => {
     const size = { w: 300, h: 200 }
     const stage = { width: 1024, height: 768 }
     const next = positionAfterPointerDrag(
@@ -43,10 +44,11 @@ describe("window-drag", () => {
       size,
       stage,
     )
+    const maxY = maxRestingYAboveTray(stage.height)
     expect(next.x).toBe(stage.width - size.w - TABLE_WINDOW_MARGIN)
-    expect(next.y).toBe(stage.height - WINDOW_HEADER_HEIGHT - TABLE_WINDOW_MARGIN)
-    expect(next.y + WINDOW_HEADER_HEIGHT).toBeLessThanOrEqual(stage.height - TABLE_WINDOW_MARGIN)
-    expect(next.y + size.h).toBeGreaterThan(stage.height - DOCUMENT_TRAY_HEIGHT)
+    expect(next.y).toBe(maxY)
+    expect(next.y + WINDOW_HEADER_HEIGHT).toBeLessThanOrEqual(trayTopY(stage.height))
+    expect(next.y + size.h).toBeGreaterThan(trayTopY(stage.height))
     expect(canDragDownToTray(stage.height)).toBe(true)
   })
 
@@ -119,5 +121,34 @@ describe("window-drag", () => {
     expect(ensurePaperZ(22)).toBe(PAPER_Z_FLOOR)
     expect(ensurePaperZ(80)).toBe(80)
     expect(PAPER_Z_FLOOR).toBeGreaterThan(DOCUMENT_TRAY_Z)
+  })
+
+  it("files when pointerup clientY equals the viewport height", () => {
+    const viewportHeight = 900
+    expect(pointerPastViewportBottom(viewportHeight, viewportHeight)).toBe(true)
+    expect(
+      shouldFileIntoTray({
+        pointerY: 100,
+        windowY: 40,
+        stageHeight: 820,
+        clientY: viewportHeight,
+        viewportHeight,
+      }),
+    ).toBe(true)
+  })
+
+  it("files when pointerup clientY is beyond the viewport height", () => {
+    const viewportHeight = 800
+    expect(pointerPastViewportBottom(viewportHeight + 40, viewportHeight)).toBe(true)
+    expect(
+      shouldFileIntoTray({
+        pointerY: 50,
+        windowY: 40,
+        stageHeight: 720,
+        clientY: viewportHeight + 40,
+        viewportHeight,
+      }),
+    ).toBe(true)
+    expect(pointerPastViewportBottom(viewportHeight - 1, viewportHeight)).toBe(false)
   })
 })

@@ -905,9 +905,10 @@ function buildSteps(cli, targets) {
             stageH: (el.offsetParent instanceof HTMLElement ? el.offsetParent.clientHeight : 0),
           }))
           if (layout.top < 0) throw new Error(`Orders header went off-screen: top=${layout.top}`)
-          if (layout.top + 36 > layout.stageH - 4) {
+          // Header grip must stay fully above the tray while dragging.
+          if (layout.top + 36 > layout.stageH - 48 + 1) {
             throw new Error(
-              `Orders header past stage bottom (clamp failed): top=${layout.top} stageH=${layout.stageH}`,
+              `Orders header under tray while dragging: top=${layout.top} stageH=${layout.stageH}`,
             )
           }
           if (layout.top + layout.height < layout.stageH - 48 - 4) {
@@ -920,6 +921,22 @@ function buildSteps(cli, targets) {
         }
         await page.waitForTimeout(200)
         // Released over tray → filed.
+        await orders.waitFor({ state: "hidden", timeout: 5_000 })
+        await expectAttr(page.locator("[data-testid=tab-orders]"), "data-stowed", "true")
+        await restoreTrayTab(page, "tab-orders")
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+
+        // Viewport-bottom release: pointer at clientY === innerHeight must file.
+        const readyBottom = await orders.boundingBox()
+        if (!readyBottom) throw new Error("Orders missing before viewport-bottom file")
+        const bx = readyBottom.x + Math.min(80, readyBottom.width / 2)
+        const by = readyBottom.y + 12
+        const vpH = page.viewportSize()?.height ?? 900
+        await page.mouse.move(bx, by)
+        await page.mouse.down()
+        await page.mouse.move(bx, vpH, { steps: 18 })
+        await page.mouse.up()
+        await page.waitForTimeout(200)
         await orders.waitFor({ state: "hidden", timeout: 5_000 })
         await expectAttr(page.locator("[data-testid=tab-orders]"), "data-stowed", "true")
         await restoreTrayTab(page, "tab-orders")

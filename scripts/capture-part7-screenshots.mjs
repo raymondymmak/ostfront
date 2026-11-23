@@ -107,6 +107,31 @@ try {
   await dragPaperTowardTray(page, orders, { release: true, edge: true })
   await shot(page, "part7-orders-tray-edge-filed-1440x900.png")
 
+  // Bottom-edge release: drag to clientY === viewport height, shoot mid-drag, then result.
+  if (await ordersTab.isVisible().catch(() => false)) {
+    await ordersTab.focus()
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(200)
+  }
+  await orders.waitFor({ state: "visible", timeout: 10_000 })
+  {
+    const handle = orders.locator("[data-testid=floating-window-drag-handle]")
+    const box = await handle.boundingBox()
+    if (!box) throw new Error("Orders handle missing for bottom-edge shot")
+    const sx = box.x + Math.min(60, box.width / 2)
+    const sy = box.y + 10
+    const vpH = 900
+    await page.mouse.move(sx, sy)
+    await page.mouse.down()
+    await page.mouse.move(sx, vpH, { steps: 18 })
+    await page.waitForTimeout(120)
+    await shot(page, "part7-orders-bottom-edge-release-1440x900.png")
+    await page.mouse.up()
+    await page.waitForTimeout(250)
+    await orders.waitFor({ state: "hidden", timeout: 5_000 })
+    await shot(page, "part7-orders-bottom-edge-filed-1440x900.png")
+  }
+
   // Viewport sweep: papers open at each size (campaign + teach phone).
   for (const vp of [
     { w: 1440, h: 900 },
