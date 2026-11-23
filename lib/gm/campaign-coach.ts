@@ -22,7 +22,8 @@ import type { BattleFacts, GameState, PlayerOrder, TurnRecord } from "@/lib/type
 import { z } from "zod"
 
 const COACH_TIMEOUT_MS = 20_000
-const COACH_MAX_TOKENS = 512
+/** Keep headroom for reasoning models that spend tokens before writing content. */
+const COACH_MAX_TOKENS = 2_048
 const COACH_MAX_SENTENCES = 3
 const COACH_REPLY_MAX_CHARS = 420
 
@@ -59,9 +60,9 @@ export type CampaignCoachResponse = {
 
 const CoachJsonSchema = z
   .object({
-    // Schema allows a little headroom; capCoachReply enforces 2–3 sentences / char cap.
+    // Schema stays permissive; capCoachReply / capCoachHighlights enforce Socratic limits.
     reply: z.string().min(1).max(800),
-    followUp: z.string().max(160).nullable().optional(),
+    followUp: z.string().max(400).nullable().optional(),
     highlights: z
       .array(
         z.object({
@@ -69,7 +70,7 @@ const CoachJsonSchema = z
           uiId: z.string().optional(),
         }),
       )
-      .max(1)
+      .max(6)
       .optional(),
   })
   .strict()
