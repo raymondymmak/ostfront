@@ -5,15 +5,19 @@ import {
   DOCUMENT_TRAY_HEIGHT,
   stageHeightForWindows,
   TABLE_WINDOW_MARGIN,
+  WINDOW_HEADER_HEIGHT,
 } from "@/lib/ui/table-windows"
 
-export { DOCUMENT_TRAY_HEIGHT, stageHeightForWindows }
+export { DOCUMENT_TRAY_HEIGHT, stageHeightForWindows, WINDOW_HEADER_HEIGHT }
 
 export type Point = { x: number; y: number }
 export type Size = { w: number; h: number }
 export type StageSize = { width: number; height: number }
 
-/** Pointer delta from press origin → clamped window top-left. Size is never mutated. */
+/**
+ * Pointer delta from press origin → clamped window top-left.
+ * Size is never mutated. Y clamp is header-only so papers can reach the tray.
+ */
 export function positionAfterPointerDrag(
   origin: Point,
   pointerStart: { clientX: number; clientY: number },
@@ -30,6 +34,7 @@ export function positionAfterPointerDrag(
     stage.width,
     stage.height,
     margin,
+    { headerOnlyY: true },
   )
 }
 
@@ -41,7 +46,6 @@ export function dragPreservesSize(before: Size, after: Size): boolean {
 /**
  * Viewport-bounded height for a floating paper.
  * A locked height must not change while dragging (neither grow nor shrink with y).
- * Only a smaller stage / preferredMax can force a reduced cap.
  */
 export function resolveWindowHeight(args: {
   lockedHeight: number | null
@@ -60,7 +64,6 @@ export function resolveWindowHeight(args: {
       : args.preferredMax
   const stageCap = Math.max(minHeight, args.stageHeight - margin * 2)
   if (args.lockedHeight != null) {
-    // Keep the locked size across drag; only a smaller stage can force a shrink.
     return Math.min(args.lockedHeight, stageCap)
   }
   const remaining = Math.max(minHeight, args.stageHeight - args.y - margin)
@@ -71,7 +74,7 @@ export function resolveWindowHeight(args: {
 export const TRAY_DRAG_THRESHOLD_PX = 8
 
 /**
- * While dragging a paper, dropping inside the tray band stows it.
+ * While dragging a paper, dropping inside the tray band files it.
  * `pointerY` is relative to the stage top.
  */
 export function pointerInTrayZone(
@@ -82,7 +85,19 @@ export function pointerInTrayZone(
   return pointerY >= stageHeight - trayHeight
 }
 
-/** Soft restore position just above the tray when lifting a tab with a click. */
+/** True when the paper may still reach the tray band (header-only clamp). */
+export function canDragDownToTray(
+  stageHeight: number,
+  trayHeight = DOCUMENT_TRAY_HEIGHT,
+  headerHeight = WINDOW_HEADER_HEIGHT,
+  margin = TABLE_WINDOW_MARGIN,
+): boolean {
+  const maxHeaderY = stageHeight - headerHeight - margin
+  const trayTop = stageHeight - trayHeight
+  return maxHeaderY >= trayTop - margin
+}
+
+/** Soft restore position when taking a tab out with Enter (no pointer drop). */
 export function restorePositionAboveTray(
   preferred: Point,
   size: Size,

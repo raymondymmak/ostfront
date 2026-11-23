@@ -9,6 +9,10 @@ export type StackedWindow<Id extends string = string> = {
   x: number
   y: number
   z: number
+  /** Locked body height in px after measure/resize (retained across stow/restore). */
+  height?: number
+  /** Locked width in px when the player has a preferred size (retained across stow/restore). */
+  width?: number
 }
 
 export type TableWindowState = StackedWindow<TableWindowId>
@@ -18,10 +22,13 @@ export const DESKTOP_SHELL_MQ = "(min-width: 1024px)"
 
 export const TABLE_WINDOW_MARGIN = 8
 
-/** Bottom parchment tray strip — windows clamp above this band. */
+/** Bottom parchment tray strip — drop target for filing papers. */
 export const DOCUMENT_TRAY_HEIGHT = 48
 
-/** Stage height available for floating papers (excludes the tray strip). */
+/** Title-bar / drag-handle height — must stay on-screen while the body may overlap the tray. */
+export const WINDOW_HEADER_HEIGHT = 36
+
+/** Stage height used for default placement (leaves the tray clear). */
 export function stageHeightForWindows(
   stageHeight: number,
   trayHeight = DOCUMENT_TRAY_HEIGHT,
@@ -31,7 +38,15 @@ export function stageHeightForWindows(
 
 const BASE_Z = 20
 
-/** Keep the window fully inside the map stage above the document tray. */
+export type ClampWindowOptions = {
+  /**
+   * When true, Y clamp only keeps the header grip on-screen so papers can
+   * overlap the tray (required for drag-to-file). Default placement uses false.
+   */
+  headerOnlyY?: boolean
+}
+
+/** Keep the window on the map stage; optionally allow body overlap with the tray. */
 export function clampWindowPosition(
   x: number,
   y: number,
@@ -40,10 +55,13 @@ export function clampWindowPosition(
   stageWidth: number,
   stageHeight: number,
   margin = TABLE_WINDOW_MARGIN,
+  options: ClampWindowOptions = {},
 ): { x: number; y: number } {
-  const usableH = stageHeightForWindows(stageHeight)
+  const headerOnlyY = options.headerOnlyY === true
+  const heightForY = headerOnlyY ? WINDOW_HEADER_HEIGHT : winHeight
+  const usableH = headerOnlyY ? stageHeight : stageHeightForWindows(stageHeight)
   const maxX = Math.max(margin, stageWidth - winWidth - margin)
-  const maxY = Math.max(margin, usableH - winHeight - margin)
+  const maxY = Math.max(margin, usableH - heightForY - margin)
   return {
     x: Math.min(maxX, Math.max(margin, x)),
     y: Math.min(maxY, Math.max(margin, y)),
@@ -169,6 +187,23 @@ export function moveWindow(
   y: number,
 ): TableWindowState[] {
   return windows.map((item) => (item.id === id ? { ...item, x, y } : item))
+}
+
+/** Persist measured/resized size so restore keeps width and last height. */
+export function resizeWindow(
+  windows: TableWindowState[],
+  id: TableWindowId,
+  size: { height?: number; width?: number },
+): TableWindowState[] {
+  return windows.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          ...(size.height !== undefined ? { height: size.height } : {}),
+          ...(size.width !== undefined ? { width: size.width } : {}),
+        }
+      : item,
+  )
 }
 
 /** Highest-z open window, or null. */

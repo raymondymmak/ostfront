@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest"
 import {
+  canDragDownToTray,
   dragPreservesSize,
   pointerInTrayZone,
   positionAfterPointerDrag,
   resolveWindowHeight,
   stageHeightForWindows,
 } from "@/lib/ui/window-drag"
-import { DOCUMENT_TRAY_HEIGHT, TABLE_WINDOW_MARGIN } from "@/lib/ui/table-windows"
+import {
+  DOCUMENT_TRAY_HEIGHT,
+  TABLE_WINDOW_MARGIN,
+  WINDOW_HEADER_HEIGHT,
+} from "@/lib/ui/table-windows"
 
 describe("window-drag", () => {
   it("press-drag-release moves by pointer delta without an extra place click", () => {
@@ -21,10 +26,9 @@ describe("window-drag", () => {
     expect(dragPreservesSize(size, size)).toBe(true)
   })
 
-  it("clamps so the paper cannot leave the stage above the tray", () => {
+  it("header-only Y clamp lets the body reach the tray while the grip stays on-screen", () => {
     const size = { w: 300, h: 200 }
     const stage = { width: 1024, height: 768 }
-    const usable = stageHeightForWindows(stage.height)
     const next = positionAfterPointerDrag(
       { x: 10, y: 10 },
       { clientX: 0, clientY: 0 },
@@ -33,8 +37,12 @@ describe("window-drag", () => {
       stage,
     )
     expect(next.x).toBe(stage.width - size.w - TABLE_WINDOW_MARGIN)
-    expect(next.y).toBe(usable - size.h - TABLE_WINDOW_MARGIN)
-    expect(next.y + size.h).toBeLessThanOrEqual(stage.height - DOCUMENT_TRAY_HEIGHT)
+    // Full paper height is NOT the Y clamp — header grip must remain reachable.
+    expect(next.y).toBe(stage.height - WINDOW_HEADER_HEIGHT - TABLE_WINDOW_MARGIN)
+    expect(next.y + WINDOW_HEADER_HEIGHT).toBeLessThanOrEqual(stage.height - TABLE_WINDOW_MARGIN)
+    // Body may overlap / reach the tray band.
+    expect(next.y + size.h).toBeGreaterThan(stage.height - DOCUMENT_TRAY_HEIGHT)
+    expect(canDragDownToTray(stage.height)).toBe(true)
   })
 
   it("does not change locked height when dragged up or down", () => {

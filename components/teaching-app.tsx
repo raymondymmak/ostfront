@@ -34,6 +34,7 @@ import {
   focusTeachWindow,
   isTeachWindowOpen,
   moveTeachWindow,
+  resizeTeachWindow,
   teachLegendHeightCap,
   teachLessonHeightCap,
   TEACH_WINDOW_SIZE_HINTS,
@@ -59,6 +60,7 @@ export function TeachingApp() {
   const desktopShell = useDesktopShell()
   const mapStageRef = useRef<HTMLDivElement>(null)
   const [windows, setWindows] = useState<TeachWindowState[]>(() => createDefaultTeachWindows())
+  const [trayDropActive, setTrayDropActive] = useState(false)
   const [lessonHeightCap, setLessonHeightCap] = useState(() => teachLessonHeightCap(820))
   const [legendHeightCap, setLegendHeightCap] = useState(() => teachLegendHeightCap(820))
   const [lessonId, setLessonId] = useState<TeachLessonId>("converging-lublin")
@@ -215,15 +217,25 @@ export function TeachingApp() {
       return
     }
     const rect = node.getBoundingClientRect()
-    const hint = TEACH_WINDOW_SIZE_HINTS[id]
-    const preferred = restorePositionAboveTray(
-      { x: clientX - rect.left - hint.w / 2, y: clientY - rect.top - 24 },
-      hint,
-      { width: rect.width, height: rect.height },
-    )
     setWindows((current) => {
+      const item = current.find((entry) => entry.id === id)
+      const hint = TEACH_WINDOW_SIZE_HINTS[id]
+      const size = { w: item?.width ?? hint.w, h: item?.height ?? hint.h }
+      const preferred = restorePositionAboveTray(
+        { x: clientX - rect.left - size.w / 2, y: clientY - rect.top - 24 },
+        size,
+        { width: rect.width, height: rect.height },
+      )
       const focused = focusTeachWindow(current, id)
       return moveTeachWindow(focused, id, preferred.x, preferred.y)
+    })
+  }
+
+  function onWindowSize(id: TeachWindowId, size: { width: number; height: number }) {
+    setWindows((current) => {
+      const item = current.find((entry) => entry.id === id)
+      if (item?.width === size.width && item?.height === size.height) return current
+      return resizeTeachWindow(current, id, { width: size.width, height: size.height })
     })
   }
 
@@ -592,6 +604,13 @@ export function TeachingApp() {
               const stow = () => setWindowOpen(win.id, false)
               const onMove = (x: number, y: number) =>
                 setWindows((current) => moveTeachWindow(current, win.id, x, y))
+              const paperProps = {
+                widthPx: win.width,
+                heightPx: win.height,
+                onSize: (size: { width: number; height: number }) => onWindowSize(win.id, size),
+                onStow: stow,
+                onTrayHover: setTrayDropActive,
+              }
               if (win.id === "lesson") {
                 return (
                   <FloatingWindow
@@ -609,7 +628,7 @@ export function TeachingApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     {teachPanel}
                   </FloatingWindow>
@@ -629,7 +648,7 @@ export function TeachingApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <aside className="flex min-h-0 flex-col">{orderPanel}</aside>
                   </FloatingWindow>
@@ -649,7 +668,7 @@ export function TeachingApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <aside className="flex min-h-0 flex-col">{provincePanel}</aside>
                   </FloatingWindow>
@@ -671,7 +690,7 @@ export function TeachingApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <MapLegend
                       embedded
@@ -690,8 +709,8 @@ export function TeachingApp() {
                 items={TEACH_TRAY_ITEMS}
                 openById={teachWindowOpen}
                 onRestore={onTrayRestore}
-                onStow={(id) => setWindowOpen(id, false)}
                 onRestoreAt={onTrayRestoreAt}
+                dropHighlight={trayDropActive}
               />
             </div>
           )}
@@ -735,7 +754,6 @@ export function TeachingApp() {
                     else if (id === "legend") setSideTab("legend")
                     else setSideTab("orders")
                   }}
-                  onStow={() => {}}
                   className="shrink-0"
                 />
               </div>

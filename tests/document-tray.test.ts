@@ -7,8 +7,14 @@ import {
   stowTopmostWindow,
   stowWindow,
 } from "@/lib/ui/document-tray"
-import { createDefaultTableWindows, focusWindow, isWindowOpen } from "@/lib/ui/table-windows"
+import {
+  createDefaultTableWindows,
+  focusWindow,
+  isWindowOpen,
+  resizeWindow,
+} from "@/lib/ui/table-windows"
 import { createDefaultTeachWindows, isTeachWindowOpen } from "@/lib/ui/teach-windows"
+import { readFileSync } from "node:fs"
 
 describe("document-tray", () => {
   it("stows an open paper into the tray and restores it", () => {
@@ -41,6 +47,31 @@ describe("document-tray", () => {
     expect(pointerMovedEnough(start, { clientX: 10, clientY: 30 })).toBe(true)
   })
 
+  it("retains width and height across stow / restore and session merge", () => {
+    let windows = createDefaultTableWindows(1440, 820)
+    windows = resizeWindow(windows, "orders", { width: 412, height: 501 })
+    windows = stowWindow(windows, "orders")
+    expect(isStowed(windows, "orders")).toBe(true)
+    windows = restoreWindow(windows, "orders", { x: 40, y: 60 })
+    const orders = windows.find((item) => item.id === "orders")
+    expect(orders?.width).toBe(412)
+    expect(orders?.height).toBe(501)
+    expect(orders?.x).toBe(40)
+
+    const defaults = createDefaultTeachWindows(1440, 820)
+    const persisted = {
+      windows: defaults.map((item) =>
+        item.id === "orders"
+          ? { ...item, open: false, x: 12, y: 34, width: 390, height: 440 }
+          : item,
+      ),
+    }
+    const merged = applyPersistedLayout(defaults, persisted)
+    expect(isTeachWindowOpen(merged, "orders")).toBe(false)
+    expect(merged.find((item) => item.id === "orders")?.width).toBe(390)
+    expect(merged.find((item) => item.id === "orders")?.height).toBe(440)
+  })
+
   it("applies persisted tray/open layout onto defaults", () => {
     const defaults = createDefaultTeachWindows(1440, 820)
     const persisted = {
@@ -52,5 +83,20 @@ describe("document-tray", () => {
     expect(isTeachWindowOpen(merged, "orders")).toBe(false)
     expect(merged.find((item) => item.id === "orders")?.x).toBe(12)
     expect(isTeachWindowOpen(merged, "lesson")).toBe(true)
+  })
+
+  it("is drag-first: no Stow buttons; tray highlights on drop; Enter takes a tab out", () => {
+    const tray = readFileSync("components/document-tray.tsx", "utf8")
+    const paper = readFileSync("components/floating-window.tsx", "utf8")
+    expect(tray).toContain("dropHighlight")
+    expect(tray).toContain("data-drop-active")
+    expect(tray).toContain("onRestoreAt")
+    expect(tray).toMatch(/Enter/)
+    expect(tray).not.toContain("onStow")
+    expect(paper).not.toMatch(/>Stow</)
+    expect(paper).not.toContain("floating-window-stow")
+    expect(paper).not.toMatch(/getByRole\([^\)]*Stow/)
+    expect(paper).toContain("onTrayHover")
+    expect(paper).toContain("data-over-tray")
   })
 })

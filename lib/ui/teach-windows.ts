@@ -219,6 +219,22 @@ export function moveTeachWindow(
   return windows.map((item) => (item.id === id ? { ...item, x, y } : item))
 }
 
+export function resizeTeachWindow(
+  windows: TeachWindowState[],
+  id: TeachWindowId,
+  size: { height?: number; width?: number },
+): TeachWindowState[] {
+  return windows.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          ...(size.height !== undefined ? { height: size.height } : {}),
+          ...(size.width !== undefined ? { width: size.width } : {}),
+        }
+      : item,
+  )
+}
+
 export function topmostTeachWindow(windows: TeachWindowState[]): TeachWindowId | null {
   let best: TeachWindowState | null = null
   for (const item of windows) {

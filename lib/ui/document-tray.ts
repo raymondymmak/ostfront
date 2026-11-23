@@ -69,7 +69,7 @@ export function pointerMovedEnough(
 const SESSION_PREFIX = "ostfront-windows-v1:"
 
 export type PersistedWindowLayout<Id extends string> = {
-  windows: Array<Pick<StackedWindow<Id>, "id" | "open" | "x" | "y" | "z">>
+  windows: Array<Pick<StackedWindow<Id>, "id" | "open" | "x" | "y" | "z" | "height" | "width">>
 }
 
 export function sessionStorageKey(scope: "campaign" | "teach"): string {
@@ -99,7 +99,15 @@ export function saveWindowSession<Id extends string>(
   if (typeof sessionStorage === "undefined") return
   try {
     const payload: PersistedWindowLayout<Id> = {
-      windows: windows.map(({ id, open, x, y, z }) => ({ id, open, x, y, z })),
+      windows: windows.map(({ id, open, x, y, z, height, width }) => ({
+        id,
+        open,
+        x,
+        y,
+        z,
+        height,
+        width,
+      })),
     }
     sessionStorage.setItem(sessionStorageKey(scope), JSON.stringify(payload))
   } catch {
@@ -123,6 +131,8 @@ export function applyPersistedLayout<Id extends string>(
       x: saved.x,
       y: saved.y,
       z: saved.z,
+      ...(saved.height !== undefined ? { height: saved.height } : {}),
+      ...(saved.width !== undefined ? { width: saved.width } : {}),
     }
   })
 }

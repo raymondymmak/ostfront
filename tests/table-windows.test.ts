@@ -53,14 +53,19 @@ describe("table-windows", () => {
     expect(isWindowOpen(windows, "orders")).toBe(true)
   })
 
-  it("clamps positions so windows stay inside the map stage above the tray", () => {
+  it("clamps default placement above the tray; header-only Y reaches the tray band", () => {
     const clamped = clampWindowPosition(2000, 2000, 300, 200, 1024, 768)
     expect(clamped.x).toBe(1024 - 300 - TABLE_WINDOW_MARGIN)
-    // Usable height excludes DOCUMENT_TRAY_HEIGHT (48).
+    // Default placement usable height excludes DOCUMENT_TRAY_HEIGHT (48).
     expect(clamped.y).toBe(768 - 48 - 200 - TABLE_WINDOW_MARGIN)
     const topLeft = clampWindowPosition(-40, -10, 300, 200, 1024, 768)
     expect(topLeft.x).toBe(TABLE_WINDOW_MARGIN)
     expect(topLeft.y).toBe(TABLE_WINDOW_MARGIN)
+    const drag = clampWindowPosition(2000, 2000, 300, 200, 1024, 768, TABLE_WINDOW_MARGIN, {
+      headerOnlyY: true,
+    })
+    // Header grip stays on-screen; body may overlap the tray.
+    expect(drag.y).toBe(768 - 36 - TABLE_WINDOW_MARGIN)
   })
 
   it("places default Legend fully above the stage bottom at common desktop sizes", () => {

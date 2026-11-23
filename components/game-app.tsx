@@ -47,6 +47,7 @@ import {
   focusWindow,
   isWindowOpen,
   moveWindow,
+  resizeWindow,
   type TableWindowId,
   type TableWindowState,
   TABLE_WINDOW_SIZE_HINTS,
@@ -82,6 +83,7 @@ export function GameApp() {
   const [chatEpoch, setChatEpoch] = useState(0)
   const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
   const [windows, setWindows] = useState<TableWindowState[]>(() => createDefaultTableWindows())
+  const [trayDropActive, setTrayDropActive] = useState(false)
   const [showRails, setShowRails] = useState(true)
   const desktopShell = useDesktopShell()
   const mapStageRef = useRef<HTMLDivElement>(null)
@@ -236,20 +238,30 @@ export function GameApp() {
       return
     }
     const rect = node.getBoundingClientRect()
-    const hint = TABLE_WINDOW_SIZE_HINTS[id]
-    const preferred = restorePositionAboveTray(
-      { x: clientX - rect.left - hint.w / 2, y: clientY - rect.top - 24 },
-      hint,
-      { width: rect.width, height: rect.height },
-    )
     setWindows((current) => {
+      const item = current.find((entry) => entry.id === id)
+      const hint = TABLE_WINDOW_SIZE_HINTS[id]
+      const size = { w: item?.width ?? hint.w, h: item?.height ?? hint.h }
+      const preferred = restorePositionAboveTray(
+        { x: clientX - rect.left - size.w / 2, y: clientY - rect.top - 24 },
+        size,
+        { width: rect.width, height: rect.height },
+      )
       const focused = focusWindow(current, id)
       return moveWindow(focused, id, preferred.x, preferred.y)
     })
   }
 
+  function onWindowSize(id: TableWindowId, size: { width: number; height: number }) {
+    setWindows((current) => {
+      const item = current.find((entry) => entry.id === id)
+      if (item?.width === size.width && item?.height === size.height) return current
+      return resizeWindow(current, id, { width: size.width, height: size.height })
+    })
+  }
+
   function onToggleTableWindow(id: TableWindowId) {
-    // Tray / legacy toggles: open or focus (Stow / Escape returns to tray).
+    // Tray tabs / Escape restore or file papers — not show/hide toggles.
     setWindows((current) => focusWindow(current, id))
   }
 
@@ -727,6 +739,14 @@ export function GameApp() {
               const stow = () => setWindowOpen(win.id, false)
               const onMove = (x: number, y: number) =>
                 setWindows((current) => moveWindow(current, win.id, x, y))
+              const onSize = (size: { width: number; height: number }) => onWindowSize(win.id, size)
+              const paperProps = {
+                widthPx: win.width,
+                heightPx: win.height,
+                onSize,
+                onStow: stow,
+                onTrayHover: setTrayDropActive,
+              }
               if (win.id === "ohl") {
                 return (
                   <OhlOrdersWindow
@@ -736,10 +756,14 @@ export function GameApp() {
                     x={win.x}
                     y={win.y}
                     z={win.z}
+                    widthPx={win.width}
+                    heightPx={win.height}
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
+                    onSize={onSize}
                     onStow={stow}
+                    onTrayHover={setTrayDropActive}
                   />
                 )
               }
@@ -756,7 +780,7 @@ export function GameApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <aside className="flex min-h-0 flex-col">{orderPanel}</aside>
                   </FloatingWindow>
@@ -775,7 +799,7 @@ export function GameApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <aside className="flex min-h-0 flex-col">{provincePanel}</aside>
                   </FloatingWindow>
@@ -796,7 +820,7 @@ export function GameApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <div className="min-h-0" data-testid="mobile-chronicle-panel">
                       <TimelinePanel
@@ -825,7 +849,7 @@ export function GameApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <MapLegend
                       embedded
@@ -850,7 +874,7 @@ export function GameApp() {
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
-                    onStow={stow}
+                    {...paperProps}
                   >
                     <AdvisorPanel
                       open
@@ -873,8 +897,8 @@ export function GameApp() {
                 items={CAMPAIGN_TRAY_ITEMS}
                 openById={windowOpenMap}
                 onRestore={onTrayRestore}
-                onStow={(id) => setWindowOpen(id, false)}
                 onRestoreAt={onTrayRestoreAt}
+                dropHighlight={trayDropActive}
               />
             </div>
           )}
@@ -909,7 +933,6 @@ export function GameApp() {
                 openById={{ orders: sideTab === "orders", province: sideTab === "front" }}
                 activeId={sideTab === "front" ? "province" : "orders"}
                 onRestore={(id) => setSideTab(id === "province" ? "front" : "orders")}
-                onStow={() => {}}
                 className="order-last shrink-0 lg:order-none"
               />
               <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto">

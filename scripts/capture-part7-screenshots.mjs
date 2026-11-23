@@ -1,4 +1,4 @@
-/** Capture Part 7 tray UX screenshots for / and /teach. */
+/** Capture Part 7 tray UX screenshots for / and /teach (drag-first tray). */
 import { chromium } from "playwright"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
@@ -6,13 +6,6 @@ import { join } from "node:path"
 const BASE = process.env.DEMO_URL || "http://127.0.0.1:3456"
 const OUT = process.env.OUT_DIR || "/opt/cursor/artifacts"
 mkdirSync(OUT, { recursive: true })
-
-const VIEWPORTS = [
-  { name: "1440x900", width: 1440, height: 900 },
-  { name: "1280x800", width: 1280, height: 800 },
-  { name: "768x1024", width: 768, height: 1024 },
-  { name: "390x844", width: 390, height: 844 },
-]
 
 async function beginCampaign(page) {
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" })
@@ -42,42 +35,59 @@ async function shot(page, file) {
   console.log("wrote", path)
 }
 
+async function dragTowardTray(page, dialog, { release = true } = {}) {
+  const handle = dialog.locator("[data-testid=floating-window-drag-handle]")
+  const tray = page.locator("[data-testid=document-tray]")
+  const box = await handle.boundingBox()
+  const trayBox = await tray.boundingBox()
+  if (!box || !trayBox) throw new Error("missing handle/tray")
+  const sx = box.x + Math.min(60, box.width / 2)
+  const sy = box.y + 10
+  const ex = trayBox.x + trayBox.width / 2
+  const ey = trayBox.y + trayBox.height / 2
+  await page.mouse.move(sx, sy)
+  await page.mouse.down()
+  await page.mouse.move(ex, ey, { steps: 14 })
+  await page.waitForTimeout(120)
+  if (release) {
+    await page.mouse.up()
+    await page.waitForTimeout(200)
+  }
+}
+
+async function fileAllViaEscape(page) {
+  for (let i = 0; i < 8; i++) {
+    const visible = await page
+      .locator('[role="dialog"]')
+      .evaluateAll((els) => els.filter((el) => el.getClientRects().length > 0).length)
+    if (visible === 0) break
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(100)
+  }
+}
+
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage()
 
 try {
-  for (const vp of VIEWPORTS) {
-    await page.setViewportSize({ width: vp.width, height: vp.height })
-    await beginCampaign(page)
-    await shot(page, `part7-campaign-${vp.name}.png`)
-    if (vp.width >= 1024) {
-      // Stow open papers for a tray-only shot.
-      for (const label of ["Orders", "Legend", "Orders from OHL"]) {
-        const win = page.locator(`[role="dialog"][aria-label="${label}"]`)
-        if (await win.isVisible().catch(() => false)) {
-          await win.getByRole("button", { name: `Stow ${label}` }).click().catch(() => {})
-          await page.waitForTimeout(200)
-        }
-      }
-      await shot(page, `part7-campaign-tray-stowed-${vp.name}.png`)
-    }
-  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await beginCampaign(page)
+  await shot(page, "part7-feedback-papers-out-1440x900.png")
 
-  for (const vp of VIEWPORTS) {
-    await page.setViewportSize({ width: vp.width, height: vp.height })
-    await beginTeach(page)
-    await shot(page, `part7-teach-${vp.name}.png`)
-    if (vp.width >= 1024) {
-      for (const label of ["Lesson", "Orders", "Legend"]) {
-        const win = page.locator(`[role="dialog"][aria-label="${label}"]`)
-        if (await win.isVisible().catch(() => false)) {
-          await win.getByRole("button", { name: `Stow ${label}` }).click().catch(() => {})
-          await page.waitForTimeout(200)
-        }
-      }
-      await shot(page, `part7-teach-tray-stowed-${vp.name}.png`)
-    }
-  }
+  // Mid-drag over highlighted tray (Orders).
+  const orders = page.locator('[role="dialog"][aria-label="Orders"]')
+  await orders.waitFor({ state: "visible", timeout: 10_000 })
+  await dragTowardTray(page, orders, { release: false })
+  await shot(page, "part7-feedback-drag-over-tray-1440x900.png")
+  await page.mouse.up()
+  await page.waitForTimeout(250)
+
+  await fileAllViaEscape(page)
+  await shot(page, "part7-feedback-all-filed-1440x900.png")
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await beginTeach(page)
+  await shot(page, "part7-feedback-teach-390x844.png")
 } finally {
   await browser.close()
 }

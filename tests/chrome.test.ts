@@ -90,8 +90,12 @@ describe("top bar and map chrome", () => {
     expect(map).toContain("mapReady")
     const tray = readFileSync("components/document-tray.tsx", "utf8")
     expect(tray).toContain('data-testid="document-tray"')
+    expect(tray).toContain("dropHighlight")
+    expect(tray).not.toContain("onStow")
     const trayLib = readFileSync("lib/ui/document-tray.ts", "utf8")
     expect(trayLib).toContain("teach-lesson-toggle")
+    const paper = readFileSync("components/floating-window.tsx", "utf8")
+    expect(paper).not.toContain("floating-window-stow")
   })
 
   it("keeps start-card controls full-width inside the parchment card (no left-flush max-w)", () => {

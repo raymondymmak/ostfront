@@ -15,7 +15,11 @@ describe("FloatingWindow pointer drag", () => {
     expect(src).toContain("setPointerCapture")
     expect(src).toContain('data-testid="floating-window-drag-handle"')
     expect(src).toContain("positionAfterPointerDrag")
+    expect(src).toContain("onTrayHover")
+    expect(src).toContain("pointerInTrayZone")
     expect(src).not.toMatch(/click-to-place|dragMode|placing/)
+    expect(src).not.toMatch(/>Stow</)
+    expect(src).not.toContain("floating-window-stow")
   })
 
   it("moves on pointerdown → move → up without a second click, and keeps size", async () => {

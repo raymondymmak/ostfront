@@ -11,26 +11,30 @@ type DocumentTrayProps<Id extends string> = {
   openById: Partial<Record<Id, boolean>>
   /** Active tab highlight for phone stacked swap (optional). */
   activeId?: Id | null
+  /** Desktop: Enter / drag-up takes a stowed paper out. Phone: click swaps panel. */
   onRestore: (id: Id) => void
-  onStow: (id: Id) => void
   /** Drag a stowed tab upward onto the map to restore at a drop point. */
   onRestoreAt?: (id: Id, clientX: number, clientY: number) => void
+  /** Highlight when a paper is dragged over the tray (desktop file target). */
+  dropHighlight?: boolean
   className?: string
   /** Compact strip for phone stacked layout. */
   variant?: "desktop" | "phone"
 }
 
 /**
- * Bottom parchment tray: stowed papers sit as tabs; click or drag-up restores.
- * Each tab is a real button for keyboard access.
+ * Bottom parchment tray: stowed papers sit as tabs.
+ * Desktop — drag a tab up onto the map (or Enter) to take it out; drop highlight
+ * while filing a paper in. Not a row of show/hide toggles.
+ * Phone — tab strip that swaps the stacked panel.
  */
 export function DocumentTray<Id extends string>({
   items,
   openById,
   activeId = null,
   onRestore,
-  onStow,
   onRestoreAt,
+  dropHighlight = false,
   className = "",
   variant = "desktop",
 }: DocumentTrayProps<Id>) {
@@ -43,19 +47,33 @@ export function DocumentTray<Id extends string>({
   } | null>(null)
   const [lifting, setLifting] = useState<Id | null>(null)
 
+  const desktopItems =
+    variant === "desktop" ? items.filter((item) => !openById[item.id]) : items
+
   return (
     <nav
       data-testid="document-tray"
       aria-label="Document tray"
-      className={`pointer-events-auto flex items-end gap-1.5 overflow-x-auto border-t border-leather/45 bg-paper-deep px-2 py-1.5 ${className}`}
+      data-drop-active={dropHighlight ? "true" : undefined}
+      className={`pointer-events-auto flex items-end gap-1.5 overflow-x-auto border-t px-2 py-1.5 transition-[box-shadow,background-color,border-color] duration-150 ${className} ${
+        dropHighlight
+          ? "border-brass bg-brass/25 shadow-[0_-6px_20px_rgba(122,92,40,0.35)]"
+          : "border-leather/45 bg-paper-deep"
+      }`}
       style={{
         minHeight: DOCUMENT_TRAY_HEIGHT,
-        backgroundImage:
-          "linear-gradient(180deg, rgba(255,252,245,0.4) 0%, transparent 55%), linear-gradient(0deg, rgba(74,63,51,0.14), transparent 50%)",
-        boxShadow: "0 -4px 14px rgba(36,28,20,0.14)",
+        backgroundImage: dropHighlight
+          ? "linear-gradient(180deg, rgba(198,161,90,0.35) 0%, rgba(246,241,228,0.85) 55%)"
+          : "linear-gradient(180deg, rgba(255,252,245,0.4) 0%, transparent 55%), linear-gradient(0deg, rgba(74,63,51,0.14), transparent 50%)",
+        boxShadow: dropHighlight ? undefined : "0 -4px 14px rgba(36,28,20,0.14)",
       }}
     >
-      {items.map((item) => {
+      {desktopItems.length === 0 && variant === "desktop" ? (
+        <p className="px-2 py-1 font-display text-xs text-ink-muted select-none">
+          {dropHighlight ? "Release to file" : "Drag a paper here to file it"}
+        </p>
+      ) : null}
+      {desktopItems.map((item) => {
         const out = Boolean(openById[item.id])
         const pressed = activeId != null ? activeId === item.id : out
         const stowed = !out
@@ -66,38 +84,39 @@ export function DocumentTray<Id extends string>({
             data-testid={item.testId}
             data-tray-id={item.id}
             data-stowed={stowed ? "true" : "false"}
-            aria-pressed={pressed}
+            aria-pressed={variant === "phone" ? pressed : undefined}
             aria-label={
-              stowed
-                ? `Open ${item.title ?? item.label}`
-                : variant === "phone"
-                  ? `Show ${item.title ?? item.label}`
-                  : `Focus ${item.title ?? item.label}`
+              variant === "phone"
+                ? `Show ${item.title ?? item.label}`
+                : `Take out ${item.title ?? item.label}`
             }
             title={item.title ?? item.label}
             className={`document-tray-tab relative shrink-0 rounded-t-[3px] border border-b-0 px-3 py-1.5 font-display text-sm leading-none transition-[transform,box-shadow] duration-150 ease-out touch-none ${
-              pressed
+              variant === "phone" && pressed
                 ? "z-[1] border-brass/70 bg-paper text-ink shadow-[0_-2px_8px_rgba(36,28,20,0.18)]"
-                : "border-leather/40 bg-paper-deep/90 text-ink-muted hover:bg-paper hover:text-ink"
-            } ${lifting === item.id ? "motion-safe:-translate-y-1" : ""}`}
+                : "border-leather/40 bg-paper text-ink shadow-[0_-1px_4px_rgba(36,28,20,0.12)] hover:bg-paper-deep"
+            } ${lifting === item.id ? "motion-safe:-translate-y-2 motion-safe:scale-105" : ""}`}
             style={{
-              backgroundImage: pressed
-                ? "linear-gradient(180deg, rgba(255,250,240,0.7) 0%, rgba(243,234,215,0.35) 100%)"
-                : undefined,
+              backgroundImage:
+                "linear-gradient(180deg, rgba(255,250,240,0.7) 0%, rgba(243,234,215,0.35) 100%)",
             }}
             onClick={() => {
               if (drag.current?.moved) return
               if (variant === "phone") {
                 onRestore(item.id)
-                return
               }
-              if (stowed) onRestore(item.id)
-              else onRestore(item.id) // focus / bring forward
+              // Desktop: click focuses the tab for keyboard; Enter takes it out.
+            }}
+            onKeyDown={(event) => {
+              if (variant === "phone") return
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                onRestore(item.id)
+              }
             }}
             onPointerDown={(event) => {
               if (event.button !== 0) return
               if (variant === "phone") return
-              if (!stowed) return
               drag.current = {
                 id: item.id,
                 pointerId: event.pointerId,
@@ -134,25 +153,21 @@ export function DocumentTray<Id extends string>({
                 /* already released */
               }
               if (moved && onRestoreAt) {
-                onRestoreAt(id, event.clientX, event.clientY)
+                // Dragging up onto the map files the tab out at the release point.
+                const dy = event.clientY - state.startY
+                if (dy < -TRAY_LIFT_MIN_PX) {
+                  onRestoreAt(id, event.clientX, event.clientY)
+                }
               }
             }}
             onPointerCancel={() => {
               drag.current = null
               setLifting(null)
             }}
-            onDoubleClick={(event) => {
-              if (variant === "phone") return
-              event.preventDefault()
-              if (out) onStow(item.id)
-            }}
           >
             <span className="block max-w-[9rem] truncate">{item.label}</span>
-            {stowed && variant === "desktop" ? (
-              <span
-                aria-hidden
-                className="mt-1 block h-0.5 w-full rounded-full bg-leather/35"
-              />
+            {variant === "desktop" ? (
+              <span aria-hidden className="mt-1 block h-0.5 w-full rounded-full bg-leather/35" />
             ) : null}
           </button>
         )
@@ -160,3 +175,6 @@ export function DocumentTray<Id extends string>({
     </nav>
   )
 }
+
+/** Minimum upward travel (px) before a tray tab is considered lifted onto the map. */
+const TRAY_LIFT_MIN_PX = 24
