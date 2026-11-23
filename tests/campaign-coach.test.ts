@@ -464,6 +464,10 @@ describe("campaign coach", () => {
       "What do you expect this queued attack to achieve? The engine rates that column at about 4.7:1 if the Russians don't reinforce."
     expect(scrubCoachFiledClaims(aboutQueue)).toBe(aboutQueue)
     expect(scrubCoachFiledClaims("Your queued orders into Kielce look sound.")).toMatch(/queued orders/i)
+    // Plain past-tense claims that the coach itself filed must still be scrubbed.
+    expect(scrubCoachFiledClaims("I filed your order for Kielce.")).toMatch(/I do not file orders/i)
+    expect(scrubCoachFiledClaims("I noted your orders for Lemberg.")).toMatch(/I do not file orders/i)
+    expect(scrubCoachFiledClaims("I queued an order for Kielce.")).toMatch(/I do not file orders/i)
 
     const result = await coachCampaign({
       state: createInitialState(),
