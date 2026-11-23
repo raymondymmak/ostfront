@@ -155,6 +155,7 @@ sequenceDiagram
 
 - **Create:** `CREATE_CAMPAIGN_LUA` — dual `SET NX` with 30-day TTL (`CAMPAIGN_TTL_SECONDS`).
 - **Commit:** `COMMIT_TURN_LUA` — one atomic step: verify expected turn, `SET NX` on turn `N+1`, write new head. Losers → **409** (`storage_conflict` or `stale_turn`). Fixes the old Blob orphan-snapshot failure mode (ADR 004, superseded).
+- **Game over:** `resolveTurn` still advances `state.turn` after a grade is set (so commit sees `expectedTurn + 1`), but leaves `state.date` on the fortnight that closed — final map stays on e.g. 11 July before the grade screen (ADR 014 / issue #62). HUD fortnight uses `Math.min(turn + 1, scenario length)`.
 - **No Redis creds:** in-memory `Map` for local dev and Vitest (`campaignStorageMode(): "memory"`).
 - **Vercel without creds:** `lib/campaign/availability.ts` → **503** fail closed.
 

@@ -140,6 +140,35 @@ describe("server-owned campaign", () => {
     const payload = (await viaApi.json()) as { state: Record<string, unknown> }
     expect("seed" in payload.state).toBe(false)
   })
+
+  it("commits the final fortnight so the grade map stays on 11 July (#62)", async () => {
+    const { gameId } = await createStoredCampaign("normal", 19150711)
+    for (let expectedTurn = 0; expectedTurn < 5; expectedTurn += 1) {
+      const mid = await postTurn({ gameId, expectedTurn, orders: [] })
+      expect(mid.status).toBe(200)
+      const midBody = (await mid.json()) as { state: { turn: number; result: unknown } }
+      expect(midBody.state.result).toBeNull()
+      expect(midBody.state.turn).toBe(expectedTurn + 1)
+    }
+
+    const final = await postTurn({ gameId, expectedTurn: 5, orders: [] })
+    expect(final.status).toBe(200)
+    const body = (await final.json()) as {
+      state: { turn: number; date: string; result: { grade: string } | null }
+      code?: string
+      error?: string
+    }
+    expect(body.code).toBeUndefined()
+    expect(body.error).toBeUndefined()
+    expect(body.state.result).not.toBeNull()
+    expect(body.state.date).toBe("11 July 1915")
+    expect(body.state.turn).toBe(6)
+
+    const reloaded = await loadStoredCampaign(gameId)
+    expect(reloaded?.save.state.result).not.toBeNull()
+    expect(reloaded?.save.state.date).toBe("11 July 1915")
+    expect(reloaded?.head.turn).toBe(6)
+  })
 })
 
 function storedHeadSeedNotInText(text: string, seed: number): boolean {

@@ -245,8 +245,11 @@ export function resolveTurn(
     gmDebug: options.gmDebug,
   }
 
+  // Always advance the turn index so server commit can store under expectedTurn+1.
+  // When the campaign ends, keep the calendar on the fortnight that closed so the
+  // final map still shows that date before the grade screen (issue #62).
+  state.turn += 1
   if (!state.result) {
-    state.turn += 1
     state.date = scenarioDate(state.scenario, state.turn)
   }
   return { state, record }

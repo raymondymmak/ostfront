@@ -65,7 +65,9 @@ describe("victory", () => {
     state.date = "11 July 1915"
     const closed = resolveTurn(state, { narration: "x", proposals: [], events: [], diplomacy: [] })
     expect(closed.state.result?.grade).toBe("marginal")
-    expect(closed.state.turn).toBe(5)
+    // Index advances for storage; calendar stays on the closed fortnight.
+    expect(closed.state.turn).toBe(6)
     expect(closed.state.date).toBe("11 July 1915")
+    expect(closed.record.turn).toBe(5)
   })
 })
