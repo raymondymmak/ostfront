@@ -190,30 +190,86 @@ async function krakowIsSelected(page) {
  * A second click on an already-selected province clears selection.
  * @param {import('playwright').Page} page
  */
-/** Close a desktop floating Province window so it cannot swallow map clicks. */
+/** Drag a floating paper's header into the document tray to file it. */
+async function dragPaperIntoTray(page, dialog) {
+  const handle = dialog.locator("[data-testid=floating-window-drag-handle]")
+  const tray = page.locator("[data-testid=document-tray]")
+  await handle.waitFor({ state: "visible", timeout: 5_000 })
+  await tray.waitFor({ state: "visible", timeout: 5_000 })
+  const box = await handle.boundingBox()
+  const trayBox = await tray.boundingBox()
+  if (!box || !trayBox) throw new Error("Missing paper handle or tray for drag-to-file")
+  const startX = box.x + Math.min(60, box.width / 2)
+  const startY = box.y + Math.min(10, box.height / 2)
+  const endX = trayBox.x + trayBox.width / 2
+  const endY = trayBox.y + trayBox.height / 2
+  await page.mouse.move(startX, startY)
+  await page.mouse.down()
+  await page.mouse.move(endX, endY, { steps: 12 })
+  await page.waitForTimeout(80)
+  await page.mouse.up()
+  await page.waitForTimeout(150)
+}
+
+/**
+ * Take a stowed tray tab out.
+ * Desktop: Enter on the focused tab (no click-to-toggle).
+ * Phone tray (aria-pressed): click still swaps the stacked panel.
+ * No-op when the tab is already absent (paper is out).
+ */
+async function restoreTrayTab(page, testId) {
+  const tab = page.locator(`[data-testid=${testId}]`)
+  if (!(await tab.isVisible().catch(() => false))) return
+  const pressed = await tab.getAttribute("aria-pressed")
+  if (pressed != null) {
+    await tab.click()
+    await page.waitForTimeout(120)
+    return
+  }
+  await tab.focus()
+  await page.keyboard.press("Enter")
+  await page.waitForTimeout(150)
+}
+
+/** File a desktop floating Province window so it cannot swallow map clicks. */
 async function closeFloatingProvinceIfOpen(page) {
   const win = page.locator('[role="dialog"][aria-label="Province"]')
   if (!(await win.isVisible().catch(() => false))) return
-  // Raise Province above Orders (same column) so Close is actionable.
-  await page.locator("[data-testid=tab-province]").click()
-  const close = win.getByRole("button", { name: "Close Province" })
-  try {
-    await close.click({ timeout: 5_000 })
-  } catch {
-    await close.click({ force: true, timeout: 5_000 })
+  // Raise Province (phone tray click or focus) then Escape / drag into tray.
+  const tab = page.locator("[data-testid=tab-province]")
+  if (await tab.isVisible().catch(() => false)) {
+    await tab.focus().catch(() => {})
   }
-  await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
+  await win.locator("[data-testid=floating-window-drag-handle]").click({ timeout: 3_000 }).catch(() => {})
+  await page.keyboard.press("Escape")
+  await win.waitFor({ state: "hidden", timeout: 3_000 }).catch(async () => {
+    await dragPaperIntoTray(page, win)
+    await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
+  })
+}
+
+/** File open parchment papers that commonly cover western/central map clicks. */
+async function stowPapersForMapClick(page) {
+  // Escape files the topmost open paper (desktop shell); repeat until the map is clear.
+  for (let i = 0; i < 8; i++) {
+    const visible = await page
+      .locator('[role="dialog"]')
+      .evaluateAll((els) => els.filter((el) => el.getClientRects().length > 0).length)
+    if (visible === 0) break
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(120)
+  }
 }
 
 async function selectKrakowOnMap(page) {
-  await closeFloatingProvinceIfOpen(page)
+  await stowPapersForMapClick(page)
   if (!(await krakowIsSelected(page))) {
     const point = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
     if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
     await page.mouse.click(point.x, point.y)
     await page.waitForTimeout(400)
   }
-  await page.locator("[data-testid=tab-province]").click()
+  await restoreTrayTab(page, "tab-province")
   const title = page.locator("aside h2").filter({ hasText: "Kraków" }).first()
   await title.waitFor({ state: "attached", timeout: 10_000 })
   await title.scrollIntoViewIfNeeded()
@@ -312,7 +368,7 @@ async function assertBriefingControlsCentered(page, tolerancePx = 1) {
 async function ensureAdvisorPanelOpen(page) {
   const panel = page.locator("[data-testid=advisor-panel]")
   if (await panel.isVisible().catch(() => false)) return
-  await page.locator("[data-testid=advisor-toggle]").click()
+  await restoreTrayTab(page, "advisor-toggle")
   await panel.waitFor({ state: "visible", timeout: 10_000 })
 }
 
@@ -486,7 +542,7 @@ async function acceptFirstValidAdvisorCard(page, container) {
 
 /** @param {import('playwright').Page} page @param {string} pattern RegExp source or substring for fortify */
 async function assertQueuedFortifyKrakow(page) {
-  await page.locator("[data-testid=tab-orders]").click()
+  await restoreTrayTab(page, "tab-orders")
   const queue = page.locator("[data-testid=queued-orders]")
   const line = queue.getByText(/Fortify/i).filter({ hasText: /Kraków/i })
   try {
@@ -525,7 +581,7 @@ async function openChronicleDrawer(page) {
   await dismissNewsCardsIfOpen(page)
   const drawer = page.locator("[data-testid=chronicle-drawer]")
   if (await drawer.isVisible()) return
-  await page.locator("[data-testid=chronicle-log-toggle]").click()
+  await restoreTrayTab(page, "chronicle-log-toggle")
   await drawer.waitFor({ state: "visible", timeout: 10_000 })
 }
 
@@ -555,6 +611,8 @@ function buildSteps(cli, targets) {
         await page.evaluate(() => {
           localStorage.removeItem("ostfront-1915-v1")
           sessionStorage.removeItem("ostfront-advisor-v1")
+          sessionStorage.removeItem("ostfront-windows-v1:campaign")
+          sessionStorage.removeItem("ostfront-windows-v1:teach")
         })
         const reload = await page.reload({ waitUntil: "domcontentloaded" })
         const status = reload?.status() ?? 0
@@ -621,19 +679,30 @@ function buildSteps(cli, targets) {
           "[data-testid=map-legend]",
           "Desktop Log vs legend",
         )
-        await page.locator("[data-testid=chronicle-log-toggle]").click()
+        // File Log back into the tray (no Stow / toggle button).
+        await page.locator("[data-testid=chronicle-drawer]").locator("[data-testid=floating-window-drag-handle]").click().catch(() => {})
+        await page.keyboard.press("Escape")
+        await page.locator("[data-testid=chronicle-drawer]").waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
       },
     },
     {
       id: "05-map-click",
       name: "Select province via map click",
       async run({ page }) {
-        await closeFloatingProvinceIfOpen(page)
+        await stowPapersForMapClick(page)
+        await page.waitForTimeout(300)
         const point = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
         if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
         await page.mouse.click(point.x, point.y)
-        await page.waitForTimeout(400)
-        await page.locator("[data-testid=tab-province]").click()
+        await page.waitForFunction(
+          () => {
+            const filter = window.__ostfrontMap?.getFilter?.("selected")
+            return Array.isArray(filter) && filter[2] === "katowice"
+          },
+          null,
+          { timeout: 10_000 },
+        )
+        await restoreTrayTab(page, "tab-province")
         const title = page.locator("aside h2").filter({ hasText: "Katowice" }).first()
         await title.waitFor({ state: "attached", timeout: 10_000 })
         await title.scrollIntoViewIfNeeded()
@@ -644,6 +713,9 @@ function buildSteps(cli, targets) {
       id: "06-map-modes",
       name: "Map modes Control / Supply / Unrest",
       async run({ page }) {
+        // Overlay scale lives in the Legend paper — restore it after map-click stows.
+        await restoreTrayTab(page, "legend-toggle")
+        await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-supply]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-unrest]").click()
@@ -656,6 +728,9 @@ function buildSteps(cli, targets) {
       id: "07-rails",
       name: "Toggle railways in map legend",
       async run({ page }) {
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 10_000 })
+        await restoreTrayTab(page, "legend-toggle")
+        await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
         const toggle = page.locator("[data-testid=rail-toggle]")
         await toggle.waitFor({ state: "visible", timeout: 10_000 })
         const before = await toggle.textContent()
@@ -668,6 +743,204 @@ function buildSteps(cli, targets) {
           before,
           { timeout: 5_000 },
         )
+      },
+    },
+    {
+      id: "07a0-ohl-tray-file",
+      name: "Orders from OHL files into tray (no stuck-under-tray)",
+      async run({ page }) {
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 5_000 })
+        const ohl = page.locator("[data-testid=ohl-orders-window]")
+        if (!(await ohl.isVisible().catch(() => false))) {
+          await restoreTrayTab(page, "ohl-toggle")
+        }
+        await ohl.waitFor({ state: "visible", timeout: 5_000 })
+        const tray = page.locator("[data-testid=document-tray]")
+        const trayBox = await tray.boundingBox()
+        const before = await ohl.boundingBox()
+        if (!trayBox || !before) throw new Error("OHL or tray missing")
+        const hx = before.x + Math.min(80, before.width / 2)
+        const hy = before.y + 12
+        await page.mouse.move(hx, hy)
+        await page.mouse.down()
+        // Drop at the tray edge (top of the bar) — must file, never stick under.
+        await page.mouse.move(hx, trayBox.y + 2, { steps: 14 })
+        await page.waitForTimeout(80)
+        const over = await ohl.getAttribute("data-over-tray")
+        const drop = await tray.getAttribute("data-drop-active")
+        if (over !== "true" && drop !== "true") {
+          throw new Error("Expected tray highlight while dragging OHL over the tray edge")
+        }
+        // Mid-drag: paper must paint above the tray (z-order), not behind it.
+        const zOk = await page.evaluate(() => {
+          const paper = document.querySelector('[data-testid=ohl-orders-window]')
+          const bar = document.querySelector('[data-testid=document-tray]')
+          if (!(paper instanceof HTMLElement) || !(bar instanceof HTMLElement)) return false
+          const pz = Number(getComputedStyle(paper).zIndex) || 0
+          const tz = Number(getComputedStyle(bar).zIndex) || 0
+          // Tray wrapper is z-30; while dragging papers use PAPER_DRAG_Z (200).
+          return pz >= 50 || pz > tz
+        })
+        if (!zOk) throw new Error("OHL z-index is not above the document tray while dragging")
+        await page.mouse.up()
+        await page.waitForTimeout(200)
+        await ohl.waitFor({ state: "hidden", timeout: 5_000 })
+        const tab = page.locator("[data-testid=ohl-toggle]")
+        await expectAttr(tab, "data-stowed", "true")
+        await restoreTrayTab(page, "ohl-toggle")
+        await ohl.waitFor({ state: "visible", timeout: 5_000 })
+        // Compare viewport boxes — offsetTop is not stage-relative for the tray wrapper.
+        const restored = await ohl.boundingBox()
+        const trayAfter = await tray.boundingBox()
+        if (!restored || !trayAfter) throw new Error("OHL or tray missing after restore")
+        if (restored.y + 36 > trayAfter.y + 1) {
+          throw new Error(
+            `OHL header still overlaps tray after restore: headerBottom=${restored.y + 36} trayTop=${trayAfter.y}`,
+          )
+        }
+      },
+    },
+    {
+      id: "07a-document-tray",
+      name: "Document tray drag-to-file / Enter restore on campaign",
+      async run({ page }) {
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 5_000 })
+        await closeFloatingProvinceIfOpen(page)
+        // Ensure Orders is out (Enter on tab if already filed).
+        const orders = page.locator('[role="dialog"][aria-label="Orders"]')
+        if (!(await orders.isVisible().catch(() => false))) {
+          await restoreTrayTab(page, "tab-orders")
+        }
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+        const beforeW = (await orders.boundingBox())?.width
+        await dragPaperIntoTray(page, orders)
+        await orders.waitFor({ state: "hidden", timeout: 5_000 })
+        const tab = page.locator("[data-testid=tab-orders]")
+        await expectAttr(tab, "data-stowed", "true")
+        await restoreTrayTab(page, "tab-orders")
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+        // Desktop tabs for open papers are hidden; when visible again they are not stowed.
+        const afterW = (await orders.boundingBox())?.width
+        if (beforeW != null && afterW != null && Math.abs(afterW - beforeW) > 3) {
+          throw new Error(`Orders width not retained after tray restore: ${beforeW} → ${afterW}`)
+        }
+      },
+    },
+    {
+      id: "07b-window-drag",
+      name: "Press-drag-release Orders; reach tray; size stable",
+      async run({ page }) {
+        await closeFloatingProvinceIfOpen(page)
+        const orders = page.locator('[role="dialog"][aria-label="Orders"]')
+        if (!(await orders.isVisible().catch(() => false))) {
+          await restoreTrayTab(page, "tab-orders")
+        }
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+        const handle = orders.locator("[data-testid=floating-window-drag-handle]")
+        await handle.waitFor({ state: "visible" })
+        const before = await orders.boundingBox()
+        if (!before) throw new Error("Orders window missing bounding box")
+        // If Enter restored a paper still sitting on the tray, lift it first.
+        const trayBox0 = await page.locator("[data-testid=document-tray]").boundingBox()
+        if (trayBox0 && before.y + 20 > trayBox0.y) {
+          await page.mouse.move(before.x + 40, Math.max(40, trayBox0.y - 80))
+          await page.mouse.down()
+          await page.mouse.move(before.x + 40, 120, { steps: 6 })
+          await page.mouse.up()
+          await page.waitForTimeout(150)
+        }
+        const ready = await orders.boundingBox()
+        if (!ready) throw new Error("Orders missing after lift")
+        const startX = ready.x + Math.min(80, ready.width / 2)
+        const startY = ready.y + 12
+        // Use raw mouse coords (avoid hover — tray can intercept when papers sit low).
+        await page.mouse.move(startX, startY)
+        await page.mouse.down()
+        await page.mouse.move(startX - 60, startY + 40, { steps: 8 })
+        await page.mouse.up()
+        await page.waitForTimeout(200)
+        const after = await orders.boundingBox()
+        if (!after) throw new Error("Orders window missing bounding box after drag")
+        if (Math.abs(after.width - ready.width) > 2) {
+          throw new Error(`Orders width changed on drag: ${ready.width} → ${after.width}`)
+        }
+        if (Math.abs(after.height - ready.height) > 2) {
+          throw new Error(`Orders height changed on drag: ${ready.height} → ${after.height}`)
+        }
+        if (Math.abs(after.x - ready.x) < 20 && Math.abs(after.y - ready.y) < 20) {
+          throw new Error(
+            `Orders did not move on press-drag-release: before=${JSON.stringify(ready)} after=${JSON.stringify(after)}`,
+          )
+        }
+        // No extra click-to-place: window stays put after mouseup.
+        await page.waitForTimeout(150)
+        const settled = await orders.boundingBox()
+        if (!settled) throw new Error("Orders missing after settle")
+        if (Math.abs(settled.x - after.x) > 2 || Math.abs(settled.y - after.y) > 2) {
+          throw new Error("Orders kept moving after pointerup (expected press-drag-release)")
+        }
+
+        // Lower clamp: drag far down — header stays on-screen; body may reach the tray.
+        const tray = page.locator("[data-testid=document-tray]")
+        const trayBox = await tray.boundingBox()
+        if (!trayBox) throw new Error("document-tray missing for lower-clamp check")
+        const mid = await orders.boundingBox()
+        if (!mid) throw new Error("Orders missing before lower drag")
+        const hx = mid.x + Math.min(80, mid.width / 2)
+        const hy = mid.y + 12
+        try {
+          await page.mouse.move(hx, hy)
+          await page.mouse.down()
+          await page.mouse.move(hx, trayBox.y + trayBox.height / 2, { steps: 16 })
+          await page.waitForTimeout(80)
+          const overTray = await orders.getAttribute("data-over-tray")
+          const dropActive = await tray.getAttribute("data-drop-active")
+          if (overTray !== "true" && dropActive !== "true") {
+            throw new Error("Expected tray drop highlight while dragging Orders over the tray")
+          }
+          // Use layout top (not getBoundingClientRect) — tuck scale skews the visual box.
+          const layout = await orders.evaluate((el) => ({
+            top: el.offsetTop,
+            height: el.offsetHeight,
+            stageH: (el.offsetParent instanceof HTMLElement ? el.offsetParent.clientHeight : 0),
+          }))
+          if (layout.top < 0) throw new Error(`Orders header went off-screen: top=${layout.top}`)
+          // Header grip must stay fully above the tray while dragging.
+          if (layout.top + 36 > layout.stageH - 48 + 1) {
+            throw new Error(
+              `Orders header under tray while dragging: top=${layout.top} stageH=${layout.stageH}`,
+            )
+          }
+          if (layout.top + layout.height < layout.stageH - 48 - 4) {
+            throw new Error(
+              `Orders could not reach tray band (old full-height clamp?): bottom=${layout.top + layout.height} stageH=${layout.stageH}`,
+            )
+          }
+        } finally {
+          await page.mouse.up().catch(() => {})
+        }
+        await page.waitForTimeout(200)
+        // Released over tray → filed.
+        await orders.waitFor({ state: "hidden", timeout: 5_000 })
+        await expectAttr(page.locator("[data-testid=tab-orders]"), "data-stowed", "true")
+        await restoreTrayTab(page, "tab-orders")
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+
+        // Viewport-bottom release: pointer at clientY === innerHeight must file.
+        const readyBottom = await orders.boundingBox()
+        if (!readyBottom) throw new Error("Orders missing before viewport-bottom file")
+        const bx = readyBottom.x + Math.min(80, readyBottom.width / 2)
+        const by = readyBottom.y + 12
+        const vpH = page.viewportSize()?.height ?? 900
+        await page.mouse.move(bx, by)
+        await page.mouse.down()
+        await page.mouse.move(bx, vpH, { steps: 18 })
+        await page.mouse.up()
+        await page.waitForTimeout(200)
+        await orders.waitFor({ state: "hidden", timeout: 5_000 })
+        await expectAttr(page.locator("[data-testid=tab-orders]"), "data-stowed", "true")
+        await restoreTrayTab(page, "tab-orders")
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
       },
     },
     {
@@ -708,7 +981,7 @@ function buildSteps(cli, targets) {
         const move = page.locator("aside button").filter({ hasText: "Katowice" }).filter({ hasText: "Move" })
         await move.first().waitFor({ state: "visible", timeout: 10_000 })
         await move.first().click()
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         await page.locator("aside").getByText(/Move to Katowice/).first().waitFor({ state: "visible", timeout: 10_000 })
       },
     },
@@ -723,7 +996,7 @@ function buildSteps(cli, targets) {
           throw new Error("Infantry recruit button is disabled (budget or supply).")
         }
         await recruit.click()
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         await expectText(page.locator("aside"), "Raise")
       },
     },
@@ -735,7 +1008,7 @@ function buildSteps(cli, targets) {
         const attack = page.locator("aside button").filter({ hasText: "Lemberg" }).filter({ hasText: "Attack" })
         await attack.first().waitFor({ state: "visible", timeout: 10_000 })
         await attack.first().click()
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         await page.locator("aside").getByText(/Attack Lemberg from/).first().waitFor({ state: "visible", timeout: 10_000 })
       },
     },
@@ -743,7 +1016,7 @@ function buildSteps(cli, targets) {
       id: "13-draw-arrows",
       name: "Toggle draw-arrows mode",
       async run({ page }) {
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         const btn = page.locator("[data-testid=draw-arrows]")
         await btn.click()
         await expectAttr(btn, "aria-pressed", "true")
@@ -755,7 +1028,7 @@ function buildSteps(cli, targets) {
       id: "14-directive",
       name: "Type directive preview",
       async run({ page }) {
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         const field = page.locator("[data-testid=directive]")
         await field.fill("Fortify Kraków.")
         await expectText(page.locator("aside"), "Will entrench Kraków")
@@ -765,7 +1038,7 @@ function buildSteps(cli, targets) {
       id: "15-advisor-starter",
       name: "Ask Falkenhayn starter (/api/advisor)",
       async run({ page }) {
-        await page.locator("[data-testid=advisor-toggle]").click()
+        await restoreTrayTab(page, "advisor-toggle")
         await page.locator("[data-testid=advisor-panel]").waitFor({ state: "visible" })
         await page.locator("[data-testid=advisor-starter-weakest]").click()
         const reply = page.locator("[data-testid=advisor-reply]").last()
@@ -835,8 +1108,14 @@ function buildSteps(cli, targets) {
       id: "18-end-turn",
       name: "Close the fortnight (button)",
       async run({ page }) {
-        await page.locator("[data-testid=tab-orders]").click()
-        await page.locator("[data-testid=advisor-toggle]").click()
+        await restoreTrayTab(page, "tab-orders")
+        // File Chief of Staff if open so Orders End turn stays reachable.
+        const advisor = page.locator('[role="dialog"][aria-label="Chief of Staff"]')
+        if (await advisor.isVisible().catch(() => false)) {
+          await advisor.locator("[data-testid=floating-window-drag-handle]").click().catch(() => {})
+          await page.keyboard.press("Escape")
+          await advisor.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
+        }
         await openChronicleDrawer(page)
         const logBefore = await page.locator("[data-testid=chronicle] ul li button").count()
         await page.locator("[data-testid=end-turn]").click()
@@ -889,7 +1168,7 @@ function buildSteps(cli, targets) {
       id: "20-ctrl-enter",
       name: "Close a fortnight with Ctrl+Enter",
       async run({ page }) {
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         await openChronicleDrawer(page)
         const logBefore = await page.locator("[data-testid=chronicle] ul li button").count()
         await page.keyboard.press("Control+Enter")
@@ -944,6 +1223,7 @@ function buildSteps(cli, targets) {
         if (await page.locator("[data-testid=treasury]").count()) {
           throw new Error("Campaign treasury scoring still shown on /teach HUD")
         }
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 10_000 })
         await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 10_000 })
         await page.locator("[data-testid=teach-orders-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
@@ -1043,30 +1323,74 @@ function buildSteps(cli, targets) {
           throw new Error(`Expected target outline filter for lublin, got: ${targetFilter}`)
         }
 
-        // Phone stacked shell: Resolve must stay in the viewport without page scroll.
-        await page.setViewportSize(MOBILE_VIEWPORT)
-        await page.waitForTimeout(400)
-        const phoneShell = await app.getAttribute("data-teach-shell")
-        if (phoneShell !== "stacked") {
-          throw new Error(`Expected stacked teach shell at 390×844, got: ${phoneShell ?? "(none)"}`)
-        }
-        await page.locator("[data-testid=teach-lesson-stack]").waitFor({ state: "visible", timeout: 5_000 })
-        const phoneResolve = await page.locator("[data-testid=teach-resolve]").boundingBox()
-        if (!phoneResolve) throw new Error("teach-resolve missing at 390×844")
-        if (phoneResolve.y < 0 || phoneResolve.y + phoneResolve.height > MOBILE_VIEWPORT.height + 1) {
+        // Tray drag-to-file / Enter restore + press-drag-release on /teach (after layout asserts).
+        const ordersWin = page.locator("[data-testid=teach-orders-window]")
+        await dragPaperIntoTray(page, ordersWin)
+        await ordersWin.waitFor({ state: "hidden", timeout: 5_000 })
+        await restoreTrayTab(page, "tab-orders")
+        await ordersWin.waitFor({ state: "visible", timeout: 5_000 })
+        const beforeDrag = await ordersWin.boundingBox()
+        if (!beforeDrag) throw new Error("teach Orders missing box before drag")
+        const ox = beforeDrag.x + Math.min(70, beforeDrag.width / 2)
+        const oy = beforeDrag.y + 12
+        await page.mouse.move(ox, oy)
+        await page.mouse.down()
+        await page.mouse.move(ox - 40, oy + 30, { steps: 6 })
+        await page.mouse.up()
+        await page.waitForTimeout(150)
+        const afterDrag = await ordersWin.boundingBox()
+        if (!afterDrag) throw new Error("teach Orders missing box after drag")
+        if (Math.abs(afterDrag.height - beforeDrag.height) > 3) {
           throw new Error(
-            `Resolve below the fold at 390×844: box=${JSON.stringify(phoneResolve)} viewport=${MOBILE_VIEWPORT.height}`,
+            `Teach Orders height changed on drag: ${beforeDrag.height} → ${afterDrag.height}`,
           )
         }
-        await page.setViewportSize(DESKTOP_VIEWPORT)
-        await page.waitForTimeout(300)
+        if (Math.abs(afterDrag.x - beforeDrag.x) < 10 && Math.abs(afterDrag.y - beforeDrag.y) < 10) {
+          throw new Error("Teach Orders did not move on press-drag-release")
+        }
+
+        // Phone stacked shell: Resolve must stay in the viewport without page scroll.
+        try {
+          await page.setViewportSize(MOBILE_VIEWPORT)
+          await page.waitForFunction(
+            () => window.matchMedia("(min-width: 1024px)").matches === false,
+            null,
+            { timeout: 5_000 },
+          )
+          await page.waitForFunction(
+            () => document.querySelector("[data-testid=teach-app]")?.getAttribute("data-teach-shell") === "stacked",
+            null,
+            { timeout: 5_000 },
+          )
+          const phoneShell = await app.getAttribute("data-teach-shell")
+          if (phoneShell !== "stacked") {
+            throw new Error(`Expected stacked teach shell at 390×844, got: ${phoneShell ?? "(none)"}`)
+          }
+          await page.locator("[data-testid=teach-lesson-stack]").waitFor({ state: "visible", timeout: 5_000 })
+          await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 5_000 })
+          const phoneResolve = await page.locator("[data-testid=teach-resolve]").boundingBox()
+          if (!phoneResolve) throw new Error("teach-resolve missing at 390×844")
+          if (phoneResolve.y < 0 || phoneResolve.y + phoneResolve.height > MOBILE_VIEWPORT.height + 1) {
+            throw new Error(
+              `Resolve below the fold at 390×844: box=${JSON.stringify(phoneResolve)} viewport=${MOBILE_VIEWPORT.height}`,
+            )
+          }
+        } finally {
+          await page.setViewportSize(DESKTOP_VIEWPORT)
+          await page.waitForFunction(
+            () => window.matchMedia("(min-width: 1024px)").matches === true,
+            null,
+            { timeout: 5_000 },
+          )
+          await page.waitForTimeout(300)
+        }
       },
     },
     {
       id: "23-teach-hint",
       name: "Request coach hint (province-anchored)",
       async run({ page }) {
-        await page.locator("[data-testid=teach-lesson-toggle]").click()
+        await restoreTrayTab(page, "teach-lesson-toggle")
         await page.locator("[data-testid=teach-panel]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=teach-request-hint]").click()
         await page.waitForTimeout(300)
@@ -1081,19 +1405,24 @@ function buildSteps(cli, targets) {
       id: "24-teach-queue-converging",
       name: "Queue two-prong attack on Lublin",
       async run({ page }) {
+        await stowPapersForMapClick(page)
         const krakow = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
         const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
         if (!krakow || !kielce) throw new Error("Map projection unavailable for teaching drill.")
         await page.mouse.click(krakow.x, krakow.y)
         await page.waitForTimeout(350)
-        await page.locator("[data-testid=tab-province]").click()
-        const attackLublin = page.getByRole("button", { name: /Attack/i }).filter({ hasText: /Lublin/i })
+        await restoreTrayTab(page, "tab-province")
+        await page.locator("[data-testid=teach-province-window]").waitFor({ state: "visible", timeout: 5_000 })
+        const attackLublin = page
+          .locator("[data-testid=teach-province-window]")
+          .getByRole("button", { name: /Attack/i })
+          .filter({ hasText: /Lublin/i })
         await attackLublin.first().click()
         await page.mouse.click(kielce.x, kielce.y)
         await page.waitForTimeout(350)
-        await page.locator("[data-testid=tab-province]").click()
+        await restoreTrayTab(page, "tab-province")
         await attackLublin.first().click()
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         await expectText(page.locator("[data-testid=queued-orders]"), "Lublin")
       },
     },
@@ -1101,6 +1430,8 @@ function buildSteps(cli, targets) {
       id: "25-teach-discuss",
       name: "Discuss reasoning with coach (guided)",
       async run({ page }) {
+        await restoreTrayTab(page, "teach-lesson-toggle")
+        await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=teach-pedagogy-notice]").waitFor({ state: "visible" })
         await page.locator("[data-testid=teach-reasoning]").fill(
           "Two separate battles from Kraków and Kielce.",
@@ -1149,25 +1480,30 @@ function buildSteps(cli, targets) {
         if (await page.locator("[data-testid=teach-request-hint]").count()) {
           throw new Error("Hint control visible in silent mode")
         }
+        await stowPapersForMapClick(page)
         const krakow = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
         const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
         if (!krakow || !kielce) throw new Error("Map projection unavailable for silent drill.")
         await page.mouse.click(krakow.x, krakow.y)
         await page.waitForTimeout(350)
-        await page.locator("[data-testid=tab-province]").click()
+        await restoreTrayTab(page, "tab-province")
+        await page.locator("[data-testid=teach-province-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page
+          .locator("[data-testid=teach-province-window]")
           .getByRole("button", { name: /Attack/i })
           .filter({ hasText: /Lublin/i })
           .first()
           .click()
         await page.mouse.click(kielce.x, kielce.y)
         await page.waitForTimeout(350)
-        await page.locator("[data-testid=tab-province]").click()
+        await restoreTrayTab(page, "tab-province")
         await page
+          .locator("[data-testid=teach-province-window]")
           .getByRole("button", { name: /Attack/i })
           .filter({ hasText: /Lublin/i })
           .first()
           .click()
+        await restoreTrayTab(page, "teach-lesson-toggle")
         await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Kraków and Kielce together.")
         await page.locator("[data-testid=teach-prediction]").fill(
           "Still one merged battle; odds may hurt us on roll 4 but convergence is sound.",
@@ -1235,10 +1571,15 @@ function buildSteps(cli, targets) {
         )
         await selectKrakowOnMap(page)
         await page.getByRole("button").filter({ hasText: /Kielce/ }).first().click()
-        await page.locator("[data-testid=tab-orders]").click()
+        await restoreTrayTab(page, "tab-orders")
         await page.locator("[data-testid=queued-orders]").getByText(/Kielce/i).waitFor({ state: "visible", timeout: 15_000 })
+        await restoreTrayTab(page, "legend-toggle")
+        await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-supply]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 10_000 })
+        // selectKrakowOnMap stows papers — bring Lesson back for reasoning / Resolve.
+        await restoreTrayTab(page, "teach-lesson-toggle")
+        await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=teach-reasoning]").fill(
           "Fed corps from Kraków hits harder than the starved heavy stack at Katowice because supply scales attack power.",
         )

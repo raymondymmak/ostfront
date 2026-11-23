@@ -2,6 +2,8 @@
 
 import {
   clampWindowPosition,
+  PAPER_Z_FLOOR,
+  stageHeightForWindows,
   TABLE_WINDOW_MARGIN,
   type StackedWindow,
 } from "@/lib/ui/table-windows"
@@ -10,7 +12,8 @@ export type TeachWindowId = "orders" | "province" | "legend" | "lesson"
 
 export type TeachWindowState = StackedWindow<TeachWindowId>
 
-const BASE_Z = 20
+/** Papers paint above the document tray (`z-[40]`). */
+const BASE_Z = PAPER_Z_FLOOR
 const GAP = 12
 
 export const TEACH_WINDOW_SIZE_HINTS: Record<TeachWindowId, { w: number; h: number }> = {
@@ -51,10 +54,11 @@ export function rectsOverlap(
 export function teachWindowHeights(mapWidth: number, mapHeight: number): Record<TeachWindowId, number> {
   void mapWidth
   const m = TABLE_WINDOW_MARGIN
+  const usableH = stageHeightForWindows(mapHeight)
   const belowMapMode = 100
   // Leave a few px so FloatingWindow chrome / rounding cannot clamp Legend up into Lesson.
   const safety = 16
-  const columnBudget = Math.max(280, mapHeight - belowMapMode - m - safety)
+  const columnBudget = Math.max(280, usableH - belowMapMode - m - safety)
   const stackBudget = Math.max(260, columnBudget - GAP)
 
   // Prefer a tall Lesson (Resolve + prediction reachable) and a Legend that still shows Depot/Rails.
@@ -66,7 +70,7 @@ export function teachWindowHeights(mapWidth: number, mapHeight: number): Record<
   }
 
   // Final guard: Lesson + gap + Legend must fit under the map-mode strip.
-  const maxStack = Math.max(260, mapHeight - belowMapMode - m - safety)
+  const maxStack = Math.max(260, usableH - belowMapMode - m - safety)
   if (lessonH + GAP + legendH > maxStack) {
     legendH = Math.min(legendH, Math.max(150, maxStack - GAP - 240))
     lessonH = Math.min(lessonH, Math.max(200, maxStack - GAP - legendH))
@@ -74,7 +78,7 @@ export function teachWindowHeights(mapWidth: number, mapHeight: number): Record<
 
   const ordersH = Math.min(
     TEACH_WINDOW_SIZE_HINTS.orders.h,
-    Math.max(220, mapHeight - belowMapMode - m),
+    Math.max(220, usableH - belowMapMode - m),
   )
   return {
     lesson: lessonH,
@@ -164,6 +168,10 @@ export function createDefaultTeachWindows(
     const hint = TEACH_WINDOW_SIZE_HINTS[item.id]
     const h = heights[item.id]
     const clamped = clampWindowPosition(item.x, item.y, hint.w, h, mapWidth, mapHeight)
+    // Lock Legend height so the whole box stays above the tray (content scrolls).
+    if (item.id === "legend") {
+      return { ...item, ...clamped, height: h }
+    }
     return { ...item, ...clamped }
   })
 }
@@ -180,7 +188,7 @@ export function isTeachWindowOpen(windows: TeachWindowState[], id: TeachWindowId
 }
 
 function nextZ(windows: TeachWindowState[]): number {
-  return windows.reduce((max, item) => Math.max(max, item.z), BASE_Z) + 1
+  return Math.max(PAPER_Z_FLOOR, windows.reduce((max, item) => Math.max(max, item.z), BASE_Z)) + 1
 }
 
 export function focusTeachWindow(
@@ -215,6 +223,22 @@ export function moveTeachWindow(
   y: number,
 ): TeachWindowState[] {
   return windows.map((item) => (item.id === id ? { ...item, x, y } : item))
+}
+
+export function resizeTeachWindow(
+  windows: TeachWindowState[],
+  id: TeachWindowId,
+  size: { height?: number; width?: number },
+): TeachWindowState[] {
+  return windows.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          ...(size.height !== undefined ? { height: size.height } : {}),
+          ...(size.width !== undefined ? { width: size.width } : {}),
+        }
+      : item,
+  )
 }
 
 export function topmostTeachWindow(windows: TeachWindowState[]): TeachWindowId | null {

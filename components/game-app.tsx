@@ -6,12 +6,27 @@ import { Hud } from "@/components/hud"
 import { OrderPanel } from "@/components/order-panel"
 import { ProvincePanel } from "@/components/province-panel"
 import { ChronicleDrawer } from "@/components/chronicle-drawer"
+import { DocumentTray } from "@/components/document-tray"
 import { FloatingWindow } from "@/components/floating-window"
 import { MapLegend } from "@/components/map-legend"
 import { OhlOrdersWindow } from "@/components/ohl-orders-window"
 import { TimelinePanel } from "@/components/timeline-panel"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
+import {
+  applyPersistedLayout,
+  CAMPAIGN_TRAY_ITEMS,
+  defaultTrayOrder,
+  insertIndexAtClientX,
+  liftPersistedWindowsAboveTray,
+  loadWindowSession,
+  normalizeTrayOrder,
+  orderTrayItems,
+  placeIdInOrder,
+  saveWindowSession,
+  stowTopmostWindow,
+  stowWindow,
+} from "@/lib/ui/document-tray"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { CampaignStart } from "@/components/campaign-start"
 import { NewsCardQueue } from "@/components/news-card"
@@ -34,17 +49,17 @@ import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
 import { toggleSelection } from "@/lib/ui/selection"
 import {
-  closeTopmostWindow,
-  closeWindow,
   createDefaultTableWindows,
   focusWindow,
   isWindowOpen,
   moveWindow,
-  toggleWindow,
+  resizeWindow,
   type TableWindowId,
   type TableWindowState,
+  TABLE_WINDOW_SIZE_HINTS,
   TABLE_WINDOW_TITLES,
 } from "@/lib/ui/table-windows"
+import { restorePositionAboveTray } from "@/lib/ui/window-drag"
 import { useDesktopShell } from "@/lib/ui/use-desktop-shell"
 import { selectNewsEvents } from "@/lib/news/select"
 import type { NewsEvent } from "@/lib/news/types"
@@ -74,7 +89,15 @@ export function GameApp() {
   const [chatEpoch, setChatEpoch] = useState(0)
   const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
   const [windows, setWindows] = useState<TableWindowState[]>(() => createDefaultTableWindows())
+  const [trayOrder, setTrayOrder] = useState<TableWindowId[]>(() => defaultTrayOrder(CAMPAIGN_TRAY_ITEMS))
+  const [trayDropActive, setTrayDropActive] = useState(false)
+  const [trayInsertIndex, setTrayInsertIndex] = useState<number | null>(null)
   const [showRails, setShowRails] = useState(true)
+  const campaignTrayIds = useMemo(() => defaultTrayOrder(CAMPAIGN_TRAY_ITEMS), [])
+  const orderedCampaignTrayItems = useMemo(
+    () => orderTrayItems(CAMPAIGN_TRAY_ITEMS, trayOrder),
+    [trayOrder],
+  )
   const desktopShell = useDesktopShell()
   const mapStageRef = useRef<HTMLDivElement>(null)
   const advisorOpen = isWindowOpen(windows, "advisor")
@@ -178,7 +201,7 @@ export function GameApp() {
       if (resultOpen || setupOpen) return
       if (desktopShell) {
         if (windows.some((item) => item.open)) {
-          setWindows((current) => closeTopmostWindow(current))
+          setWindows((current) => stowTopmostWindow(current))
           return
         }
         setSelectedId(null)
@@ -198,26 +221,115 @@ export function GameApp() {
     const height =
       node?.clientHeight ||
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
-    setWindows(createDefaultTableWindows(width, height))
+    const defaults = createDefaultTableWindows(width, height)
+    const persisted = loadWindowSession<TableWindowId>("campaign")
+    const restored = applyPersistedLayout(defaults, persisted)
+    setWindows(liftPersistedWindowsAboveTray(restored, height))
+    setTrayOrder(normalizeTrayOrder(persisted?.trayOrder, campaignTrayIds))
   }
 
   useEffect(() => {
     if (setupOpen) return
     const frame = window.requestAnimationFrame(() => resetTableWindows())
     return () => window.cancelAnimationFrame(frame)
+    // Re-seed layout when entering the table / switching shell — not on every order change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetTableWindows reads live stage + session
   }, [setupOpen, desktopShell])
 
+  useEffect(() => {
+    if (setupOpen || !desktopShell) return
+    saveWindowSession("campaign", windows, trayOrder)
+  }, [windows, trayOrder, setupOpen, desktopShell])
+
   function setWindowOpen(id: TableWindowId, open: boolean) {
-    setWindows((current) => (open ? focusWindow(current, id) : closeWindow(current, id)))
+    setWindows((current) => (open ? focusWindow(current, id) : stowWindow(current, id)))
+  }
+
+  function measureTraySlots(excludeId?: TableWindowId) {
+    const among: TableWindowId[] = []
+    const slots: { left: number; width: number }[] = []
+    const root =
+      typeof document !== "undefined" ? document.querySelector("[data-testid=document-tray]") : null
+    root?.querySelectorAll<HTMLElement>("[data-tray-id]").forEach((node) => {
+      const tabId = node.getAttribute("data-tray-id") as TableWindowId | null
+      if (!tabId || tabId === excludeId) return
+      const rect = node.getBoundingClientRect()
+      among.push(tabId)
+      slots.push({ left: rect.left, width: rect.width })
+    })
+    return { among, slots }
+  }
+
+  function onTrayHover(over: boolean, clientX?: number) {
+    setTrayDropActive(over)
+    if (!over || clientX == null) {
+      setTrayInsertIndex(null)
+      return
+    }
+    const { slots } = measureTraySlots()
+    setTrayInsertIndex(insertIndexAtClientX(clientX, slots))
+  }
+
+  function stowPaper(id: TableWindowId, clientX?: number) {
+    setWindows((current) => stowWindow(current, id))
+    setTrayDropActive(false)
+    setTrayInsertIndex(null)
+    if (clientX == null) return
+    const { among, slots } = measureTraySlots(id)
+    const index = insertIndexAtClientX(clientX, slots)
+    setTrayOrder((current) => placeIdInOrder(current, id, index, among))
+  }
+
+  function onTrayRestore(id: TableWindowId) {
+    const node = mapStageRef.current
+    setWindows((current) => {
+      const focused = focusWindow(current, id)
+      const item = focused.find((entry) => entry.id === id)
+      if (!node || !item) return focused
+      const rect = node.getBoundingClientRect()
+      const hint = TABLE_WINDOW_SIZE_HINTS[id]
+      const size = { w: item.width ?? hint.w, h: item.height ?? hint.h }
+      // Soft restore (Enter): keep x/size but lift above the tray so the grip is free.
+      const preferred = restorePositionAboveTray(
+        { x: item.x, y: item.y },
+        size,
+        { width: rect.width, height: rect.height },
+      )
+      return moveWindow(focused, id, preferred.x, preferred.y)
+    })
+  }
+
+  function onTrayRestoreAt(id: TableWindowId, clientX: number, clientY: number) {
+    const node = mapStageRef.current
+    if (!node) {
+      onTrayRestore(id)
+      return
+    }
+    const rect = node.getBoundingClientRect()
+    setWindows((current) => {
+      const item = current.find((entry) => entry.id === id)
+      const hint = TABLE_WINDOW_SIZE_HINTS[id]
+      const size = { w: item?.width ?? hint.w, h: item?.height ?? hint.h }
+      const preferred = restorePositionAboveTray(
+        { x: clientX - rect.left - size.w / 2, y: clientY - rect.top - 24 },
+        size,
+        { width: rect.width, height: rect.height },
+      )
+      const focused = focusWindow(current, id)
+      return moveWindow(focused, id, preferred.x, preferred.y)
+    })
+  }
+
+  function onWindowSize(id: TableWindowId, size: { width: number; height: number }) {
+    setWindows((current) => {
+      const item = current.find((entry) => entry.id === id)
+      if (item?.width === size.width && item?.height === size.height) return current
+      return resizeWindow(current, id, { width: size.width, height: size.height })
+    })
   }
 
   function onToggleTableWindow(id: TableWindowId) {
-    // Orders/Province/Legend/OHL: open or focus only (demo-check re-clicks tab-orders).
-    // Log + Advisor: true toggle (openChronicleDrawer / ensureAdvisorPanelOpen / step 18).
-    if (id === "log" || id === "advisor") {
-      setWindows((current) => toggleWindow(current, id))
-      return
-    }
+    // Tray tabs / Escape restore or file papers — not show/hide toggles.
     setWindows((current) => focusWindow(current, id))
   }
 
@@ -548,8 +660,6 @@ export function GameApp() {
         advisorOpen={advisorOpen}
         onAdvisor={() => onToggleTableWindow("advisor")}
         tableShell={desktopShell}
-        windowOpen={windowOpenMap}
-        onToggleWindow={onToggleTableWindow}
       />
       {!desktopShell && ohlOpen && (
         <div
@@ -694,9 +804,18 @@ export function GameApp() {
             windows.map((win) => {
               if (!win.open) return null
               const focus = () => setWindows((current) => focusWindow(current, win.id))
-              const close = () => setWindowOpen(win.id, false)
+              const stow = () => setWindowOpen(win.id, false)
+              const stowAt = (clientX?: number) => stowPaper(win.id, clientX)
               const onMove = (x: number, y: number) =>
                 setWindows((current) => moveWindow(current, win.id, x, y))
+              const onSize = (size: { width: number; height: number }) => onWindowSize(win.id, size)
+              const paperProps = {
+                widthPx: win.width,
+                heightPx: win.height,
+                onSize,
+                onStow: stowAt,
+                onTrayHover,
+              }
               if (win.id === "ohl") {
                 return (
                   <OhlOrdersWindow
@@ -706,9 +825,14 @@ export function GameApp() {
                     x={win.x}
                     y={win.y}
                     z={win.z}
+                    widthPx={win.width}
+                    heightPx={win.height}
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    onSize={onSize}
+                    onStow={stowAt}
+                    onTrayHover={onTrayHover}
                   />
                 )
               }
@@ -723,8 +847,9 @@ export function GameApp() {
                     z={win.z}
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    {...paperProps}
                   >
                     <aside className="flex min-h-0 flex-col">{orderPanel}</aside>
                   </FloatingWindow>
@@ -741,8 +866,9 @@ export function GameApp() {
                     z={win.z}
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    {...paperProps}
                   >
                     <aside className="flex min-h-0 flex-col">{provincePanel}</aside>
                   </FloatingWindow>
@@ -761,8 +887,9 @@ export function GameApp() {
                     maxHeightClassName="max-h-[min(50dvh,24rem)]"
                     testId="chronicle-drawer"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    {...paperProps}
                   >
                     <div className="min-h-0" data-testid="mobile-chronicle-panel">
                       <TimelinePanel
@@ -789,8 +916,9 @@ export function GameApp() {
                     maxHeightClassName="max-h-[min(60dvh,28rem)]"
                     testId="legend-window"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    {...paperProps}
                   >
                     <MapLegend
                       embedded
@@ -813,8 +941,9 @@ export function GameApp() {
                     widthClassName="w-[min(24rem,calc(100%-1.5rem))]"
                     maxHeightClassName="max-h-[min(70dvh,32rem)]"
                     onFocus={focus}
-                    onClose={close}
+                    onClose={stow}
                     onMove={onMove}
+                    {...paperProps}
                   >
                     <AdvisorPanel
                       open
@@ -823,7 +952,7 @@ export function GameApp() {
                       queue={queue}
                       closed={finished}
                       epoch={chatEpoch}
-                      onClose={close}
+                      onClose={stow}
                       onAccept={acceptAdvisorOrders}
                     />
                   </FloatingWindow>
@@ -831,6 +960,20 @@ export function GameApp() {
               }
               return null
             })}
+          {desktopShell && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[30]">
+              <DocumentTray
+                items={orderedCampaignTrayItems}
+                openById={windowOpenMap}
+                onRestore={onTrayRestore}
+                onRestoreAt={onTrayRestoreAt}
+                dropHighlight={trayDropActive}
+                insertIndex={trayInsertIndex}
+                trayOrder={trayOrder}
+                onTrayOrderChange={setTrayOrder}
+              />
+            </div>
+          )}
           {phase === "map" && (
             <div className="pointer-events-none absolute top-3 right-32 left-3 z-30 flex justify-center">
               <div
@@ -852,25 +995,25 @@ export function GameApp() {
         </div>
         {!desktopShell && (
           <aside className="flex min-h-[28rem] flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l">
-            <Tabs
-              value={sideTab}
-              onValueChange={(value) => {
-                if (typeof value === "string") setSideTab(value)
-              }}
-              className="min-h-0 flex-1 gap-0"
-            >
-              <TabsList className="mx-3 mt-3 w-[calc(100%-1.5rem)]">
-                <TabsTrigger value="orders" data-testid="tab-orders">
-                  Orders
-                </TabsTrigger>
-                <TabsTrigger value="front" data-testid="tab-province">
-                  Province
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="orders" className="min-h-0 flex-1">
+            <Tabs value={sideTab} className="flex min-h-0 flex-1 flex-col gap-0">
+              <DocumentTray
+                variant="phone"
+                items={orderTrayItems(
+                  [
+                    { id: "orders" as const, label: "Orders", testId: "tab-orders" },
+                    { id: "province" as const, label: "Province", testId: "tab-province" },
+                  ],
+                  trayOrder,
+                )}
+                openById={{ orders: sideTab === "orders", province: sideTab === "front" }}
+                activeId={sideTab === "front" ? "province" : "orders"}
+                onRestore={(id) => setSideTab(id === "province" ? "front" : "orders")}
+                className="order-last shrink-0 lg:order-none"
+              />
+              <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto">
                 {orderPanel}
               </TabsContent>
-              <TabsContent value="front" className="min-h-0 flex-1">
+              <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto">
                 {provincePanel}
               </TabsContent>
             </Tabs>

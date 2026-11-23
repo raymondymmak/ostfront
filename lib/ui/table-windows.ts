@@ -9,6 +9,10 @@ export type StackedWindow<Id extends string = string> = {
   x: number
   y: number
   z: number
+  /** Locked body height in px after measure/resize (retained across stow/restore). */
+  height?: number
+  /** Locked width in px when the player has a preferred size (retained across stow/restore). */
+  width?: number
 }
 
 export type TableWindowState = StackedWindow<TableWindowId>
@@ -18,9 +22,40 @@ export const DESKTOP_SHELL_MQ = "(min-width: 1024px)"
 
 export const TABLE_WINDOW_MARGIN = 8
 
-const BASE_Z = 20
+/** Bottom parchment tray strip — drop target for filing papers. */
+export const DOCUMENT_TRAY_HEIGHT = 48
 
-/** Keep the window fully inside the map stage (header stays reachable). */
+/** Title-bar / drag-handle height — must stay on-screen while the body may overlap the tray. */
+export const WINDOW_HEADER_HEIGHT = 36
+
+/** Stage height used for default placement (leaves the tray clear). */
+export function stageHeightForWindows(
+  stageHeight: number,
+  trayHeight = DOCUMENT_TRAY_HEIGHT,
+): number {
+  return Math.max(160, stageHeight - trayHeight)
+}
+
+/**
+ * Papers paint above the document tray (`DOCUMENT_TRAY_Z` / CSS `z-[40]`).
+ * A paper must never render behind the tray bar — including session-restored z.
+ */
+/** Tray bar stacking — papers always use a higher z (see PAPER_Z_FLOOR). */
+export const DOCUMENT_TRAY_Z = 30
+export const PAPER_Z_FLOOR = DOCUMENT_TRAY_Z + 20
+/** While dragging over the tray, lift further so short papers stay visible on top. */
+export const PAPER_DRAG_Z = 200
+const BASE_Z = PAPER_Z_FLOOR
+
+export type ClampWindowOptions = {
+  /**
+   * When true, Y clamp only keeps the header grip on-screen so papers can
+   * overlap the tray (required for drag-to-file). Default placement uses false.
+   */
+  headerOnlyY?: boolean
+}
+
+/** Keep the window on the map stage; optionally allow body overlap with the tray. */
 export function clampWindowPosition(
   x: number,
   y: number,
@@ -29,9 +64,13 @@ export function clampWindowPosition(
   stageWidth: number,
   stageHeight: number,
   margin = TABLE_WINDOW_MARGIN,
+  options: ClampWindowOptions = {},
 ): { x: number; y: number } {
+  const headerOnlyY = options.headerOnlyY === true
+  const heightForY = headerOnlyY ? WINDOW_HEADER_HEIGHT : winHeight
+  const usableH = headerOnlyY ? stageHeight : stageHeightForWindows(stageHeight)
   const maxX = Math.max(margin, stageWidth - winWidth - margin)
-  const maxY = Math.max(margin, stageHeight - winHeight - margin)
+  const maxY = Math.max(margin, usableH - heightForY - margin)
   return {
     x: Math.min(maxX, Math.max(margin, x)),
     y: Math.min(maxY, Math.max(margin, y)),
@@ -54,11 +93,16 @@ export function createDefaultTableWindows(
   mapHeight = 820,
 ): TableWindowState[] {
   const m = TABLE_WINDOW_MARGIN
+  const usableH = stageHeightForWindows(mapHeight)
   // Leave the top-right MapMode + zoom strip clear (≈7rem wide, ≈6rem tall).
   const belowMapMode = 100
-  const legendH = Math.min(TABLE_WINDOW_SIZE_HINTS.legend.h, Math.max(200, mapHeight - belowMapMode - m * 2))
-  const ordersH = Math.min(TABLE_WINDOW_SIZE_HINTS.orders.h, Math.max(240, mapHeight - belowMapMode - m))
-  const logH = Math.min(TABLE_WINDOW_SIZE_HINTS.log.h, Math.max(200, mapHeight - m * 2))
+  // Cap so the whole Legend box (not just the header) fits above the tray; body scrolls.
+  const legendH = Math.min(
+    TABLE_WINDOW_SIZE_HINTS.legend.h,
+    Math.max(120, usableH - m * 2),
+  )
+  const ordersH = Math.min(TABLE_WINDOW_SIZE_HINTS.orders.h, Math.max(240, usableH - belowMapMode - m))
+  const logH = Math.min(TABLE_WINDOW_SIZE_HINTS.log.h, Math.max(200, usableH - m * 2))
 
   const raw: TableWindowState[] = [
     { id: "ohl", open: true, x: Math.min(200, Math.max(m, mapWidth * 0.12)), y: m + 4, z: BASE_Z + 2 },
@@ -73,8 +117,9 @@ export function createDefaultTableWindows(
       id: "legend",
       open: true,
       x: m,
-      y: Math.max(m, mapHeight - legendH - m),
+      y: Math.max(m, usableH - legendH - m),
       z: BASE_Z + 1,
+      height: legendH,
     },
     {
       // Same right column as Orders so opening Province does not cover map click targets.
@@ -89,14 +134,14 @@ export function createDefaultTableWindows(
       // Sit to the right of the bottom-left Legend so open Log never covers it.
       open: false,
       x: Math.min(320, Math.max(200, mapWidth * 0.22)),
-      y: Math.max(m, mapHeight - logH - m),
+      y: Math.max(m, usableH - logH - m),
       z: BASE_Z + 5,
     },
     {
       id: "advisor",
       open: false,
       x: Math.max(m, mapWidth - TABLE_WINDOW_SIZE_HINTS.advisor.w - m - 24),
-      y: Math.max(m, mapHeight - TABLE_WINDOW_SIZE_HINTS.advisor.h - m),
+      y: Math.max(m, usableH - TABLE_WINDOW_SIZE_HINTS.advisor.h - m),
       z: BASE_Z + 6,
     },
   ]
@@ -107,7 +152,7 @@ export function createDefaultTableWindows(
       item.id === "orders" || item.id === "province"
         ? ordersH
         : item.id === "legend"
-          ? legendH
+          ? (item.height ?? legendH)
           : item.id === "log"
             ? logH
             : hint.h
@@ -128,7 +173,12 @@ export function isWindowOpen(windows: TableWindowState[], id: TableWindowId): bo
 }
 
 function nextZ(windows: TableWindowState[]): number {
-  return windows.reduce((max, item) => Math.max(max, item.z), BASE_Z) + 1
+  return Math.max(PAPER_Z_FLOOR, windows.reduce((max, item) => Math.max(max, item.z), BASE_Z)) + 1
+}
+
+/** Ensure a paper's stacking order stays above the document tray. */
+export function ensurePaperZ(z: number): number {
+  return Math.max(PAPER_Z_FLOOR, z)
 }
 
 /** Raise z and ensure open. */
@@ -156,6 +206,23 @@ export function moveWindow(
   y: number,
 ): TableWindowState[] {
   return windows.map((item) => (item.id === id ? { ...item, x, y } : item))
+}
+
+/** Persist measured/resized size so restore keeps width and last height. */
+export function resizeWindow(
+  windows: TableWindowState[],
+  id: TableWindowId,
+  size: { height?: number; width?: number },
+): TableWindowState[] {
+  return windows.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          ...(size.height !== undefined ? { height: size.height } : {}),
+          ...(size.width !== undefined ? { width: size.width } : {}),
+        }
+      : item,
+  )
 }
 
 /** Highest-z open window, or null. */

@@ -7,8 +7,6 @@ import { standing } from "@/lib/engine/victory"
 import { statusLabel } from "@/lib/finale"
 import { scenarioSpec } from "@/lib/data/objectives"
 import { FACTION_LABEL } from "@/lib/format"
-import type { TableWindowId } from "@/lib/ui/table-windows"
-import type { TeachWindowId } from "@/lib/ui/teach-windows"
 import type { GameState } from "@/lib/types"
 
 type HudProps = {
@@ -20,12 +18,8 @@ type HudProps = {
   teachMode?: boolean
   /** Short lesson goal shown instead of the campaign objective on /teach. */
   teachGoal?: string
-  /** Desktop general's-table: window toggle buttons (campaign or /teach). */
+  /** Desktop general's-table: parchment chrome (window toggles live in the document tray). */
   tableShell?: boolean
-  windowOpen?: Partial<Record<TableWindowId, boolean>>
-  onToggleWindow?: (id: TableWindowId) => void
-  teachWindowOpen?: Partial<Record<TeachWindowId, boolean>>
-  onToggleTeachWindow?: (id: TeachWindowId) => void
 }
 
 export function Hud({
@@ -37,10 +31,6 @@ export function Hud({
   teachMode,
   teachGoal,
   tableShell = false,
-  windowOpen = {},
-  onToggleWindow,
-  teachWindowOpen = {},
-  onToggleTeachWindow,
 }: HudProps) {
   const central = strength(state, "central")
   const russia = strength(state, "russia")
@@ -172,105 +162,14 @@ export function Hud({
             )}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            {teachMode && tableShell ? (
-              <>
-                <span
-                  className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs"
-                  data-testid="teach-mode-badge"
-                >
-                  Teaching drill
-                </span>
-                <TeachWindowToggle
-                  id="lesson"
-                  label="Lesson"
-                  testId="teach-lesson-toggle"
-                  pressed={Boolean(teachWindowOpen.lesson)}
-                  onToggle={onToggleTeachWindow}
-                />
-                <TeachWindowToggle
-                  id="orders"
-                  label="Orders"
-                  testId="tab-orders"
-                  pressed={Boolean(teachWindowOpen.orders)}
-                  onToggle={onToggleTeachWindow}
-                />
-                <TeachWindowToggle
-                  id="province"
-                  label="Province"
-                  testId="tab-province"
-                  pressed={Boolean(teachWindowOpen.province)}
-                  onToggle={onToggleTeachWindow}
-                />
-                <TeachWindowToggle
-                  id="legend"
-                  label="Legend"
-                  testId="legend-toggle"
-                  pressed={Boolean(teachWindowOpen.legend)}
-                  onToggle={onToggleTeachWindow}
-                />
-              </>
-            ) : teachMode ? (
+            {teachMode ? (
               <span
                 className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs"
                 data-testid="teach-mode-badge"
               >
                 Teaching drill
               </span>
-            ) : tableShell ? (
-              <>
-                <WindowToggle
-                  id="orders"
-                  label="Orders"
-                  testId="tab-orders"
-                  pressed={Boolean(windowOpen.orders)}
-                  onToggle={onToggleWindow}
-                />
-                <WindowToggle
-                  id="province"
-                  label="Province"
-                  testId="tab-province"
-                  pressed={Boolean(windowOpen.province)}
-                  onToggle={onToggleWindow}
-                />
-                <WindowToggle
-                  id="log"
-                  label="Log"
-                  testId="chronicle-log-toggle"
-                  pressed={Boolean(windowOpen.log)}
-                  onToggle={onToggleWindow}
-                />
-                <WindowToggle
-                  id="legend"
-                  label="Legend"
-                  testId="legend-toggle"
-                  pressed={Boolean(windowOpen.legend)}
-                  onToggle={onToggleWindow}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={advisorOpen ? "default" : "outline"}
-                  aria-expanded={advisorOpen}
-                  data-testid="advisor-toggle"
-                  className={
-                    advisorOpen
-                      ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
-                      : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
-                  }
-                  onClick={onAdvisor}
-                >
-                  Chief of Staff
-                </Button>
-                <WindowToggle
-                  id="ohl"
-                  label="OHL"
-                  testId="ohl-toggle"
-                  pressed={Boolean(windowOpen.ohl)}
-                  onToggle={onToggleWindow}
-                  title="Orders from OHL"
-                />
-              </>
-            ) : (
+            ) : !tableShell ? (
               <Button
                 type="button"
                 size="sm"
@@ -286,7 +185,7 @@ export function Hud({
               >
                 Chief of Staff
               </Button>
-            )}
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -300,73 +199,6 @@ export function Hud({
         </div>
       </div>
     </header>
-  )
-}
-
-function WindowToggle({
-  id,
-  label,
-  testId,
-  pressed,
-  onToggle,
-  title,
-}: {
-  id: TableWindowId
-  label: string
-  testId: string
-  pressed: boolean
-  onToggle?: (id: TableWindowId) => void
-  title?: string
-}) {
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant={pressed ? "default" : "outline"}
-      aria-pressed={pressed}
-      data-testid={testId}
-      title={title}
-      className={
-        pressed
-          ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
-          : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
-      }
-      onClick={() => onToggle?.(id)}
-    >
-      {label}
-    </Button>
-  )
-}
-
-function TeachWindowToggle({
-  id,
-  label,
-  testId,
-  pressed,
-  onToggle,
-}: {
-  id: TeachWindowId
-  label: string
-  testId: string
-  pressed: boolean
-  onToggle?: (id: TeachWindowId) => void
-}) {
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant={pressed ? "default" : "outline"}
-      aria-pressed={pressed}
-      data-testid={testId}
-      className={
-        pressed
-          ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
-          : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
-      }
-      onClick={() => onToggle?.(id)}
-    >
-      {label}
-    </Button>
   )
 }
 

@@ -15,6 +15,6 @@ Short notes on choices that shape Ostfront. Each ADR is one file in this folder.
 
 Keep ADRs small. Link to `ARCHITECTURE.md` and code paths instead of pasting implementation detail.
 
-Recent: **011** — `/teach` reuses the general’s-table shell with lesson-focus map highlights; **010** — campaign floating windows.
+Recent: **012** — document tray for stowed parchment papers (Part 7); **011** — `/teach` general’s-table shell; **010** — campaign floating windows.
 
 When you change architecture, routes, storage, trust boundaries, or game rules, update `ARCHITECTURE.md` and add or revise an ADR in the same pull request (see `AGENTS.md`).
