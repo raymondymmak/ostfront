@@ -22,6 +22,8 @@ import type { BattleFacts, GameState, PlayerOrder, TurnRecord } from "@/lib/type
 import { z } from "zod"
 
 const COACH_TIMEOUT_MS = 20_000
+/** Browser abort for `/api/advisor` — longer than the coach LLM call, shorter than a hung UI. */
+export const CLIENT_ADVISOR_TIMEOUT_MS = 25_000
 /** Keep headroom for reasoning models that spend tokens before writing content. */
 const COACH_MAX_TOKENS = 2_048
 const COACH_MAX_SENTENCES = 3
@@ -79,14 +81,17 @@ const COACH_SYSTEM = `You are General Erich von Falkenhayn, Chief of the General
 
 You do NOT issue orders. You never return suggestions, Accept cards, or order JSON. You speak only in reply to the player's latest question.
 
-You know only the DISPATCH in the user message: engine map facts, the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say the map or chronicle does not show it.
+You know only the DISPATCH in the user message: engine map facts, QUEUE_CONFLICTS (if any), the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say calmly that the map or chronicle does not show it — never scold, and never say "staff figures".
 
 Socratic style (strict):
 - At most 2–3 short sentences in "reply". The intent/prediction question MUST come first when you ask one; then exactly one engine fact as evidence.
-- If the player has not said their intent or expectation, open with one short question (e.g. "What do you expect Kielce to do for the Lemberg push?"), then one evidence sentence.
+- Tailor the opening question to the player's latest ask and the real blind spot in front of them (queue conflict, empty flank, low supply, chronicle result, illegal axis). Do NOT reuse a stock "Kielce / Lemberg push" opener when that is not the issue.
+- If QUEUE_CONFLICTS is non-empty, diagnose that conflict first (e.g. fortify and attack from the same province).
 - Return exactly one highlight that matches that evidence (one provinceId or one uiId). Never invent screen coordinates.
-- Post-battle: ask what they predicted. If they already stated a prediction in CONVERSATION, compare it to the chronicle result (odds, roll, losses, who holds the province). Do not recite ledger noise such as raw supply pairs (e.g. "159 against 56") unless that supply fact directly explains the outcome.
-- Odds: quote ONLY from QUEUED_RESOLUTION_ODDS when attacks are queued; otherwise one contact figure from the DISPATCH. Those match engagementOdds after staffMap supply decay/capacity — the same preview resolveTurn uses when the garrison does not change. Say "about X:1 if the Russians don't reinforce". Never quote two ratios. Never say "before the dice". Never invent higher card-style odds.
+- Post-battle: ask what outcome they expected. If they already stated a prediction in CONVERSATION, compare it to the chronicle result (odds, roll, losses, who holds the province). Plain map language only — never say "the dice" or "what did you expect the dice to give you".
+- Odds: quote ONLY from QUEUED_RESOLUTION_ODDS when attacks are queued; otherwise one contact figure from the DISPATCH. Say "about X:1 if the Russians don't reinforce". Quote exactly ONE ratio. Never compare two ratios. Never write dangling comparisons such as "adding X would raise it to" / "lift it to" / "pools to" without a finished figure — if you would need a second figure, omit the comparison entirely.
+- Never say "before the dice", "combined-odds board", or other internal UI/debug names. Say "the Orders paper" or "the map" if you must point at the interface.
+- Pushback: if the player refuses to answer or insists on a weak plan, stay concise and Socratic, but anchor on ONE concrete overlooked map fact (supply, fort, empty neighbor, reinforcement risk). Rhetorical pressure alone is not enough.
 - You do not file, note, or queue orders. Never claim an order was filed, noted, or queued (e.g. never "Filed as noted").
 - Battle review: cite the most recent battle in the CHRONICLE and name its fortnight (e.g. "In fortnight 2…"). Do not say no battle resolved this fortnight when an earlier fortnight has a battle. Only if the chronicle has no battles at all, say so plainly.
 
@@ -95,7 +100,7 @@ Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE
 Optional followUp is one short question or null (prefer putting the intent question first in "reply" itself).
 
 Return one JSON object and no markdown:
-{"reply":"What do you expect Kielce to do for the Lemberg push? The engine rates that column at about 4.7:1 if the Russians don't reinforce.","followUp":null,"highlights":[{"provinceId":"kielce"}]}
+{"reply":"Which job should that Kraków garrison keep — digging in or marching on Kielce? Your queue both fortifies Kraków and attacks from it.","followUp":null,"highlights":[{"provinceId":"krakow"}]}
 
 Do not include a suggestions key. Do not include order objects.`
 
@@ -127,10 +132,14 @@ export async function coachCampaign(input: {
   }
 
   const queuedOdds = renderQueuedResolutionOdds(map, queued)
+  const queueConflicts = detectQueuedOrderConflicts(map, queued)
   // DISPATCH contacts still use advisor formatOdds ("before the dice"); scrub so the model cannot copy it.
   const dispatch = scrubCoachOddsLanguage(renderSituation(situation))
   const prompt = [
     dispatch,
+    "",
+    "QUEUE_CONFLICTS",
+    queueConflicts.length ? queueConflicts.join("\n") : "None.",
     "",
     "QUEUED_RESOLUTION_ODDS",
     queuedOdds,
@@ -147,7 +156,7 @@ export async function coachCampaign(input: {
     "CONVERSATION",
     renderConversation(input.messages),
     "",
-    "Answer the latest question. Use the dispatch, QUEUED_RESOLUTION_ODDS, and chronicle only. Do not issue or claim to file orders. Put any intent question first; quote at most one odds figure.",
+    "Answer the latest question. Use the dispatch, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. Diagnose the real blind spot (conflict, flank, supply, chronicle). Do not issue or claim to file orders. Put any intent question first; quote at most one odds figure; never leave a dangling comparison clause.",
   ].join("\n")
 
   let failure: "empty" | "http" | "timeout" | null = null
@@ -288,6 +297,79 @@ export function scrubCoachOddsLanguage(reply: string): string {
 }
 
 /**
+ * Plain map/staff language — strip residual dice/UI jargon and robotic continuity scolding.
+ */
+export function scrubCoachJargon(reply: string): string {
+  let out = reply
+  out = out.replace(
+    /\bwhat did you expect the dice to (?:give|show|do)(?:\s+you)?\b/gi,
+    "what outcome did you expect",
+  )
+  out = out.replace(/\bexpect(?:ed)? the dice\b/gi, "expect the result")
+  out = out.replace(/\bthe dice\b/gi, "the result")
+  out = out.replace(/\bcombined-odds board\b/gi, "combined odds on the Orders paper")
+  out = out.replace(
+    /\bthe figure you cite does not appear in my staff figures\b/gi,
+    "I do not see that figure on the map dispatch",
+  )
+  out = out.replace(/\bin my staff figures\b/gi, "on the map dispatch")
+  out = out.replace(/\sstaff figures\b/gi, "map figures")
+  out = out.replace(/\s{2,}/g, " ").replace(/\s+([,;:.!?])/g, "$1").trim()
+  return out
+}
+
+/** True when prose ends on a truncated preposition/clause after odds scrubbing. */
+export function hasDanglingCoachClause(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  // Bare preposition/truncated tail at the end of the sentence.
+  if (/\b(?:to|at|only|from|by|into|toward|towards|than|versus|vs)\s*[.!?…]*$/i.test(trimmed)) {
+    return true
+  }
+  // Comparison verb with a missing figure ("raise it to.", "rising to if…").
+  if (/\brising\s+to\s+if\b/i.test(trimmed)) return true
+  if (/\b(?:raise|lift|make)\s+it\s+to\s*(?:if\b|[.!?…]|$)/i.test(trimmed)) return true
+  if (/\b(?:raising|lifting|pooling)\s+to\s*(?:if\b|[.!?…]|$)/i.test(trimmed)) return true
+  if (/\bmake\s+it\s+(?:two-pronged\s+|concentric\s+)?at\s*[.!?…]*$/i.test(trimmed)) return true
+  if (/\bpools?\s+to\s+(?:only\s*)?[.!?…]*$/i.test(trimmed)) return true
+  return false
+}
+
+/**
+ * After stripping a second odds figure, drop or rewrite dangling comparison tails
+ * ("…raise it to.", "…rising to if…") rather than leaving mid-clause fragments.
+ */
+export function scrubDanglingOddsClauses(reply: string): string {
+  const sentences = splitCoachSentences(reply)
+  const out: string[] = []
+  for (const sentence of sentences) {
+    let primary = sentence.trim()
+    if (!hasDanglingCoachClause(primary) && !/\b(?:adding|including)\b[\s\S]{0,80}\b(?:to|at)\s*[.!?]*$/i.test(primary)) {
+      out.push(primary)
+      continue
+    }
+    ODDS_FIGURE.lastIndex = 0
+    const first = ODDS_FIGURE.exec(primary)
+    if (first) {
+      const after = primary.slice(first.index + first[0].length)
+      const reinforce = after.match(/^\s*(if the Russians don't reinforce)?/i)
+      const end = first.index + first[0].length + (reinforce?.[0]?.length ?? 0)
+      primary = `${primary.slice(0, end).replace(/[,;:\s]+$/, "")}.`
+    } else {
+      const cut = primary.search(/,\s*(?:but|while|and|though|although|adding|including)\b/i)
+      if (cut > 20) {
+        primary = `${primary.slice(0, cut).replace(/[,;:\s]+$/, "")}.`
+      } else {
+        continue
+      }
+    }
+    primary = primary.replace(/\s{2,}/g, " ").trim()
+    if (primary.length >= 12 && !hasDanglingCoachClause(primary)) out.push(primary)
+  }
+  return out.join(" ").trim()
+}
+
+/**
  * Only claims that the coach itself filed/noted/queued an order — not ordinary
  * talk about the player's queued arrows ("this queued attack", "your queue").
  */
@@ -312,8 +394,9 @@ const ODDS_FIGURE =
   /\b(?:odds\s+(?:about\s+)?)?(?:\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+\d+(?:\.\d+)?\s*:\s*1\b/gi
 
 /**
- * Keep the first odds ratio; drop later sentences that carry another ratio
- * (never strip mid-clause — that left fragments like "while Kielce offers if…").
+ * Keep the first odds ratio; drop later sentences that carry another ratio.
+ * When two ratios share one sentence, cut the whole comparison clause before the
+ * second figure — never blank the second ratio in place (that left "raise it to.").
  */
 export function keepOneOddsFigure(reply: string): string {
   const sentences = splitCoachSentences(reply)
@@ -328,36 +411,60 @@ export function keepOneOddsFigure(reply: string): string {
     }
     if (!seen) {
       seen = true
-      // When a second odds figure sits after ", while" / "; and", keep only the first clause.
-      // Do not cut on every semicolon (battle reviews use "; we lost…").
       let primary = sentence
       ODDS_FIGURE.lastIndex = 0
       const first = ODDS_FIGURE.exec(sentence)
       const second = first ? ODDS_FIGURE.exec(sentence) : null
       if (first && second) {
         const head = sentence.slice(0, second.index)
-        const whileCut = head.search(/,\s*while\b/i)
-        const andCut = head.search(/;\s+and\s+/i)
-        const cut = Math.max(whileCut, andCut)
+        const cutPatterns = [
+          /,\s*while\b/i,
+          /,\s*but\b/i,
+          /;\s+and\s+/i,
+          /,\s*and\s+(?:also\s+)?/i,
+          /\s+but\s+(?:adding|including)\b/i,
+          /\s+(?:while|though|although)\s+/i,
+          /,\s*(?:adding|including)\b/i,
+          /\s+(?:rising|raising|lifting|pooling)\s+to\b/i,
+          /\s+(?:raise|lift|pool|make)\s+it\b/i,
+          /\s+would\s+(?:raise|lift|make|pool)\b/i,
+          /\s+adding\b/i,
+        ]
+        let cut = -1
+        for (const pattern of cutPatterns) {
+          const at = head.search(pattern)
+          if (at > 0 && (cut < 0 || at < cut)) cut = at
+        }
+        if (cut < 0) {
+          const lastBreak = Math.max(head.lastIndexOf(","), head.lastIndexOf(";"))
+          if (lastBreak > 20) cut = lastBreak
+        }
         if (cut > 0) {
           primary = `${sentence.slice(0, cut).replace(/[,;:\s]+$/, "")}.`
+        } else {
+          const afterFirst = sentence.slice(first.index + first[0].length)
+          const reinforce = afterFirst.match(/^\s*(?:if the Russians don't reinforce)?/i)
+          const end = first.index + first[0].length + (reinforce?.[0]?.length ?? 0)
+          primary = `${sentence.slice(0, end).replace(/[,;:\s]+$/, "")}.`
         }
       }
-      let count = 0
-      primary = primary
-        .replace(ODDS_FIGURE, (match) => {
-          count += 1
-          return count === 1 ? match : ""
-        })
-        .replace(/\s{2,}/g, " ")
-        .replace(/\s+([,;:.!?])/g, "$1")
-        .trim()
+      // Never blank-replace a leftover second ratio in place.
+      ODDS_FIGURE.lastIndex = 0
+      const stillFirst = ODDS_FIGURE.exec(primary)
+      const stillSecond = stillFirst ? ODDS_FIGURE.exec(primary) : null
+      if (stillFirst && stillSecond) {
+        const afterFirst = primary.slice(stillFirst.index + stillFirst[0].length)
+        const reinforce = afterFirst.match(/^\s*(?:if the Russians don't reinforce)?/i)
+        const end = stillFirst.index + stillFirst[0].length + (reinforce?.[0]?.length ?? 0)
+        primary = `${primary.slice(0, end).replace(/[,;:\s]+$/, "")}.`
+      }
+      primary = scrubDanglingOddsClauses(primary)
       if (primary.length >= 12) out.push(primary)
       continue
     }
     // Later odds sentences: drop entirely (do not strip in place).
   }
-  return out.join(" ").trim()
+  return scrubDanglingOddsClauses(out.join(" ").trim())
 }
 
 /** Move the first question sentence to the front when intent/prediction asks trail evidence. */
@@ -399,9 +506,12 @@ export function fitCoachReplyLength(reply: string, maxChars = COACH_REPLY_MAX_CH
 export function capCoachReply(reply: string): string {
   let cleaned = scrubCoachLedgerNoise(reply.replace(/\s+/g, " ").trim())
   cleaned = scrubCoachOddsLanguage(cleaned)
+  cleaned = scrubCoachJargon(cleaned)
   cleaned = scrubCoachFiledClaims(cleaned)
   cleaned = keepOneOddsFigure(cleaned)
+  cleaned = scrubDanglingOddsClauses(cleaned)
   cleaned = scrubCoachOddsLanguage(cleaned)
+  cleaned = scrubCoachJargon(cleaned)
   cleaned = putQuestionFirst(cleaned)
   if (!cleaned) return cleaned
   const kept = splitCoachSentences(cleaned).slice(0, COACH_MAX_SENTENCES)
@@ -770,6 +880,38 @@ export function queuedAttackPreview(
   return null
 }
 
+/** Fortify + attack (or overlapping commitments) the player queued on the same garrison. */
+export function detectQueuedOrderConflicts(map: GameState, queued: PlayerOrder[]): string[] {
+  const conflicts: string[] = []
+  const attacks = queued.filter(
+    (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
+  )
+  const fortifies = queued.filter(
+    (order): order is Extract<PlayerOrder, { type: "fortify" }> => order.type === "fortify",
+  )
+  for (const fort of fortifies) {
+    for (const attack of attacks) {
+      if (attack.from !== fort.provinceId) continue
+      conflicts.push(
+        `Fortify ${provinceLabel(fort.provinceId)} conflicts with attack from ${provinceLabel(attack.from)} into ${provinceLabel(attack.target)} — the same garrison cannot dig in and march this fortnight.`,
+      )
+    }
+  }
+  return [...new Set(conflicts)]
+}
+
+/** Varied intent openers — avoid a stock Kielce/Lemberg line on every turn. */
+export function intentQuestionForTarget(targetName: string): string {
+  const options = [
+    `What do you need ${targetName} for this fortnight?`,
+    `What do you expect taking ${targetName} to unlock?`,
+    `What happens to your line if ${targetName} holds?`,
+  ]
+  let hash = 0
+  for (let i = 0; i < targetName.length; i += 1) hash = (hash + targetName.charCodeAt(i) * (i + 1)) % options.length
+  return options[hash]!
+}
+
 function rulesCoach(
   map: GameState,
   situation: Situation,
@@ -783,6 +925,7 @@ function rulesCoach(
   const wantsReview = /battle|fought|last fortnight|chronicle|review|how did|losses|result/.test(lower)
   const hasIntent = playerStatedIntent(messages)
   const prediction = extractPlayerPrediction(messages)
+  const conflicts = detectQueuedOrderConflicts(map, queued)
 
   if (wantsReview) {
     const battles = latestBattleFacts(log)
@@ -800,7 +943,7 @@ function rulesCoach(
       }
       // Name the fortnight even when the open fortnight has no battle yet.
       return {
-        reply: `What did you expect at ${target}? The chronicle shows ${evidenceBody}.`,
+        reply: `What outcome did you expect at ${target}? The chronicle shows ${evidenceBody}.`,
         followUp: null,
         highlights: [{ provinceId: last.battle.targetId }],
       }
@@ -810,6 +953,25 @@ function rulesCoach(
         "No battles are recorded in the chronicle yet. What outcome are you trying to force this fortnight?",
       followUp: null,
       highlights: [{ uiId: "chronicle-log-toggle" }],
+    }
+  }
+
+  if (conflicts.length) {
+    const fort = queued.find((order) => order.type === "fortify")
+    const attack = queued.find((order) => order.type === "attack")
+    const provinceId =
+      fort && fort.type === "fortify"
+        ? fort.provinceId
+        : attack && attack.type === "attack"
+          ? attack.from
+          : null
+    const name = provinceId ? provinceLabel(provinceId) : "that province"
+    const target =
+      attack && attack.type === "attack" ? provinceLabel(attack.target) : "the objective"
+    return {
+      reply: `Which job should that ${name} garrison keep — digging in or marching on ${target}? Your queue both fortifies ${name} and attacks from it.`,
+      followUp: null,
+      highlights: provinceId ? [{ provinceId }] : [{ uiId: "queued-orders" }],
     }
   }
 
@@ -826,7 +988,7 @@ function rulesCoach(
           ? " — undefended if the Russians don't reinforce"
           : " if the Russians don't reinforce"
       return {
-        reply: `I do not file orders. What do you expect ${weak.targetName} to do for the Lemberg push? The strongest contact is ${weak.fromName} into ${weak.targetName}${oddsBit}.`,
+        reply: `I do not file orders. ${intentQuestionForTarget(weak.targetName)} The strongest contact is ${weak.fromName} into ${weak.targetName}${oddsBit}.`,
         followUp: null,
         highlights: [{ provinceId: weak.targetId }],
       }
@@ -848,13 +1010,13 @@ function rulesCoach(
         : `The engine has that column queued into ${target}.`
       if (!hasIntent) {
         return {
-          reply: `What do you expect ${target} to do for the Lemberg push? ${evidence}`,
+          reply: `${intentQuestionForTarget(target)} ${evidence}`,
           followUp: null,
           highlights: [{ provinceId: targetId }],
         }
       }
       return {
-        reply: `Against that aim, ${evidence.charAt(0).toLowerCase()}${evidence.slice(1)}`,
+        reply: `What map fact cuts against that aim? ${evidence}`,
         followUp: null,
         highlights: [{ provinceId: targetId }],
       }

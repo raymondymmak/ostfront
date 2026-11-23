@@ -14,8 +14,8 @@ import { legalTargets } from "@/lib/ui/legal-targets"
 import { createInitialState } from "@/lib/data/scenario"
 
 describe("coach eval harness", () => {
-  it("ships 7 engine-grounded scenarios", () => {
-    expect(COACH_EVAL_SCENARIOS).toHaveLength(7)
+  it("ships 8 engine-grounded scenarios", () => {
+    expect(COACH_EVAL_SCENARIOS).toHaveLength(8)
     const ids = COACH_EVAL_SCENARIOS.map((scenario) => scenario.id)
     expect(ids).toEqual([
       "under-supply-trap",
@@ -23,6 +23,7 @@ describe("coach eval harness", () => {
       "clerk-request",
       "pushback-follow-up",
       "sound-plan",
+      "fortify-attack-conflict",
       "post-battle-surprise",
       "illegal-move",
     ])
@@ -30,7 +31,7 @@ describe("coach eval harness", () => {
 
   it("builds fixtures that match live engine facts", () => {
     const built = buildAllCoachEvalFixtures()
-    expect(built).toHaveLength(7)
+    expect(built).toHaveLength(8)
 
     const under = built.find((item) => item.id === "under-supply-trap")!.fixture
     const underMap = staffMap(under.state)
@@ -53,6 +54,14 @@ describe("coach eval harness", () => {
 
     const sound = built.find((item) => item.id === "sound-plan")!.fixture
     expect(sound.queuedOrders.filter((order) => order.type === "attack")).toHaveLength(2)
+
+    const conflict = built.find((item) => item.id === "fortify-attack-conflict")!.fixture
+    expect(conflict.queuedOrders.some((order) => order.type === "fortify")).toBe(true)
+    expect(
+      conflict.queuedOrders.some(
+        (order) => order.type === "attack" && order.from === "krakow" && order.target === "kielce",
+      ),
+    ).toBe(true)
 
     const surprise = built.find((item) => item.id === "post-battle-surprise")!.fixture
     expect(surprise.log).toHaveLength(1)
@@ -117,7 +126,7 @@ describe("coach eval harness", () => {
     expect(hardRulesPassed(results)).toBe(true)
   })
 
-  it("hard-rule checker flags filed claims, dice jargon, and ungrounded odds", () => {
+  it("hard-rule checker flags filed claims, dice jargon, dangling clauses, and ungrounded odds", () => {
     const sound = COACH_EVAL_SCENARIOS.find((item) => item.id === "sound-plan")!.build()
     const filed = checkHardRules("Filed as noted. Kielce is yours.", sound.facts)
     expect(filed.find((item) => item.id === "no_filed_claims")?.pass).toBe(false)
@@ -127,6 +136,18 @@ describe("coach eval harness", () => {
       sound.facts,
     )
     expect(dice.find((item) => item.id === "no_banned_jargon")?.pass).toBe(false)
+
+    const jargon = checkHardRules(
+      "What outcome did you expect? Check the combined-odds board for the answer.",
+      sound.facts,
+    )
+    expect(jargon.find((item) => item.id === "no_banned_jargon")?.pass).toBe(false)
+
+    const dangling = checkHardRules(
+      "What do you need Kielce for this fortnight? Adding Katowice would raise it to.",
+      sound.facts,
+    )
+    expect(dangling.find((item) => item.id === "no_dangling_clause")?.pass).toBe(false)
 
     const badOdds = checkHardRules(
       "What do you expect at Kielce? About 99:1 if the Russians don't reinforce.",
@@ -140,7 +161,7 @@ describe("coach eval harness", () => {
     delete process.env.OSTFRONT_ADVISOR_FIXTURE
     const report = await runCoachEval({ offline: true, gradePedagogy: false })
     expect(report.mode).toBe("offline")
-    expect(report.scenarios).toHaveLength(7)
+    expect(report.scenarios).toHaveLength(8)
     expect(report.pedagogyPassCount).toBeNull()
     for (const scenario of report.scenarios) {
       expect(scenario.reply.length).toBeGreaterThan(10)

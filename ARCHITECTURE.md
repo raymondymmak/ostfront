@@ -179,7 +179,7 @@ Same turn guard as turn (body limit, rate, origin/token) **plus** campaign stora
 
 Coach does **not** persist chat on the server (sessionStorage only).
 
-**Offline scenario eval** (`npm run eval:coach`, ADR 015): `lib/gm/coach-eval/` builds seven fixed `GameState` fixtures, runs `coachCampaign`, and applies Layer 1 deterministic hard-rule checks (sentence budget, question-first, no filed claims / banned jargon, grounded odds & chronicle fortnight). Live mode (when `LLM_API_KEY` is set) adds a Layer 2 pedagogy rubric grader (`EVAL_JUDGE_MODEL` optional). `tests/coach-eval.test.ts` keeps fixtures and Layer 1 in CI without external APIs.
+**Offline scenario eval** (`npm run eval:coach`, ADR 015): `lib/gm/coach-eval/` builds eight fixed `GameState` fixtures (including fortify+attack conflicts), runs `coachCampaign`, and applies Layer 1 deterministic hard-rule checks (sentence budget, question-first, no filed claims / banned jargon / dangling odds clauses, grounded odds & chronicle fortnight). Live mode (when `LLM_API_KEY` is set) adds a Layer 2 pedagogy rubric grader (`EVAL_JUDGE_MODEL` optional). `tests/coach-eval.test.ts` keeps fixtures and Layer 1 in CI without external APIs. Coach post-processing drops whole comparison clauses when scrubbing a second odds figure; the advisor panel aborts hung `/api/advisor` fetches client-side.
 
 ```mermaid
 flowchart LR

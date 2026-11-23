@@ -39,6 +39,7 @@ export type HardRuleId =
   | "ends_clean"
   | "question_first"
   | "no_banned_jargon"
+  | "no_dangling_clause"
   | "no_filed_claims"
   | "grounded_odds"
   | "grounded_provinces"

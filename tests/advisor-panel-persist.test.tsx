@@ -117,4 +117,68 @@ describe("AdvisorPanel state retention", () => {
       "And then Lemberg?",
     )
   })
+
+  it("clears busy state and shows a retryable message when the advisor call times out", async () => {
+    vi.useFakeTimers()
+    const state = createInitialState()
+    const onHighlights = vi.fn()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          const signal = init?.signal
+          if (!signal) {
+            reject(new Error("missing abort signal"))
+            return
+          }
+          const fail = () => reject(new DOMException("Aborted", "AbortError"))
+          if (signal.aborted) {
+            fail()
+            return
+          }
+          signal.addEventListener("abort", fail, { once: true })
+        })
+      }),
+    )
+
+    await act(async () => {
+      root.render(
+        <AdvisorPanel
+          open
+          embedded
+          gameId={"a".repeat(32)}
+          state={state}
+          queue={[]}
+          selectedProvinceId={null}
+          closed={false}
+          epoch={1}
+          onClose={() => {}}
+          onHighlights={onHighlights}
+        />,
+      )
+    })
+
+    const starterBtn = host.querySelector("[data-testid^=advisor-starter-]") as HTMLButtonElement
+    await act(async () => {
+      starterBtn.click()
+    })
+
+    const send = () => host.querySelector('[data-testid="advisor-send"]') as HTMLButtonElement
+    expect(send().disabled).toBe(true)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(26_000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(host.querySelector('[data-testid="advisor-reply"]')?.textContent).toMatch(/timed out|Try again/i)
+    expect(send().disabled).toBe(true) // disabled while draft empty
+    await act(async () => {
+      const draft = host.querySelector('[data-testid="advisor-input"]') as HTMLTextAreaElement
+      setTextareaValue(draft, "Retry please")
+    })
+    expect(send().disabled).toBe(false)
+    vi.useRealTimers()
+  })
 })

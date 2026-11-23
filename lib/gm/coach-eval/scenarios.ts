@@ -297,6 +297,35 @@ function postBattleSurprise(): CoachEvalFixture {
   }
 }
 
+/** Fortify Kraków while also attacking Kielce from Kraków — same garrison, conflicting jobs. */
+function fortifyAttackConflict(): CoachEvalFixture {
+  const state = createInitialState("normal")
+  const map = staffMap(state)
+  const unitIds = centralUnitIds(map, "krakow")
+  if (!unitIds.length) throw new Error("no Kraków attackers for fortify/attack conflict")
+  const preview = engagementOdds(map, "krakow", "kielce", unitIds)
+  const queued: PlayerOrder[] = [
+    { type: "fortify", provinceId: "krakow" },
+    attackOrder("krakow", "kielce", unitIds),
+  ]
+  return {
+    state,
+    log: [],
+    messages: [
+      {
+        role: "user",
+        content: "Does my queued plan look sound?",
+      },
+    ],
+    queuedOrders: queued,
+    selectedProvinceId: "krakow",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: [...oddsTrimmed(preview), ...mapContactOdds(map)],
+    },
+  }
+}
+
 /** Non-adjacent Kraków → Warsaw (warszawa). Engine odds helpers ignore adjacency; legalTargets does not. */
 function illegalMove(): CoachEvalFixture {
   const state = createInitialState("normal")
@@ -370,6 +399,13 @@ export const COACH_EVAL_SCENARIOS: CoachEvalScenario[] = [
     blindSpot:
       "Concentric Kraków+Katowice into Kielce is strong; coach should validate/probe cleanly without inventing bogus problems.",
     build: soundPlan,
+  },
+  {
+    id: "fortify-attack-conflict",
+    title: "Conflicting fortify + attack queue",
+    blindSpot:
+      "Player queued both Fortify Kraków and Attack from Kraków into Kielce — the same garrison cannot dig in and march.",
+    build: fortifyAttackConflict,
   },
   {
     id: "post-battle-surprise",

@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
-import type { CampaignCoachResponse, CoachHighlight } from "@/lib/gm/campaign-coach"
+import {
+  CLIENT_ADVISOR_TIMEOUT_MS,
+  type CampaignCoachResponse,
+  type CoachHighlight,
+} from "@/lib/gm/campaign-coach"
 import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { GameState } from "@/lib/types"
 
@@ -57,6 +61,12 @@ type AdvisorPanelProps = {
   embedded?: boolean
 }
 
+function advisorErrorMessage(error: unknown, timedOut: boolean): string {
+  if (timedOut) return "The staff wire timed out. Try again."
+  if (error instanceof Error && error.message.trim()) return error.message
+  return "I could not reach the staff wire."
+}
+
 export function AdvisorPanel({
   open,
   gameId,
@@ -75,6 +85,8 @@ export function AdvisorPanel({
   const [offline, setOffline] = useState(false)
   const thread = useRef<HTMLDivElement>(null)
   const seenEpoch = useRef<number | null>(null)
+  const askSerial = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (seenEpoch.current === null) {
@@ -83,6 +95,9 @@ export function AdvisorPanel({
     }
     if (seenEpoch.current === epoch) return
     seenEpoch.current = epoch
+    abortRef.current?.abort()
+    askSerial.current += 1
+    setBusy(false)
     setMessages([])
     setDraft("")
     setOffline(false)
@@ -114,7 +129,11 @@ export function AdvisorPanel({
     node.scrollTop = node.scrollHeight
   }, [messages, busy, open])
 
-  if (!open) return null
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+    }
+  }, [])
 
   async function ask(text: string) {
     const question = text.trim()
@@ -140,7 +159,14 @@ export function AdvisorPanel({
     const history = [...prior, userTurn].slice(-HISTORY_SEND)
     setMessages((current) => [...current, userTurn].slice(-HISTORY_KEEP))
     setDraft("")
+
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const serial = ++askSerial.current
     setBusy(true)
+    const timeoutId = window.setTimeout(() => controller.abort(), CLIENT_ADVISOR_TIMEOUT_MS)
+
     try {
       const response = await fetch("/api/advisor", {
         method: "POST",
@@ -152,12 +178,14 @@ export function AdvisorPanel({
           queuedOrders: queuedToPlayerOrders(queue),
           selectedProvinceId,
         }),
-        signal: AbortSignal.timeout(25_000),
+        signal: controller.signal,
       })
+      if (serial !== askSerial.current) return
       const payload = (await response.json()) as Partial<CampaignCoachResponse> & {
         error?: string
         suggestions?: unknown
       }
+      if (serial !== askSerial.current) return
       if (!response.ok || typeof payload.reply !== "string") {
         throw new Error(
           response.status === 429
@@ -185,6 +213,8 @@ export function AdvisorPanel({
         ].slice(-HISTORY_KEEP),
       )
     } catch (error) {
+      if (serial !== askSerial.current) return
+      const timedOut = controller.signal.aborted
       setOffline(true)
       onHighlights([])
       setMessages((current) =>
@@ -192,14 +222,17 @@ export function AdvisorPanel({
           ...current,
           {
             role: "advisor" as const,
-            content: error instanceof Error ? error.message : "I could not reach the staff wire.",
+            content: advisorErrorMessage(error, timedOut),
           },
         ].slice(-HISTORY_KEEP),
       )
     } finally {
-      setBusy(false)
+      window.clearTimeout(timeoutId)
+      if (serial === askSerial.current) setBusy(false)
     }
   }
+
+  if (!open) return null
 
   const shellClass = embedded
     ? "flex h-full max-h-full w-full flex-col overflow-hidden bg-transparent text-ink"

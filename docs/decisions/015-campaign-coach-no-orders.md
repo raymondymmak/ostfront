@@ -22,4 +22,5 @@ Out of scope for this ADR: side practice drills (2E round 2) and deeper enemy AI
 - Clients must send `gameId` + `expectedTurn`; legacy bodies with `state` get **400**.
 - Demo-check and FEATURES drop Accept-card steps; map QA uses `data-coach-highlights`.
 - `lib/gm/advisor.ts` still builds the dispatch; `lib/gm/campaign-coach.ts` owns the coach prompt and response shape.
-- Prompt / teaching-quality iterations use `npm run eval:coach` (`lib/gm/coach-eval/`: fixed engine fixtures, Layer 1 hard rules offline, optional Layer 2 LLM rubric). CI asserts fixtures + Layer 1 only (`tests/coach-eval.test.ts`).
+- Prompt / teaching-quality iterations use `npm run eval:coach` (`lib/gm/coach-eval/`: fixed engine fixtures including fortify+attack conflicts, Layer 1 hard rules offline including dangling-clause / jargon checks, optional Layer 2 LLM rubric). CI asserts fixtures + Layer 1 only (`tests/coach-eval.test.ts`).
+- Odds scrubbing must drop or rewrite whole comparison clauses (never blank a second ratio mid-phrase). Openers tailor to the real blind spot; pushback cites one concrete map fact; plain map language only (no dice / combined-odds board / staff-figures scolding).

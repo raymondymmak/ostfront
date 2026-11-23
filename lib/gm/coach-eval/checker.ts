@@ -1,12 +1,13 @@
 import {
   extractCoachOddsRatio,
+  hasDanglingCoachClause,
   scrubCoachFiledClaims,
   splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
 import type { CoachEvalFacts, HardRuleResult } from "@/lib/gm/coach-eval/types"
 
 const BANNED_JARGON =
-  /\bbefore the dice\b|\bledger\b|\bgmDebug\b|\braw supply\b|\bkey=value\b|\bUNIT_IDS?\b|\bDISPATCH\b|\bQUEUED_RESOLUTION_ODDS\b/i
+  /\bbefore the dice\b|\bthe dice\b|\bcombined-odds board\b|\bstaff figures\b|\bledger\b|\bgmDebug\b|\braw supply\b|\bkey=value\b|\bUNIT_IDS?\b|\bDISPATCH\b|\bQUEUED_RESOLUTION_ODDS\b/i
 
 const FILED_CLAIM =
   /\bfiled as noted\b|\bnoted as filed\b|\bi(?:'ve| have|'ll)?\s+(?:filed|noted|queued)\b|\bwe(?:'ve| have|'ll)?\s+(?:filed|noted|queued)\b|\b(?:order|orders)\s+(?:(?:was|were|has been|have been|is|are)\s+)?(?:filed|noted)\b|\b(?:it|that|this)\s+(?:(?:was|has been|is)\s+)?(?:filed|noted)\b/i
@@ -103,6 +104,20 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
     id: "no_banned_jargon",
     pass: !jargon,
     detail: jargon ? "Contains banned internal/debug jargon" : "No banned jargon",
+  })
+
+  const dangling =
+    hasDanglingCoachClause(reply) ||
+    sentences.some((sentence) => hasDanglingCoachClause(sentence)) ||
+    /\brising\s+to\s+if\b|\braise\s+it\s+to\s*[.!?]|\blift(?:ing)?\s+it\s+to\s*[.!?]|\bpools?\s+to\s+(?:only\s*)?[.!?]|\bmake\s+it\s+(?:two-pronged\s+)?at\s*[.!?]/i.test(
+      reply,
+    )
+  results.push({
+    id: "no_dangling_clause",
+    pass: !dangling,
+    detail: dangling
+      ? "Dangling comparison / truncated preposition clause"
+      : "No dangling odds clauses",
   })
 
   const filed = FILED_CLAIM.test(reply)

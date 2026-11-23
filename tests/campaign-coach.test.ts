@@ -14,6 +14,8 @@ import {
   fitCoachReplyLength,
   formatBattleForCoach,
   formatBattleReviewForPlayer,
+  detectQueuedOrderConflicts,
+  hasDanglingCoachClause,
   keepOneOddsFigure,
   latestBattleFacts,
   playerStatedIntent,
@@ -22,7 +24,9 @@ import {
   renderChronicle,
   sanitizeHighlights,
   scrubCoachFiledClaims,
+  scrubCoachJargon,
   scrubCoachOddsLanguage,
+  scrubDanglingOddsClauses,
   shapeCoachReply,
   splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
@@ -134,7 +138,7 @@ describe("campaign coach", () => {
       messages: [{ role: "user", content: "Review the last battle from the chronicle." }],
       queuedOrders: [],
     })
-    expect(review.reply).toMatch(/What did you expect at Kielce/i)
+    expect(review.reply).toMatch(/What(?: outcome)? did you expect at Kielce/i)
     expect(review.reply).toMatch(/Kielce/i)
     expect(review.reply).not.toMatch(/\b(attacker|defender|weWon|oursLost)=/)
     expect(review.reply).not.toMatch(/unavailable offline|159 against/)
@@ -280,7 +284,7 @@ describe("campaign coach", () => {
       queuedOrders: [],
     })
     expect(result.reply).toMatch(/Lublin/i)
-    expect(result.reply).toMatch(/What did you expect at Lublin/i)
+    expect(result.reply).toMatch(/What(?: outcome)? did you expect at Lublin/i)
     expect(result.reply).toMatch(/fortnight 3/i)
     expect(result.reply).not.toMatch(/Kielce/i)
     expect(result.reply).not.toMatch(/\b(attacker|defender|weWon|oursLost|theirsLost)=/)
@@ -357,7 +361,7 @@ describe("campaign coach", () => {
       selectedProvinceId: "krakow",
     })
     expect(playerStatedIntent([{ role: "user", content: "What do you make of my queued plan?" }])).toBe(false)
-    expect(result.reply).toMatch(/What do you expect Kielce/i)
+    expect(result.reply).toMatch(/What do you (?:expect|need) Kielce/i)
     expect(result.reply).toMatch(/about [\d.]+:1 if the Russians don't reinforce/i)
     expect(result.reply).not.toMatch(/before the dice|as the engine resolves this fortnight/i)
     expect(result.reply).not.toMatch(/Ordered:|unavailable offline|159 against|Filed as noted/i)
@@ -501,12 +505,70 @@ describe("campaign coach", () => {
 
   it("puts the intent question first and keeps one odds figure in post-processing", () => {
     const messy =
-      "The engine rates that column at about 6.0:1 if the Russians don't reinforce, and also about 8.1:1 combined. What do you expect Kielce to do for the Lemberg push?"
+      "The engine rates that column at about 6.0:1 if the Russians don't reinforce, and also about 8.1:1 combined. What do you need Kielce for this fortnight?"
     const shaped = shapeCoachReply(messy, null)
-    expect(shaped.reply.startsWith("What do you expect")).toBe(true)
+    expect(shaped.reply.startsWith("What do you need")).toBe(true)
     expect(shaped.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
-    expect(putQuestionFirst(messy)).toMatch(/^What do you expect/)
+    expect(putQuestionFirst(messy)).toMatch(/^What do you need/)
     expect(keepOneOddsFigure(messy).match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+  })
+
+  it("drops whole comparison clauses instead of leaving dangling odds tails", () => {
+    const samples = [
+      "Your Kraków column is about 5.8:1 if the Russians don't reinforce, but adding Katowice would raise it to 7.6:1.",
+      "That stand is about 1.2:1 if the Russians don't reinforce, and adding Bukovina and Stanislav would lift it to 2.1:1.",
+      "Katowice alone is about 0.9:1 if the Russians don't reinforce; adding Kraków would make it two-pronged at 7.6:1.",
+      "The starved prong pools to only 0.5:1 if the Russians don't reinforce while Kraków offers about 5.8:1.",
+      "About 5.8:1 if the Russians don't reinforce, rising to 7.6:1 if you add the Silesian Landwehr from Katowice.",
+    ]
+    for (const sample of samples) {
+      const cleaned = keepOneOddsFigure(sample)
+      expect(cleaned.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+      expect(hasDanglingCoachClause(cleaned)).toBe(false)
+      expect(cleaned).not.toMatch(/\braise it to\s*[.!?]|\blift it to\s*[.!?]|\bpools? to only\s*[.!?]|\bmake it two-pronged at\s*[.!?]|\brising to if\b/i)
+      expect(scrubDanglingOddsClauses("Adding Katowice would raise it to.")).toBe("")
+    }
+    expect(
+      shapeCoachReply(
+        "What do you need Kielce for this fortnight? About 5.8:1 if the Russians don't reinforce, adding Katowice would raise it to 7.6:1.",
+        null,
+      ).reply,
+    ).not.toMatch(/raise it to\s*\./i)
+  })
+
+  it("scrubs residual dice / combined-odds / staff-figures jargon", () => {
+    expect(scrubCoachJargon("What did you expect the dice to give you?")).toMatch(
+      /what outcome did you expect/i,
+    )
+    expect(scrubCoachJargon("Check the combined-odds board.")).toMatch(/Orders paper/i)
+    expect(
+      scrubCoachJargon("The figure you cite does not appear in my staff figures."),
+    ).toMatch(/map dispatch/i)
+    expect(capCoachReply("What did you expect the dice to give you? Kielce held.")).not.toMatch(
+      /\bdice\b|staff figures|combined-odds board/i,
+    )
+  })
+
+  it("diagnoses fortify + attack conflicts instead of a stock Lemberg opener", async () => {
+    const state = createInitialState()
+    const map = staffMap(state)
+    const unitIds = map.provinces
+      .find((province) => province.id === "krakow")!
+      .units.filter((unit) => unit.faction === "central")
+      .map((unit) => unit.id)
+    const queued: PlayerOrder[] = [
+      { type: "fortify", provinceId: "krakow" },
+      { type: "attack", from: "krakow", target: "kielce", unitIds },
+    ]
+    expect(detectQueuedOrderConflicts(map, queued).length).toBeGreaterThan(0)
+    const result = await coachCampaign({
+      state,
+      log: [],
+      messages: [{ role: "user", content: "Does my queued plan look sound?" }],
+      queuedOrders: queued,
+    })
+    expect(result.reply).toMatch(/fortif|digging in|march/i)
+    expect(result.reply).not.toMatch(/Lemberg push/i)
   })
 
   it("scrubs before-the-dice on general advice and refusal prompts", async () => {
