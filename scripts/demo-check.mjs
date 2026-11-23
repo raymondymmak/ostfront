@@ -211,13 +211,8 @@ async function stowPapersForMapClick(page) {
   for (const label of ["Legend", "Orders", "Orders from OHL", "Lesson"]) {
     const win = page.locator(`[role="dialog"][aria-label="${label}"]`)
     if (!(await win.isVisible().catch(() => false))) continue
-    const stow = win.getByRole("button", { name: `Stow ${label}` })
-    try {
-      await stow.click({ timeout: 3_000 })
-    } catch {
-      await stow.click({ force: true, timeout: 3_000 }).catch(() => {})
-    }
-    await win.waitFor({ state: "hidden", timeout: 3_000 }).catch(() => {})
+    await win.getByRole("button", { name: `Stow ${label}` }).click({ force: true, timeout: 5_000 })
+    await win.waitFor({ state: "hidden", timeout: 5_000 })
   }
 }
 
@@ -647,10 +642,18 @@ function buildSteps(cli, targets) {
       name: "Select province via map click",
       async run({ page }) {
         await stowPapersForMapClick(page)
+        await page.waitForTimeout(300)
         const point = await projectOnMap(page, KATOWICE_LON_LAT[0], KATOWICE_LON_LAT[1])
         if (!point) throw new Error("Map projection unavailable (__ostfrontMap missing).")
         await page.mouse.click(point.x, point.y)
-        await page.waitForTimeout(400)
+        await page.waitForFunction(
+          () => {
+            const filter = window.__ostfrontMap?.getFilter?.("selected")
+            return Array.isArray(filter) && filter[2] === "katowice"
+          },
+          null,
+          { timeout: 10_000 },
+        )
         await page.locator("[data-testid=tab-province]").click()
         const title = page.locator("aside h2").filter({ hasText: "Katowice" }).first()
         await title.waitFor({ state: "attached", timeout: 10_000 })
