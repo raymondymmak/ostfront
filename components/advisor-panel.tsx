@@ -164,7 +164,7 @@ export function AdvisorPanel({
             ? "The chief of staff has too many dispatches. Wait a minute."
             : response.status === 404
               ? "No campaign was found. Start a new campaign."
-              : "The chief of staff is unavailable offline.",
+              : "I could not reach the staff wire.",
         )
       }
       if ("suggestions" in payload && payload.suggestions != null) {
@@ -192,7 +192,7 @@ export function AdvisorPanel({
           ...current,
           {
             role: "advisor" as const,
-            content: error instanceof Error ? error.message : "The chief of staff is unavailable offline.",
+            content: error instanceof Error ? error.message : "I could not reach the staff wire.",
           },
         ].slice(-HISTORY_KEEP),
       )

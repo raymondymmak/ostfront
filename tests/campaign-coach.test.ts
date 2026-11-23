@@ -9,6 +9,7 @@ import {
 import {
   coachCampaign,
   formatBattleForCoach,
+  formatBattleReviewForPlayer,
   latestBattleFacts,
   queuedAttackPreview,
   renderChronicle,
@@ -94,8 +95,13 @@ describe("campaign coach", () => {
   it("uses chronicle battle records in a review reply", async () => {
     const { gameId, save } = await createStoredCampaign("normal", 4242)
     const state = withServerSeed(save.state, 4242)
-    const orders: PlayerOrder[] = []
+    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    const unitIds = krakow.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
+    const orders: PlayerOrder[] = [
+      { type: "attack", from: "krakow", target: "kielce", unitIds: unitIds.slice(0, 1) },
+    ]
     const played = await playTurn(state, orders)
+    expect(played.record.resolutions.some((item) => item.battle)).toBe(true)
     const nextSave = {
       version: 2 as const,
       gameId,
@@ -107,6 +113,7 @@ describe("campaign coach", () => {
 
     const chronicle = renderChronicle(nextSave.log)
     expect(chronicle).toContain("Fortnight 1")
+    expect(chronicle).not.toMatch(/\b(attacker|oursLost)=/)
 
     const review = await coachCampaign({
       state: played.state,
@@ -114,9 +121,10 @@ describe("campaign coach", () => {
       messages: [{ role: "user", content: "Review the last battle from the chronicle." }],
       queuedOrders: [],
     })
-    expect(review.reply.toLowerCase()).toMatch(/chronicle|fortnight|map|dispatch/)
-    // Rules path quotes chronicle lines when a review is asked.
-    expect(review.reply).toMatch(/Fortnight|chronicle/i)
+    expect(review.reply).toMatch(/fortnight 1/i)
+    expect(review.reply).toMatch(/Kielce/i)
+    expect(review.reply).not.toMatch(/\b(attacker|defender|weWon|oursLost)=/)
+    expect(review.reply).not.toMatch(/unavailable offline/i)
   })
 
   it("sanitizes highlights to catalog provinces and known ui ids", () => {
@@ -166,11 +174,33 @@ describe("campaign coach", () => {
       attackerWon: true,
     }
     const line = formatBattleForCoach(battle)
-    expect(line).toContain("attacker=russia")
-    expect(line).toContain("oursLost=40")
-    expect(line).toContain("theirsLost=12")
-    expect(line).toContain("weWon=false")
-    expect(line).toContain("Ours −40 · Theirs −12")
+    expect(line).toMatch(/Russian assault from Kielce/i)
+    expect(line).toMatch(/Russia took Kraków|Krakow/i)
+    expect(line).toContain("We lost 40, they lost 12")
+    expect(line).not.toMatch(/\w+=\w+/)
+  })
+
+  it("writes battle reviews as plain sentences, never key=value debug fields", () => {
+    const battle: BattleFacts = {
+      targetId: "kielce",
+      attacker: "central",
+      defender: "russia",
+      kind: "assault",
+      prongs: 1,
+      origins: ["krakow"],
+      attackerLoss: 7,
+      defenderLoss: 30,
+      encircled: false,
+      attackerWon: true,
+    }
+    const summary =
+      "Attack from Kraków into Kielce succeeds, odds 5.48 (roll 6). Kielce passes to the Central Powers. The remnants retreat to Warsaw, shaken. Losses — attackers 7, defenders 30."
+    const line = formatBattleReviewForPlayer(0, "2 May 1915", battle, summary)
+    expect(line).toMatch(/In fortnight 1 \(2 May 1915\) our assault from Kraków took Kielce at 5\.5:1 odds \(roll 6\)/i)
+    expect(line).toContain("We lost 7, they lost 30")
+    expect(line).toMatch(/remnants fell back to Warsaw/i)
+    expect(line).not.toMatch(/\b(attacker|defender|weWon|oursLost|theirsLost|kind)=/)
+    expect(line).not.toMatch(/\.\./)
   })
 
   it("reviews the latest battle from structured records, not the oldest fortnight text", async () => {
@@ -212,7 +242,8 @@ describe("campaign coach", () => {
         {
           proposal: { type: "attack", from: "krakow", target: "lublin", units: ["g-kra-11"] },
           status: "applied",
-          summary: "Later fight at Lublin.",
+          summary:
+            "Attack from Kraków into Lublin fails, odds 0.80 (roll 2). Lublin holds. Losses — attackers 3, defenders 5.",
           battle: {
             targetId: "lublin",
             attacker: "central",
@@ -236,10 +267,34 @@ describe("campaign coach", () => {
       messages: [{ role: "user", content: "Review the last battle from the chronicle." }],
       queuedOrders: [],
     })
-    expect(result.reply).toContain("lublin")
-    expect(result.reply).toContain("Later fight at Lublin")
-    expect(result.reply).not.toContain("Early fight at Kielce")
+    expect(result.reply).toMatch(/Lublin/i)
+    expect(result.reply).toMatch(/fortnight 3/i)
+    expect(result.reply).not.toMatch(/Kielce/i)
+    expect(result.reply).not.toMatch(/\b(attacker|defender|weWon|oursLost|theirsLost)=/)
+    expect(result.reply).not.toMatch(/unavailable offline/i)
     expect(result.highlights.some((item) => item.provinceId === "lublin")).toBe(true)
+  })
+
+  it("describes queued plans in plain prose without offline disclaimer or double periods", async () => {
+    const state = createInitialState()
+    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    const unitIds = krakow.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
+    const queued: PlayerOrder[] = [
+      { type: "attack", from: "krakow", target: "kielce", unitIds },
+    ]
+    const result = await coachCampaign({
+      state,
+      log: [],
+      messages: [{ role: "user", content: "What do you make of my queued plan?" }],
+      queuedOrders: queued,
+      selectedProvinceId: "krakow",
+    })
+    expect(result.reply).toMatch(/queued from Kraków into Kielce/i)
+    expect(result.reply).toMatch(/odds about [\d.]+:1 before the dice/i)
+    expect(result.reply).not.toMatch(/Ordered:/)
+    expect(result.reply).not.toMatch(/unavailable offline|not from the wire/i)
+    expect(result.reply).not.toMatch(/\.\./)
+    expect(result.reply).not.toMatch(/\b\w+=\w+/)
   })
 
   it("does not attach unrelated combat odds when the queue has no attack", () => {

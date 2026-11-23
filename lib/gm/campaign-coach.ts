@@ -2,26 +2,27 @@ import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import {
   buildSituation,
   finishAdvisorReply,
-  formatOdds,
   renderSituation,
   scrubAdvisorReply,
   staffMap,
   type Situation,
 } from "@/lib/gm/advisor"
-import { combinedEngagementOdds, engagementOdds } from "@/lib/engine/turn"
+import {
+  combinedEngagementOdds,
+  engagementOdds,
+  findUnit,
+  type EngagementPreview,
+} from "@/lib/engine/turn"
 import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
 import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
 import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
-import { lossesLine } from "@/lib/news/battle"
+import { provinceLabel } from "@/lib/news/battle"
 import { routineLog } from "@/lib/news/routine-copy"
 import type { BattleFacts, GameState, PlayerOrder, TurnRecord } from "@/lib/types"
 import { z } from "zod"
 
 const COACH_TIMEOUT_MS = 20_000
 const COACH_MAX_TOKENS = 2_048
-
-const OFFLINE_LINE =
-  "The chief of staff is unavailable offline. What follows is read from the map and the chronicle, not from the wire."
 
 /** Campaign UI ids the coach may point at (never screen pixels). */
 export const CAMPAIGN_COACH_UI_IDS = [
@@ -105,7 +106,7 @@ export async function coachCampaign(input: {
 
   if (!llmConfigured() && !fixtureEnabled()) {
     return {
-      reply: finishAdvisorReply(`${OFFLINE_LINE}\n\n${rules.reply}`),
+      reply: finishAdvisorReply(rules.reply),
       source: "fallback",
       unavailable: true,
       followUp: rules.followUp,
@@ -211,12 +212,144 @@ export async function coachCampaign(input: {
   }
 }
 
-/** Central Powers–relative battle line for the coach dispatch. */
-export function formatBattleForCoach(battle: BattleFacts): string {
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ""
+  if (names.length === 2) return `${names[0]} and ${names[1]}`
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`
+}
+
+function trimRatio(raw: string): string {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return raw
+  return (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, "")
+}
+
+/** Compact odds phrase for player-facing coach copy (no trailing period). */
+export function formatCoachOddsPhrase(preview: EngagementPreview | null): string | null {
+  if (!preview) return null
+  if (preview.empty && preview.origins < 2) return "undefended before the dice"
+  const ratio =
+    preview.empty || !Number.isFinite(preview.ratio) ? null : trimRatio(String(preview.ratio))
+  const odds = ratio ? `odds about ${ratio}:1 before the dice` : "undefended before the dice"
+  if (preview.origins >= 2) {
+    const shape = preview.origins === 2 ? "two-pronged" : "concentric"
+    const ring = preview.encircled ? ", and the defender is surrounded" : ""
+    return `${shape}, ${odds}${ring}`
+  }
+  return odds
+}
+
+function centralView(battle: BattleFacts): { ours: number; theirs: number; weWon: boolean } {
   const ours = battle.attacker === "central" ? battle.attackerLoss : battle.defenderLoss
   const theirs = battle.attacker === "central" ? battle.defenderLoss : battle.attackerLoss
   const weWon = battle.attacker === "central" ? battle.attackerWon : !battle.attackerWon
-  return `Battle ${battle.targetId}: attacker=${battle.attacker} defender=${battle.defender} kind=${battle.kind} weWon=${weWon} encircled=${battle.encircled} oursLost=${ours} theirsLost=${theirs} (${lossesLine(battle)})`
+  return { ours, theirs, weWon }
+}
+
+/** Plain-sentence battle line for the coach dispatch (no key=value fields). */
+export function formatBattleForCoach(battle: BattleFacts): string {
+  const target = provinceLabel(battle.targetId)
+  const from = joinNames(battle.origins.map(provinceLabel))
+  const { ours, theirs, weWon } = centralView(battle)
+  const kind = battle.kind === "meeting" ? "meeting engagement" : "assault"
+  const ring = battle.encircled ? " The defenders were surrounded." : ""
+  if (battle.attacker === "central") {
+    const verb = weWon ? `took ${target}` : `failed against ${target}`
+    return `Our ${kind} from ${from} ${verb}. We lost ${ours}, they lost ${theirs}.${ring}`
+  }
+  const verb = weWon ? `we held ${target}` : `Russia took ${target}`
+  return `A Russian ${kind} from ${from}: ${verb}. We lost ${ours}, they lost ${theirs}.${ring}`
+}
+
+/**
+ * Player-facing chronicle review — plain sentences only (no key=value debug fields).
+ * Pulls odds/roll/retreat from the engine resolution summary when present.
+ */
+export function formatBattleReviewForPlayer(
+  turn: number,
+  date: string,
+  battle: BattleFacts,
+  summary: string,
+): string {
+  const target = provinceLabel(battle.targetId)
+  const from = joinNames(battle.origins.map(provinceLabel))
+  const { ours, theirs, weWon } = centralView(battle)
+  const kind = battle.kind === "meeting" ? "meeting engagement" : "assault"
+  const oddsMatch = summary.match(/odds\s+([\d.]+)\s+\(roll\s+(\d+)\)/i)
+  const oddsPhrase = oddsMatch
+    ? ` at ${trimRatio(oddsMatch[1]!)}:1 odds (roll ${oddsMatch[2]})`
+    : /undefended/i.test(summary)
+      ? " against an undefended garrison"
+      : ""
+  const retreatMatch = summary.match(/remnants retreat to ([^,.\n]+)/i)
+  const retreat = retreatMatch?.[1]?.trim()
+
+  let lead: string
+  if (battle.attacker === "central" && weWon) {
+    lead = `In fortnight ${turn + 1} (${date}) our ${kind} from ${from} took ${target}${oddsPhrase}.`
+  } else if (battle.attacker === "central" && !weWon) {
+    lead = `In fortnight ${turn + 1} (${date}) our ${kind} from ${from} into ${target} failed${oddsPhrase}.`
+  } else if (battle.attacker === "russia" && !weWon) {
+    lead = `In fortnight ${turn + 1} (${date}) a Russian ${kind} from ${from} took ${target}${oddsPhrase}.`
+  } else {
+    lead = `In fortnight ${turn + 1} (${date}) we held ${target} against a Russian ${kind} from ${from}${oddsPhrase}.`
+  }
+
+  let losses = ` We lost ${ours}, they lost ${theirs}`
+  if (retreat) {
+    if (battle.attacker === "central" && weWon) {
+      losses += `, and their remnants fell back to ${retreat}`
+    } else if (battle.attacker === "russia" && !weWon) {
+      losses += `, and our remnants fell back to ${retreat}`
+    } else {
+      losses += `, and remnants fell back to ${retreat}`
+    }
+  }
+  losses += "."
+  return `${lead}${losses}`
+}
+
+/** Natural queued-attack sentence for the rules/offline coach. */
+export function formatQueuedPlanForPlayer(
+  map: GameState,
+  queued: PlayerOrder[],
+  oddsPhrase: string | null,
+): string {
+  const attacks = queued.filter(
+    (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
+  )
+  if (!attacks.length) {
+    const other = queued
+      .map((order) => {
+        if (order.type === "fortify") return `fortify ${provinceLabel(order.provinceId)}`
+        if (order.type === "move") {
+          const name = findUnit(map, order.unitId)?.unit.name ?? order.unitId
+          return `move ${name} to ${provinceLabel(order.to)}`
+        }
+        if (order.type === "recruit") return `recruit at ${provinceLabel(order.provinceId)}`
+        return null
+      })
+      .filter((line): line is string => Boolean(line))
+    const listed = other.length ? joinNames(other) : "orders"
+    return `Your queue shows ${listed}. I do not file orders.`
+  }
+
+  const byTarget = new Map<string, Extract<PlayerOrder, { type: "attack" }>[]>()
+  for (const order of attacks) {
+    const group = byTarget.get(order.target) ?? []
+    group.push(order)
+    byTarget.set(order.target, group)
+  }
+  const [targetId, prongs] = [...byTarget.entries()][0]!
+  const target = provinceLabel(targetId)
+  const names = prongs.flatMap((order) =>
+    order.unitIds.map((id) => findUnit(map, id)?.unit.name ?? id),
+  )
+  const fromPlaces = [...new Set(prongs.map((order) => provinceLabel(order.from)))]
+  const units = joinNames(names)
+  const from = joinNames(fromPlaces)
+  const odds = oddsPhrase ? `, ${oddsPhrase}` : ""
+  return `You have ${units} queued from ${from} into ${target}${odds}. I do not file orders — change the arrows yourself if you disagree.`
 }
 
 /** Latest fortnight that recorded at least one battle, newest resolution last. */
@@ -318,7 +451,7 @@ export function queuedAttackPreview(
             prongs.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
           )
         : engagementOdds(map, prongs[0]!.from, targetId, prongs[0]!.unitIds)
-    return { targetId, odds: formatOdds(preview) }
+    return { targetId, odds: formatCoachOddsPhrase(preview) }
   }
   return null
 }
@@ -343,7 +476,7 @@ function rulesCoach(
       const last = battles[battles.length - 1]!
       highlights.push({ provinceId: last.battle.targetId, uiId: "chronicle-log-toggle" })
       return {
-        reply: `From the chronicle, the last battle of fortnight ${last.turn + 1} (${last.date}): ${formatBattleForCoach(last.battle)}. ${last.summary} Ask if you want another province named.`,
+        reply: `${formatBattleReviewForPlayer(last.turn, last.date, last.battle, last.summary)} Ask if you want another province named.`,
         followUp: "Which battle do you want to walk through?",
         highlights,
       }
@@ -355,13 +488,13 @@ function rulesCoach(
     if (preview) {
       highlights.push({ provinceId: preview.targetId, uiId: "queued-orders" })
       return {
-        reply: `Your queue shows ${situation.queue.slice(0, 2).join("; ")}. Engine preview for that queued attack: ${preview.odds ?? "see COMBINED in the dispatch for the committed columns"}. I do not file orders — change the arrows yourself if you disagree.`,
+        reply: formatQueuedPlanForPlayer(map, queued, preview.odds),
         followUp: wantsPlan ? "Do you want the same blow from one column only?" : null,
         highlights,
       }
     }
     return {
-      reply: `Your queue shows ${situation.queue.slice(0, 2).join("; ")}. No attack column is queued, so I am not attaching combat odds. I do not file orders.`,
+      reply: formatQueuedPlanForPlayer(map, queued, null),
       followUp: wantsPlan ? "Queue an attack if you want engine odds on an axis." : null,
       highlights: [{ uiId: "queued-orders" }],
     }
@@ -370,8 +503,10 @@ function rulesCoach(
   if (!selected.startsWith("None")) {
     const id = selected.split(" ")[0]
     if (id) highlights.push({ provinceId: id, uiId: "tab-province" })
+    const province = map.provinces.find((item) => item.id === id)
+    const name = province?.name ?? id
     return {
-      reply: `Selected province: ${selected}. Queue is ${situation.queue.length ? "not empty" : "empty"}. I advise only; you still draw the arrows.`,
+      reply: `${name} is selected (${province?.controller ?? "unknown"} control, supply ${province?.supply ?? "—"}). Queue is ${situation.queue.length ? "not empty" : "empty"}. I advise only; you still draw the arrows.`,
       followUp: "Ask about a neighbor attack or the last chronicle battle.",
       highlights,
     }
@@ -380,8 +515,9 @@ function rulesCoach(
   const weak = [...situation.contacts].sort((a, b) => b.ratio - a.ratio)[0]
   if (weak) {
     highlights.push({ provinceId: weak.targetId, uiId: "tab-orders" })
+    const odds = weak.odds.replace(/\.\s*$/, "")
     return {
-      reply: `On the map the strongest engine contact is ${weak.fromName} into ${weak.targetName} (${weak.odds}). That is a reading, not an order.`,
+      reply: `On the map the strongest engine contact is ${weak.fromName} into ${weak.targetName} (${odds}). That is a reading, not an order.`,
       followUp: "Queue an arrow if you want me to discuss your plan.",
       highlights,
     }

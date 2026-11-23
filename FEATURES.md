@@ -50,7 +50,7 @@ Phase **2E round 1**. The panel is `[data-testid=advisor-panel]` (tray tab `[dat
 
 Ask with starters (`[data-testid=advisor-starter-plan|explain|review]`), or `[data-testid=advisor-input]` + `[data-testid=advisor-send]`. POST **`/api/advisor`** with `{ gameId, expectedTurn, messages, queuedOrders, selectedProvinceId? }` only — the server loads campaign state (and chronicle `log`) by `gameId` the same way `/api/turn` does. Replies land in `[data-testid=advisor-reply]`; optional follow-up in `[data-testid=advisor-follow-up]`. Highlights use province ids / interface ids (`[data-testid=advisor-highlights]`); the map paints them via `coachHighlightIds` on `[data-testid=war-map]` (`data-coach-highlights`). Speaks only when asked.
 
-The coach discusses the player's queued arrows, the selected province, or chronicle battles (`BattleFacts` / routine log). Odds, supply, and results must come from the engine dispatch and records — not invented by the model. Queued arrows still expose structure on `[data-testid=queued-orders]` via `data-queued-order` for QA.
+The coach discusses the player's queued arrows, the selected province, or chronicle battles (`BattleFacts` / routine log). Odds, supply, and results must come from the engine dispatch and records — not invented by the model. Rules/offline fallback answers in plain sentences (no key=value debug fields, no offline disclaimer). Queued arrows still expose structure on `[data-testid=queued-orders]` via `data-queued-order` for QA.
 
 ## Game-master events
 

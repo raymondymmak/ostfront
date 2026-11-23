@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[ostfront] /api/advisor failed", error)
     return Response.json({
-      reply: "The chief of staff is unavailable offline. The map is unchanged.",
+      reply: "I could not read the staff wire. The map is unchanged.",
       source: "fallback",
       unavailable: true,
       followUp: null,
