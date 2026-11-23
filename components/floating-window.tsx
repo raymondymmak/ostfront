@@ -120,9 +120,12 @@ export function FloatingWindow({
         y,
       })
       if (lockedHeightRef.current === null && !dragging && !resizing) {
+        // Prefer the CSS/budgeted cap — never lock to an uncapped content height.
         lockedHeightRef.current = nextH
       }
-      setHeightPx((current) => (current === nextH ? current : nextH))
+      const locked = lockedHeightRef.current ?? nextH
+      const applied = Math.min(locked, nextH)
+      setHeightPx((current) => (current === applied ? current : applied))
       const ww = node.offsetWidth || 320
       const wh = nextH
       const maxY = Math.max(TABLE_WINDOW_MARGIN, usableH - wh - TABLE_WINDOW_MARGIN)
@@ -157,7 +160,7 @@ export function FloatingWindow({
   return (
     <div
       ref={rootRef}
-      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-leather/65 bg-paper text-ink transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${lift}`}
+      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-leather/65 bg-paper text-ink transition-[box-shadow,transform] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
       style={{
         left: x,
         top: y,

@@ -40,7 +40,8 @@ export function dragPreservesSize(before: Size, after: Size): boolean {
 
 /**
  * Viewport-bounded height for a floating paper.
- * Prefer a locked height so dragging toward the top of the stage cannot grow the window.
+ * A locked height must not change while dragging (neither grow nor shrink with y).
+ * Only a smaller stage / preferredMax can force a reduced cap.
  */
 export function resolveWindowHeight(args: {
   lockedHeight: number | null
@@ -53,13 +54,16 @@ export function resolveWindowHeight(args: {
 }): number {
   const margin = args.margin ?? TABLE_WINDOW_MARGIN
   const minHeight = args.minHeight ?? 120
-  const remaining = Math.max(minHeight, args.stageHeight - args.y - margin)
   const preferred =
     args.heightCap !== undefined
       ? Math.min(args.preferredMax, Math.max(minHeight, args.heightCap))
       : args.preferredMax
-  const base = args.lockedHeight ?? preferred
-  return Math.min(base, remaining, preferred)
+  const stageCap = Math.max(minHeight, args.stageHeight - margin * 2)
+  if (args.lockedHeight != null) {
+    return Math.min(args.lockedHeight, preferred, stageCap)
+  }
+  const remaining = Math.max(minHeight, args.stageHeight - args.y - margin)
+  return Math.min(preferred, remaining, stageCap)
 }
 
 /** Distance (px) of pointer travel that counts as a drag rather than a click. */

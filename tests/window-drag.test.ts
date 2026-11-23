@@ -37,7 +37,7 @@ describe("window-drag", () => {
     expect(next.y + size.h).toBeLessThanOrEqual(stage.height - DOCUMENT_TRAY_HEIGHT)
   })
 
-  it("does not grow locked height when the window is dragged upward", () => {
+  it("does not change locked height when dragged up or down", () => {
     const locked = 360
     const preferredMax = 576
     const stageHeight = stageHeightForWindows(820)

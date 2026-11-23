@@ -207,12 +207,23 @@ async function closeFloatingProvinceIfOpen(page) {
 
 /** Stow open parchment papers that commonly cover western/central map clicks. */
 async function stowPapersForMapClick(page) {
-  await closeFloatingProvinceIfOpen(page)
-  for (const label of ["Legend", "Orders", "Orders from OHL", "Lesson"]) {
+  // Escape stows the topmost open paper (desktop shell); repeat until the map is clear.
+  for (let i = 0; i < 8; i++) {
+    const open = await page.locator('[role="dialog"][data-testid], [role="dialog"][aria-label]').count()
+    const visible = await page
+      .locator('[role="dialog"]')
+      .evaluateAll((els) => els.filter((el) => el.getClientRects().length > 0).length)
+    if (visible === 0) break
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(120)
+    void open
+  }
+  // Belt-and-braces: force-stow any leftover labeled papers.
+  for (const label of ["Legend", "Orders", "Orders from OHL", "Province", "Lesson", "Log", "Chief of Staff"]) {
     const win = page.locator(`[role="dialog"][aria-label="${label}"]`)
     if (!(await win.isVisible().catch(() => false))) continue
-    await win.getByRole("button", { name: `Stow ${label}` }).click({ force: true, timeout: 5_000 })
-    await win.waitFor({ state: "hidden", timeout: 5_000 })
+    await win.getByRole("button", { name: `Stow ${label}` }).click({ force: true, timeout: 5_000 }).catch(() => {})
+    await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
   }
 }
 
@@ -665,6 +676,9 @@ function buildSteps(cli, targets) {
       id: "06-map-modes",
       name: "Map modes Control / Supply / Unrest",
       async run({ page }) {
+        // Overlay scale lives in the Legend paper — restore it after map-click stows.
+        await page.locator("[data-testid=legend-toggle]").click()
+        await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-supply]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-unrest]").click()
@@ -679,6 +693,7 @@ function buildSteps(cli, targets) {
       async run({ page }) {
         await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 10_000 })
         await page.locator("[data-testid=legend-toggle]").click()
+        await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
         const toggle = page.locator("[data-testid=rail-toggle]")
         await toggle.waitFor({ state: "visible", timeout: 10_000 })
         const before = await toggle.textContent()
@@ -1366,6 +1381,8 @@ function buildSteps(cli, targets) {
         await page.getByRole("button").filter({ hasText: /Kielce/ }).first().click()
         await page.locator("[data-testid=tab-orders]").click()
         await page.locator("[data-testid=queued-orders]").getByText(/Kielce/i).waitFor({ state: "visible", timeout: 15_000 })
+        await page.locator("[data-testid=legend-toggle]").click()
+        await page.locator("[data-testid=legend-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-supply]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 10_000 })
         await page.locator("[data-testid=teach-reasoning]").fill(
