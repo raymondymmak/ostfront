@@ -98,6 +98,30 @@ export function legalTargetHoverNote(targets: LegalTargets, provinceId: string):
   return warn?.reason ?? null
 }
 
+/**
+ * Neighbor ids from `legalTargets` (orderable move/attack, reach hints, and blocked
+ * neighbors). Used as the UI drop set for map arrows — non-neighbors cancel.
+ */
+export function neighborTargetIds(targets: LegalTargets): string[] {
+  const ids = new Set<string>([
+    ...targets.move,
+    ...targets.attack,
+    ...targets.reach.move,
+    ...targets.reach.attack,
+    ...targets.blocked.map((item) => item.id),
+  ])
+  return [...ids]
+}
+
+export function isNeighborOrderTarget(targets: LegalTargets, provinceId: string): boolean {
+  return neighborTargetIds(targets).includes(provinceId)
+}
+
+/** Hint when a drag drops off a shared border (UI guard; engine still rejects). */
+export function nonAdjacentArrowHint(fromName: string, toName: string): string {
+  return `${fromName} and ${toName} do not share a border. The arrow was cancelled.`
+}
+
 function neighborReach(state: GameState, from: Province): { move: string[]; attack: string[] } {
   const move: string[] = []
   const attack: string[] = []

@@ -414,9 +414,11 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     type: "line",
     source: "preview",
     paint: {
-      "line-color": "#6a4b16",
-      "line-width": 2.4,
+      // `valid` 1 = neighbor drop; 0 = non-adjacent / void (invalid feedback).
+      "line-color": ["match", ["get", "valid"], 1, "#6a4b16", 0, "#8e2a22", "#6a4b16"],
+      "line-width": ["match", ["get", "valid"], 1, 2.4, 0, 2.8, 2.4],
       "line-dasharray": [1.2, 0.8],
+      "line-opacity": ["match", ["get", "valid"], 1, 0.95, 0, 0.88, 0.95],
     },
   })
 

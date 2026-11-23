@@ -34,6 +34,11 @@ import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { CoachHint } from "@/lib/teach/coach"
 import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lessons"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import {
+  isNeighborOrderTarget,
+  legalTargets,
+  nonAdjacentArrowHint,
+} from "@/lib/ui/legal-targets"
 import { teachSelectedProvinceIds } from "@/lib/teach/selected-provinces"
 import {
   createDefaultTeachWindows,
@@ -321,6 +326,11 @@ export function TeachingApp() {
     setSelectedId(fromId)
     if (from.controller !== "central") {
       setHint("Start in a Central Powers province you control.")
+      return
+    }
+    const targets = legalTargets(state, fromId, queue)
+    if (!isNeighborOrderTarget(targets, toId)) {
+      setHint(nonAdjacentArrowHint(from.name, to.name))
       return
     }
     const claimed = new Set(queue.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)))

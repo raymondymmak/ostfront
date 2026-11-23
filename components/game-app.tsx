@@ -47,7 +47,12 @@ import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { applyAdvisorToQueue, leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { campaignGoalLine } from "@/lib/ui/goal-copy"
-import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
+import {
+  isNeighborOrderTarget,
+  legalTargetHoverNote,
+  legalTargets,
+  nonAdjacentArrowHint,
+} from "@/lib/ui/legal-targets"
 import { toggleSelection } from "@/lib/ui/selection"
 import {
   createDefaultTableWindows,
@@ -343,6 +348,12 @@ export function GameApp() {
       setHint("Stavka does not take your arrows. Start in a Central Powers province.")
       return
     }
+    const targets = legalTargets(game.state, fromId, queue)
+    // UI guard: only neighbouring provinces (legalTargets neighbor set) accept a drop.
+    if (!isNeighborOrderTarget(targets, toId)) {
+      setHint(nonAdjacentArrowHint(from.name, to.name))
+      return
+    }
     const claimed = new Set(
       queue.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)),
     )
@@ -355,7 +366,6 @@ export function GameApp() {
     }
     const kind = to.controller === "central" ? "move" : "attack"
     const chosen = leaveDepotGarrison(available, from.depot === "central", commitAll)
-    const targets = legalTargets(game.state, fromId, queue)
     setHint(legalTargetHoverNote(targets, toId))
     setQueue((current) => {
       if (current.some((order) => order.kind === kind && order.from === fromId && order.to === toId)) {

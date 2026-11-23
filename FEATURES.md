@@ -82,7 +82,7 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 | **Province tab** | `[data-testid=tab-province]` (**Province**). | Supply/unrest meters, neighbors list, fortify/recruit when eligible. |
 | **Neighbor Move** | **Province** tab: neighbor row with **Move** (friendly target). | **Orders** queue: **Move to … from …** |
 | **Neighbor Attack** | **Province** tab: neighbor row with **Attack** (enemy). | Queue shows attack line; optional `[data-testid=attack-odds]`. |
-| **Draw arrows on map** | **Orders** tab: **Draw arrows** `[data-testid=draw-arrows]`; drag between provinces when mode is on (optional in demo-check). | `aria-pressed="true"`; queue entry appears. |
+| **Draw arrows on map** | **Orders** tab: **Draw arrows** `[data-testid=draw-arrows]`; drag between provinces when mode is on (optional in demo-check). Only **neighbouring** provinces (same set as `legalTargets` / `neighborTargetIds`) accept the drop; non-adjacent hover shows invalid preview (`data-arrow-drag="invalid"`, not-allowed cursor, no snap) and the drop cancels without queueing. Neighbor buttons and typed directives unchanged. | `aria-pressed="true"`; queue entry appears for legal neighbors only. |
 | **Typed directive** | **Orders** tab: textarea `[data-testid=directive]`. | Parsed **Will …** lines under the field. |
 | **Fortify** | **Province** tab: **Fortify …** `[data-testid=fortify]` (disabled state shows `[data-testid=fortify-reason]`). | **Orders** queue shows **Fortify** line (`[data-testid=queued-orders]`). |
 | **Recruit** | **Province** tab at a yard: `[data-testid=recruit-panel]`; `[data-testid=recruit-infantry]` etc. | Queue shows **Raise … at** |

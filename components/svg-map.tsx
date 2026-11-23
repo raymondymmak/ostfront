@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { QueuedOrder } from "@/lib/orders"
 import type { MapProvince } from "@/components/war-map"
 import {
@@ -52,7 +52,10 @@ export function SvgMap({
 }: SvgMapProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [originId, setOriginId] = useState<string | null>(null)
+  const originIdRef = useRef<string | null>(null)
+  originIdRef.current = originId
   const [preview, setPreview] = useState<[number, number] | null>(null)
+  const [hoverTargetId, setHoverTargetId] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<string | null>(null)
 
   const view = useMemo(() => {
@@ -82,8 +85,11 @@ export function SvgMap({
   const paintTargets = targetIds
     ? { move: targetIds.move, attack: targetIds.attack, canOrder: targetIds.canOrder }
     : undefined
+  const previewValid =
+    Boolean(originId && hoverTargetId && hoverTargetId !== originId && origin?.neighbors.includes(hoverTargetId))
+  const arrowDrag: "valid" | "invalid" | null = originId ? (previewValid ? "valid" : "invalid") : null
 
-  function point(event: ReactMouseEvent<SVGSVGElement>) {
+  function point(event: ReactPointerEvent<Element>) {
     const svg = svgRef.current
     if (!svg) return null
     const matrix = svg.getScreenCTM()
@@ -95,12 +101,18 @@ export function SvgMap({
     return [mapped.x, mapped.y] as [number, number]
   }
 
-  function commit(target: string | null) {
-    const origin = originId
+  function clearDrag() {
     setOriginId(null)
     setPreview(null)
-    if (!origin) return
-    if (target && target !== origin) onDraw(origin, target)
+    setHoverTargetId(null)
+  }
+
+  function commit(target: string | null) {
+    const from = originIdRef.current
+    clearDrag()
+    if (!from) return
+    // Non-neighbors still call onDraw so the shell can cancel with a hint (no queue).
+    if (target && target !== from) onDraw(from, target)
     else if (target) onSelect(target)
   }
 
@@ -111,16 +123,16 @@ export function SvgMap({
         viewBox={view.box}
         className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
         data-testid="svg-map"
-        onMouseMove={(event) => {
+        data-arrow-drag={arrowDrag ?? undefined}
+        onPointerMove={(event) => {
           if (!originId) return
           setPreview(point(event))
         }}
-        onMouseUp={() => commit(null)}
-        onMouseLeave={() => {
+        onPointerUp={() => commit(null)}
+        onPointerLeave={() => {
           setHoverTip(null)
           if (!originId) return
-          setOriginId(null)
-          setPreview(null)
+          clearDrag()
         }}
       >
       {visibleStates.map((region) => (
@@ -202,6 +214,7 @@ export function SvgMap({
           <g key={province.id}>
             <path
               d={pathD}
+              data-province-id={province.id}
               fill={fill}
               fillOpacity={fillOpacity}
               fillRule="evenodd"
@@ -209,20 +222,32 @@ export function SvgMap({
               strokeWidth={strokeWidth}
               className={flashing ? "animate-pulse" : undefined}
               style={{
-                cursor: orderMode ? "crosshair" : "pointer",
+                cursor: orderMode
+                  ? originId && province.id !== originId && !origin?.neighbors.includes(province.id)
+                    ? "not-allowed"
+                    : "crosshair"
+                  : "pointer",
                 transition: `fill ${TARGET_HIGHLIGHT_FADE_MS}ms ease, fill-opacity ${TARGET_HIGHLIGHT_FADE_MS}ms ease`,
               }}
-              onMouseEnter={() => setHoverTip(tip)}
-              onMouseLeave={() => setHoverTip(null)}
-              onMouseDown={(event) => {
+              onPointerOver={() => {
+                setHoverTip(tip)
+                if (originIdRef.current) setHoverTargetId(province.id)
+              }}
+              onPointerOut={() => {
+                setHoverTip(null)
+                if (originIdRef.current) setHoverTargetId(null)
+              }}
+              onPointerDown={(event) => {
                 if (!orderMode) return
                 event.preventDefault()
                 event.stopPropagation()
+                originIdRef.current = province.id
                 setOriginId(province.id)
+                setHoverTargetId(null)
               }}
-              onMouseUp={(event) => {
+              onPointerUp={(event) => {
                 event.stopPropagation()
-                if (orderMode && originId) commit(province.id)
+                if (orderMode && originIdRef.current) commit(province.id)
                 else onSelect(province.id)
               }}
             >
@@ -293,13 +318,16 @@ export function SvgMap({
       })}
       {preview && origin && (
         <line
+          data-testid="svg-arrow-preview"
+          data-arrow-valid={previewValid ? "true" : "false"}
           x1={origin.centroid[0]}
           y1={-origin.centroid[1]}
           x2={preview[0]}
           y2={preview[1]}
-          stroke="#6a4b16"
-          strokeWidth={view.label * 0.12}
+          stroke={previewValid ? "#6a4b16" : "#8e2a22"}
+          strokeWidth={view.label * (previewValid ? 0.12 : 0.14)}
           strokeDasharray={`${view.label * 0.2} ${view.label * 0.14}`}
+          strokeOpacity={previewValid ? 0.95 : 0.88}
           pointerEvents="none"
         />
       )}
