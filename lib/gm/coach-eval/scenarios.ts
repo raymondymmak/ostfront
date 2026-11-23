@@ -1,11 +1,13 @@
 import { createInitialState } from "@/lib/data/scenario"
-import { staffMap } from "@/lib/gm/advisor"
+import { buildSituation, staffMap } from "@/lib/gm/advisor"
 import { formatCoachOddsPhrase } from "@/lib/gm/campaign-coach"
 import {
   combinedEngagementOdds,
   engagementOdds,
   resolveTurn,
 } from "@/lib/engine/turn"
+import { independentFormations } from "@/lib/engine/echelon"
+import { leaveDepotGarrison } from "@/lib/orders"
 import { provinceLabel } from "@/lib/news/battle"
 import { legalTargets } from "@/lib/ui/legal-targets"
 import type { GameState, PlayerOrder, TurnRecord, Unit } from "@/lib/types"
@@ -134,12 +136,26 @@ function clerkRequest(): CoachEvalFixture {
   }
 }
 
+/**
+ * Odds the rules coach may quote from DISPATCH contacts.
+ * Must match `frontContacts` in advisor.ts: independentFormations + leaveDepotGarrison,
+ * not every central unit in the province.
+ */
 function mapContactOdds(map: GameState): string[] {
-  const out = new Set<string>()
+  const fromSituation = buildSituation(map, [])
+    .contacts.filter((contact) => Number.isFinite(contact.ratio))
+    .map((contact) => trimRatio(contact.ratio))
+  const out = new Set<string>(fromSituation)
+  // Belt-and-braces: recompute the same columns in case situation formatting drifts.
   for (const province of map.provinces) {
     if (province.controller !== "central" || province.supply < 30) continue
-    const unitIds = province.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
-    if (!unitIds.length) continue
+    const available = independentFormations(
+      province.units.filter((unit) => unit.faction === "central"),
+    )
+    if (!available.length) continue
+    const chosen = leaveDepotGarrison(available, province.depot === "central", false)
+    if (!chosen.length) continue
+    const unitIds = chosen.map((unit) => unit.id)
     for (const neighborId of province.neighbors) {
       const target = map.provinces.find((item) => item.id === neighborId)
       if (!target || target.controller === "central") continue

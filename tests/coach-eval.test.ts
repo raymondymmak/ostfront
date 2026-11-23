@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { staffMap } from "@/lib/gm/advisor"
+import { buildSituation, staffMap } from "@/lib/gm/advisor"
 import {
   buildAllCoachEvalFixtures,
   checkHardRules,
@@ -8,7 +8,10 @@ import {
   runCoachEval,
 } from "@/lib/gm/coach-eval"
 import { engagementOdds } from "@/lib/engine/turn"
+import { independentFormations } from "@/lib/engine/echelon"
+import { leaveDepotGarrison } from "@/lib/orders"
 import { legalTargets } from "@/lib/ui/legal-targets"
+import { createInitialState } from "@/lib/data/scenario"
 
 describe("coach eval harness", () => {
   it("ships 7 engine-grounded scenarios", () => {
@@ -66,6 +69,44 @@ describe("coach eval harness", () => {
     // engagementOdds ignores adjacency; legality is the grounded refusal signal.
     expect(legalTargets(illegalMap, "krakow", []).attack.includes("warszawa")).toBe(false)
     expect(legalTargets(illegalMap, "krakow", []).reach.attack.includes("warszawa")).toBe(false)
+  })
+
+  it("allows contact odds that match leaveDepotGarrison, not the full depot stack", () => {
+    const map = staffMap(createInitialState("normal"))
+    const krakow = map.provinces.find((province) => province.id === "krakow")!
+    expect(krakow.depot).toBe("central")
+    const available = independentFormations(
+      krakow.units.filter((unit) => unit.faction === "central"),
+    )
+    expect(available.length).toBeGreaterThan(1)
+    const garrisoned = leaveDepotGarrison(available, true, false)
+    expect(garrisoned.length).toBe(available.length - 1)
+
+    const contacts = buildSituation(map, []).contacts.filter((contact) => contact.fromId === "krakow")
+    expect(contacts.length).toBeGreaterThan(0)
+    const clerk = COACH_EVAL_SCENARIOS.find((item) => item.id === "clerk-request")!.build()
+    for (const contact of contacts) {
+      const trimmed = (Math.round(contact.ratio * 10) / 10).toFixed(1).replace(/\.0$/, "")
+      expect(clerk.facts.allowedOddsTrimmed).toContain(trimmed)
+      const fullStack = engagementOdds(
+        map,
+        "krakow",
+        contact.targetId,
+        available.map((unit) => unit.id),
+      )!
+      const garrisonOdds = engagementOdds(
+        map,
+        "krakow",
+        contact.targetId,
+        garrisoned.map((unit) => unit.id),
+      )!
+      expect(garrisonOdds.ratio).toBeCloseTo(contact.ratio, 5)
+      if (Math.abs(fullStack.ratio - contact.ratio) > 0.05) {
+        const fullTrimmed = (Math.round(fullStack.ratio * 10) / 10).toFixed(1).replace(/\.0$/, "")
+        // Full-stack odds that diverge from the contact must not be required — contacts win.
+        expect(trimmed).not.toBe(fullTrimmed)
+      }
+    }
   })
 
   it("hard-rule checker accepts a clean Socratic reply", () => {
