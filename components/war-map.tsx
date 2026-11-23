@@ -28,6 +28,14 @@ import {
 } from "@/lib/map/province-label-layers"
 import { provincePaintProperties } from "@/lib/map/province-paint"
 import {
+  LESSON_TARGET_OUTLINE_LAYER,
+  applyLessonFocusLayers,
+  lessonFocusActive,
+  lessonFocusAttribute,
+  startLessonTargetPulse,
+  type LessonFocus,
+} from "@/lib/map/lesson-highlight"
+import {
   applyProvinceRoleStates,
   pulseTargetHighlight,
   targetsActive,
@@ -61,6 +69,8 @@ type WarMapProps = MapInput & {
   flashIds: string[]
   /** Coach / teaching highlights anchored to province ids (not screen pixels). */
   coachHighlightIds?: string[]
+  /** Persistent lesson focus (target + source provinces) for /teach. */
+  lessonFocus?: LessonFocus
   targetIds?: { move: string[]; attack: string[]; canOrder: boolean }
   targetHoverNote?: (provinceId: string, base: string) => string
   onOverlay: (overlay: Overlay) => void
@@ -82,6 +92,7 @@ export function WarMap({
   orders,
   flashIds,
   coachHighlightIds = [],
+  lessonFocus,
   targetIds,
   targetHoverNote,
   orderMode,
@@ -105,7 +116,9 @@ export function WarMap({
   }
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
+  const [mapReady, setMapReady] = useState(false)
   const targetIdsRef = useRef(targetIds)
+  const lessonFocusRef = useRef(lessonFocus)
   const provinceDataKeyRef = useRef<string>("")
   const highlightKeyRef = useRef<string>("")
   const propsRef = useRef<Snapshot>({
@@ -295,7 +308,13 @@ export function WarMap({
       }
 
       loadedRef.current = true
+      setMapReady(true)
       syncMap(map, propsRef.current, fittedRef, targetIdsRef.current, provinceDataKeyRef, highlightKeyRef)
+      // Lesson focus may have been set before the map finished loading — apply now.
+      applyLessonFocusLayers(
+        map as Parameters<typeof applyLessonFocusLayers>[0],
+        lessonFocusRef.current,
+      )
     })
 
     const observer = new ResizeObserver(() => {
@@ -316,6 +335,7 @@ export function WarMap({
     return () => {
       observer.disconnect()
       loadedRef.current = false
+      setMapReady(false)
       fittedRef.current = false
       if (typeof window !== "undefined") {
         delete (window as Window & { __ostfrontMap?: maplibregl.Map }).__ostfrontMap
@@ -330,11 +350,16 @@ export function WarMap({
     mapRef.current.remove()
     mapRef.current = null
     loadedRef.current = false
+    setMapReady(false)
   }, [failed])
 
   useEffect(() => {
     targetIdsRef.current = targetIds
   }, [targetIds])
+
+  useEffect(() => {
+    lessonFocusRef.current = lessonFocus
+  }, [lessonFocus])
 
   useEffect(() => {
     propsRef.current = {
@@ -397,11 +422,26 @@ export function WarMap({
     )
   }, [coachHighlightIds])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !loadedRef.current) return
+    applyLessonFocusLayers(map as Parameters<typeof applyLessonFocusLayers>[0], lessonFocus)
+    const targets = lessonFocus?.targets ?? []
+    if (!targets.length || !map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) return
+
+    return startLessonTargetPulse((opacity) => {
+      if (!map.getLayer(LESSON_TARGET_OUTLINE_LAYER)) return
+      map.setPaintProperty(LESSON_TARGET_OUTLINE_LAYER, "line-opacity", opacity)
+    })
+  }, [lessonFocus, mapReady])
+
   return (
     <div
       className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
+      data-lesson-highlights={lessonFocusAttribute(lessonFocus)}
+      data-lesson-focus={lessonFocusActive(lessonFocus) ? "true" : undefined}
       data-map-targets={
         targetIds
           ? `move:${targetIds.move.join(",")};attack:${targetIds.attack.join(",")};order:${targetIds.canOrder}`

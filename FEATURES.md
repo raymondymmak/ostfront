@@ -1,20 +1,23 @@
 # Ostfront features
 
-## Teaching drill (Sprint 1–2 / Phase 2A–2B)
+## Teaching drill (Sprint 1–2 / Phase 2A–2B / Phase 2D Part 6)
 
 Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach]`. Campaign at **`/`** is unchanged.
+
+On desktop (`lg+`, ≥1024px) `/teach` uses the same general’s-table shell as the campaign: full-width map, parchment HUD, draggable **Lesson** / **Orders** / **Province** / **Legend** windows (`[data-testid=teach-lesson-window]`, `[data-testid=teach-orders-window]`, `[data-testid=teach-province-window]`, `[data-testid=legend-window]`). Default-open: Lesson (top-left), Legend directly under it in the same left column, Orders (top-right) — non-overlapping at 1440×900 / 1280×800 so Kraków/Kielce/Lublin stay clear. Exactly one Resolve control: `[data-testid=teach-resolve]` in the Lesson panel (prediction-gated, pinned in `[data-testid=teach-resolve-bar]`); Orders has no `[data-testid=end-turn]`. `[data-testid=teach-app]` carries `data-teach-shell=desktop|stacked`. Brass lesson-focus outlines mark the target (solid) and source provinces (thinner dashed) via `[data-testid=war-map]` `data-lesson-highlights`, `data-lesson-focus=true`. Below `lg`, `h-dvh` stacked map → bounded Lesson (`[data-testid=teach-lesson-stack]`, body scrolls, Resolve stays in-viewport) → Orders/Province tabs — checked at 390×844.
 
 | Step | Selector / API | Proof |
 | --- | --- | --- |
 | Open drill | `[data-testid=teach-begin]` or `[data-testid=teach-begin-supply]` | `[data-testid=teach-app]`; lessons `converging-lublin` \| `supply-tradeoff` |
-| Coach question | `[data-testid=teach-question]` | Guided variant only; silent shows `[data-testid=teach-silent-banner]` |
+| Coach question | `[data-testid=teach-question]` | Short map-first prompt; longer copy behind `[data-testid=teach-briefing-toggle]` → `[data-testid=teach-briefing]` |
+| Lesson focus | Map `data-lesson-highlights` | Target + prong province ids highlighted on load |
 | Hints | `[data-testid=teach-request-hint]` | Guided only; supply hints reference `[data-testid=map-mode-supply]` |
 | Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; engine preview attack/defence lines |
 | Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares to server plan |
 | Prediction (required) | `[data-testid=teach-prediction]` | Server rejects resolve if under 12 chars; stored on attempt; compared post-resolve in feedback |
 | Belief recall | `[data-testid=teach-belief-recall]` | Silent session with `priorAttemptId`; server-loaded belief — not client-writable |
 | Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** |
-| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided fixed die roll disclosed before resolve |
+| Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided fixed die roll disclosed (expandable) before resolve |
 | Resolve | `[data-testid=teach-resolve]` | POST **`/api/teach/resolve`** with `prediction` (strict schema). `[data-testid=teach-belief-stored]` shows belief persistence status |
 | Silent follow-up | `[data-testid=teach-start-silent]` | No hints; optional belief recall from prior guided attempt |
 | Supply lesson | `[data-testid=teach-start-supply]` or setup button | Trade-off Katowice (heavy, lower supply) vs Kraków (lean, depot-fed); preview ratios from engine |
@@ -70,7 +73,7 @@ Stable selectors prefer `[data-testid=…]`. Button labels are fallbacks when te
 | Feature | How to reach it | Proof it worked |
 | --- | --- | --- |
 | **Start campaign / pick difficulty** | First load or Restart → Confirm: full-screen `[data-testid=scenario-picker]` (`[data-testid=campaign-start-backdrop]` only — no live map). Parchment card `[data-testid=campaign-start-card]` is centred (incl. iOS safe areas); difficulty `[data-testid=difficulty]` and actions `[data-testid=campaign-start-actions]` span the card padding with equal left/right insets. Pick `[data-testid=difficulty-easy\|normal\|hard]`, **Begin** `[data-testid=begin-scenario]`, optional **More** briefing. | Picker hidden; `[data-testid=war-map]` and HUD mount; date **2 May 1915**. |
-| **Read campaign goal** | Pre-start: `[data-testid=briefing-task]` on the start screen. After Begin: `[data-testid=campaign-goal]` inside **Orders from OHL** (`[data-testid=ohl-orders-window]`), not the HUD strength readout. Desktop: dismissible floating window (default open; reopen with **OHL**). Below `lg`: dismissible strip under the header. Teaching drill (`teachMode`): goal stays in the HUD header. | One-line objective. Full paragraphs only behind **More**. |
+| **Read campaign goal** | Pre-start: `[data-testid=briefing-task]` on the start screen. After Begin: `[data-testid=campaign-goal]` inside **Orders from OHL** (`[data-testid=ohl-orders-window]`), not the HUD strength readout. Desktop: dismissible floating window (default open; reopen with **OHL**). Below `lg`: dismissible strip under the header. Teaching drill: `[data-testid=teach-goal]` shows the lesson title (not the campaign objective); campaign scoring (treasury / VP / grade) is hidden. | One-line objective. Full paragraphs only behind **More**. |
 | **Top bar readout** | Always in `<header>` after campaign start. | `[data-testid=objectives]` strength bar; labels **Strength**, **Provinces**; `[data-testid=treasury]` manpower/industry; **★ VP** fraction; `[data-testid=grade]` provisional or final grade; date and fortnight counter top-right. Desktop (`lg+`) also has window toggles: **Orders** `[data-testid=tab-orders]`, **Province** `[data-testid=tab-province]`, **Log** `[data-testid=chronicle-log-toggle]`, **Legend**, **Chief of Staff** `[data-testid=advisor-toggle]`, **OHL**. |
 | **Legal move / attack highlights** | Select any province (or switch selection). | Neighbour move/attack/reach provinces lighten from their own fill with a short fade-in (same pulse when switching). Non-targets keep their normal base fill — no whole-map dim. `data-map-targets` lists ids and `order:true|false`; hover still explains blocked reasons. |
 | **Attack odds bar** | Queue an attack or open an enemy neighbor on **Province**. | `[data-testid=attack-odds]` or `[data-testid=combined-odds]` with `data-odds-band` and `data-ratio`; long caveat on hover/title. |

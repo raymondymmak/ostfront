@@ -67,7 +67,8 @@
   --ink-muted: #5c5144;
   --leather: #4a3f33;
   --brass: #c6a15a;
-  --brass-deep: #8a6a32;
+  /* Darkened from #8a6a32 so primary text on paper-deep and paper-on-primary both clear 4.5:1. */
+  --brass-deep: #7a5c28;
   --faction-central: #4a6d90;
   --faction-russia: #a85b49;
 
@@ -77,7 +78,7 @@
   --card-foreground: #241c14;
   --popover: #f6f1e4;
   --popover-foreground: #241c14;
-  --primary: #8a6a32;
+  --primary: #7a5c28;
   --primary-foreground: #f6f1e4;
   --secondary: #e4d7bb;
   --secondary-foreground: #241c14;
@@ -93,11 +94,11 @@
   --chart-2: #a85b49;
   --chart-3: #c6a15a;
   --chart-4: #5c5144;
-  --chart-5: #8a6a32;
+  --chart-5: #7a5c28;
   --radius: 0.425rem;
   --sidebar: #f6f1e4;
   --sidebar-foreground: #241c14;
-  --sidebar-primary: #8a6a32;
+  --sidebar-primary: #7a5c28;
   --sidebar-primary-foreground: #f6f1e4;
   --sidebar-accent: #e4d7bb;
   --sidebar-accent-foreground: #241c14;
@@ -113,7 +114,7 @@
   --ink-muted: #5c5144;
   --leather: #4a3f33;
   --brass: #c6a15a;
-  --brass-deep: #8a6a32;
+  --brass-deep: #7a5c28;
   --faction-central: #4a6d90;
   --faction-russia: #a85b49;
 
@@ -123,7 +124,7 @@
   --card-foreground: #241c14;
   --popover: #f6f1e4;
   --popover-foreground: #241c14;
-  --primary: #8a6a32;
+  --primary: #7a5c28;
   --primary-foreground: #f6f1e4;
   --secondary: #e4d7bb;
   --secondary-foreground: #241c14;
@@ -139,10 +140,10 @@
   --chart-2: #a85b49;
   --chart-3: #c6a15a;
   --chart-4: #5c5144;
-  --chart-5: #8a6a32;
+  --chart-5: #7a5c28;
   --sidebar: #f6f1e4;
   --sidebar-foreground: #241c14;
-  --sidebar-primary: #8a6a32;
+  --sidebar-primary: #7a5c28;
   --sidebar-primary-foreground: #f6f1e4;
   --sidebar-accent: #e4d7bb;
   --sidebar-accent-foreground: #241c14;

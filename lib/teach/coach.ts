@@ -104,12 +104,17 @@ function coachSupplyHints(meta: LessonMeta, state: GameState): CoachHint[] {
   ]
 }
 
-export function coachPrompt(meta: LessonMeta): { question: string; intro: string } {
+export function coachPrompt(meta: LessonMeta): {
+  question: string
+  intro: string
+  briefing: string
+} {
   return {
     question: meta.question,
     intro:
       meta.variant === "guided"
-        ? "This is a short teaching drill. Answer on the map with queued orders, then add a sentence of reasoning before you resolve."
-        : "Silent variation: plan and resolve without coach hints.",
+        ? "Plan on the map. State reasoning before you resolve."
+        : "Silent: plan and resolve without coach hints.",
+    briefing: meta.briefing,
   }
 }

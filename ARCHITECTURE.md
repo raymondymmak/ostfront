@@ -52,9 +52,11 @@ Stack: Next.js App Router, React client components for the game shell, server ro
 | `lib/map/war-map-layers.ts` | Layer stack: rail casing+track above borders (under labels/counters), symbol labels above selection outline, feature-state `role` fills |
 | `lib/map/province-paint.ts` | Shared fill/lift/`roleFor` for MapLibre and `components/svg-map.tsx` fallback |
 | `lib/map/target-highlight.ts` | Feature-state roles + `target-fill` opacity pulse (snap + MapLibre paint transition) so selection switches fade like first select |
+| `lib/map/lesson-highlight.ts` | `/teach` brass focus fill + target/source outlines; pulse respects `prefers-reduced-motion` |
 | `lib/map/rail-lines.ts` + `shared-border.ts` | Rail paths via shared-border midpoints, not anchor-to-anchor chords |
 | `lib/ui/legal-targets.ts` | `reach` + `canOrder`; Russian provinces get reach hints without orders |
 | `lib/ui/selection.ts` | Click-toggle and Escape deselect in `game-app.tsx` / `teaching-app.tsx` |
+| `lib/ui/teach-windows.ts` | Desktop `/teach` floating window ids (Lesson, Orders, Province, Legend) and z-order helpers |
 | `public/fonts/` | Self-hosted MapLibre glyph PBFs (Noto Serif incl. ★/◆ ranges, Open Sans) |
 
 Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints directly (no canvas blit). ADR 009.
@@ -65,11 +67,11 @@ Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints d
 | --- | --- |
 | Desktop (`lg+`, ≥1024px) | Full-width map; no fixed 23rem right dock. Slim HUD toggles parchment-document floating windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`): Orders, Province, Log, Legend, Chief of Staff, Orders from OHL. Header-only drag with grip + grab cursor; positions clamp to the map stage; bodies scroll under max-height. Default-open after Begin: Orders, Legend, OHL. Escape: news → topmost window → deselect. |
 | Below `lg` | Stacked map + Orders/Province `<aside>` tabs (unchanged). Map-corner Log stays above the legend through tablet widths (640–1023px). Campaign goal is a dismissible OHL strip, not the HUD strength block. |
-| `/teach` | Shared `Hud` keeps the goal line in the header (`teachMode`); no campaign window buttons; teaching-app three-column dock unchanged (Part 6). |
+| `/teach` | Same general’s-table shell at `lg+`: full-width map; HUD toggles Lesson / Orders / Province / Legend (`lib/ui/teach-windows.ts`). Default-open: Lesson top-left, Legend stacked under it in the same left column (compact height), Orders top-right — keeps map targets clear; height caps prevent Lesson/Legend overlap. Escape: topmost teach window → deselect. HUD shows `[data-testid=teach-goal]` (lesson title) and hides campaign scoring. One Resolve control in Lesson (`teach-resolve`, pinned footer); Orders omits end-turn. Short map-first prompts; briefing/pedagogy behind expanders. Brass lesson-focus: solid target + dashed source outlines (`data-lesson-highlights`). Below `lg`: `h-dvh` overflow-hidden stack — capped map, bounded Lesson (`teach-lesson-stack`) with in-panel scroll and Resolve kept in-viewport, then Orders/Province tabs. |
 
-**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`; faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`), paper-tab buttons, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
+**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`, `--brass-deep` / `--primary` (chrome text ≥4.5:1 on paper); faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`), paper-tab buttons, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
 
-ADR 010.
+ADR 010 (campaign), ADR 011 (`/teach`).
 
 ---
 
@@ -201,7 +203,7 @@ Isolated lessons (e.g. converging attacks) without a `gameId`. State is **built 
 
 `lib/teach/resolve.ts` uses fixed combat rolls in guided/silent variants (stated in session JSON). Belief fields are server-owned; hostile client fields → 400.
 
-UI: `components/teaching-app.tsx`, `teach-panel.tsx`.
+UI: `components/teaching-app.tsx`, `teach-panel.tsx` — desktop general’s-table shell (ADR 011); lesson-focus map layers via `lessonFocus` on `WarMap`.
 
 ---
 

@@ -9,6 +9,17 @@ import {
   RAIL_HIDDEN_ZOOM,
   RAIL_STYLE,
 } from "@/lib/map/rail-lines"
+import {
+  LESSON_FOCUS_FILL_LAYER,
+  LESSON_HIGHLIGHT_BRASS,
+  LESSON_HIGHLIGHT_BRASS_DEEP,
+  LESSON_SOURCE_DASH,
+  LESSON_SOURCE_FILL_OPACITY,
+  LESSON_SOURCE_LINE_WIDTH,
+  LESSON_SOURCE_OUTLINE_LAYER,
+  LESSON_TARGET_LINE_WIDTH,
+  LESSON_TARGET_OUTLINE_LAYER,
+} from "@/lib/map/lesson-highlight"
 import { TARGET_HIGHLIGHT_FADE_MS, TARGET_HIGHLIGHT_LAYER } from "@/lib/map/target-highlight"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
 import type * as maplibregl from "maplibre-gl"
@@ -175,6 +186,17 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     filter: ["==", ["get", "id"], ""],
     paint: { "fill-color": "#c6a15a", "fill-opacity": 0.32 },
   })
+  // Source wash under borders (stronger than the target wash) so dashed outlines read on blue fills.
+  map.addLayer({
+    id: LESSON_FOCUS_FILL_LAYER,
+    type: "fill",
+    source: "provinces",
+    filter: ["==", ["get", "id"], ""],
+    paint: {
+      "fill-color": LESSON_HIGHLIGHT_BRASS,
+      "fill-opacity": LESSON_SOURCE_FILL_OPACITY,
+    },
+  })
   map.addLayer({
     id: "country-borders",
     type: "line",
@@ -283,6 +305,30 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
       "line-width": railWidth(2.0, 3.0),
       "line-dasharray": [1.4, 1.6],
       "line-opacity": railFade(0.85),
+    },
+  })
+  // Lesson focus outlines sit above rails so dashed sources stay readable on the map.
+  map.addLayer({
+    id: LESSON_SOURCE_OUTLINE_LAYER,
+    type: "line",
+    source: "provinces",
+    filter: ["==", ["get", "id"], ""],
+    paint: {
+      "line-color": LESSON_HIGHLIGHT_BRASS_DEEP,
+      "line-width": LESSON_SOURCE_LINE_WIDTH,
+      "line-opacity": 1,
+      "line-dasharray": LESSON_SOURCE_DASH,
+    },
+  })
+  map.addLayer({
+    id: LESSON_TARGET_OUTLINE_LAYER,
+    type: "line",
+    source: "provinces",
+    filter: ["==", ["get", "id"], ""],
+    paint: {
+      "line-color": LESSON_HIGHLIGHT_BRASS,
+      "line-width": LESSON_TARGET_LINE_WIDTH,
+      "line-opacity": 0.95,
     },
   })
   map.addLayer({

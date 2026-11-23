@@ -28,6 +28,8 @@ type OrderPanelProps = {
   endTurnLabel?: string
   /** When set, overrides finale-based lock (e.g. teaching feedback phase). */
   ordersLocked?: boolean
+  /** Hide the end-turn / resolve control (e.g. /teach keeps Resolve only in the Lesson panel). */
+  hideEndTurn?: boolean
 }
 
 export function OrderPanel({
@@ -44,6 +46,7 @@ export function OrderPanel({
   onSelect,
   endTurnLabel,
   ordersLocked: ordersLockedProp,
+  hideEndTurn = false,
 }: OrderPanelProps) {
   const closed = ordersLockedProp ?? ordersLocked(Boolean(state.result))
   const parsed =
@@ -212,21 +215,23 @@ export function OrderPanel({
             )
           })}
         </ul>
-        <Button
-          type="button"
-          data-testid="end-turn"
-          disabled={busy || closed}
-          onClick={onEndTurn}
-          className="w-full"
-          size="lg"
-        >
-          {state.result
-            ? "The campaign is over"
-            : busy
-              ? "Stavka is deliberating…"
-              : (endTurnLabel ?? "Close the fortnight")}
-        </Button>
-        <Separator />
+        {!hideEndTurn && (
+          <Button
+            type="button"
+            data-testid="end-turn"
+            disabled={busy || closed}
+            onClick={onEndTurn}
+            className="w-full"
+            size="lg"
+          >
+            {state.result
+              ? "The campaign is over"
+              : busy
+                ? "Stavka is deliberating…"
+                : (endTurnLabel ?? "Close the fortnight")}
+          </Button>
+        )}
+        {!hideEndTurn && <Separator />}
         <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Your formations</h3>
         <ul className="flex flex-col gap-1">
           {forces.map(({ unit, province }) => (

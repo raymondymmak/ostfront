@@ -13,6 +13,13 @@ type FloatingWindowProps = {
   widthClassName?: string
   /** Preferred max height; actual height is also capped to remaining stage space. */
   maxHeightClassName?: string
+  /** Hard pixel cap (e.g. keep Lesson above Legend on /teach). */
+  heightCap?: number
+  /**
+   * When false, the body does not scroll — children own overflow (e.g. Lesson
+   * pins Resolve in a footer while the middle scrolls).
+   */
+  bodyScroll?: boolean
   testId?: string
   onFocus: () => void
   onClose: () => void
@@ -41,6 +48,8 @@ export function FloatingWindow({
   z,
   widthClassName = "w-[min(23rem,calc(100%-1.5rem))]",
   maxHeightClassName = "max-h-[min(70dvh,36rem)]",
+  heightCap,
+  bodyScroll = true,
   testId,
   onFocus,
   onClose,
@@ -66,9 +75,13 @@ export function FloatingWindow({
     const sync = () => {
       const { width: stageW, height: stageH } = measureStage(node)
       const remaining = Math.max(120, stageH - y - TABLE_WINDOW_MARGIN)
-      setStageMaxHeight(remaining)
+      const capped =
+        heightCap !== undefined ? Math.min(remaining, Math.max(120, heightCap)) : remaining
+      setStageMaxHeight(capped)
       const ww = node.offsetWidth || 320
-      const wh = node.offsetHeight || 200
+      // Prefer the budgeted cap over measured offsetHeight so a left-column
+      // stack (Lesson above Legend) is not clamped into overlap.
+      const wh = heightCap !== undefined ? capped : node.offsetHeight || 200
       const next = clampWindowPosition(x, y, ww, wh, stageW, stageH)
       if (next.x !== x || next.y !== y) onMove(next.x, next.y)
     }
@@ -84,7 +97,7 @@ export function FloatingWindow({
       ro?.disconnect()
       window.removeEventListener("resize", sync)
     }
-  }, [open, x, y, onMove])
+  }, [open, x, y, heightCap, onMove])
 
   if (!open) return null
 
@@ -101,6 +114,11 @@ export function FloatingWindow({
         top: y,
         zIndex: z,
         maxHeight: stageMaxHeight !== undefined ? stageMaxHeight : undefined,
+        // Definite height when capped (Lesson/Legend stack) or when children own scroll.
+        height:
+          stageMaxHeight !== undefined && (!bodyScroll || heightCap !== undefined)
+            ? stageMaxHeight
+            : undefined,
         backgroundImage:
           "linear-gradient(180deg, rgba(255,250,240,0.55) 0%, rgba(243,234,215,0.2) 40%, rgba(214,198,168,0.35) 100%), radial-gradient(ellipse at 18% 12%, rgba(255,255,255,0.35), transparent 42%)",
       }}
@@ -182,7 +200,13 @@ export function FloatingWindow({
           Close
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-[rgba(255,252,245,0.35)]">{children}</div>
+      <div
+        className={`min-h-0 flex-1 bg-[rgba(255,252,245,0.35)] ${
+          bodyScroll ? "overflow-x-hidden overflow-y-auto" : "flex flex-col overflow-hidden"
+        }`}
+      >
+        {children}
+      </div>
     </div>
   )
 }

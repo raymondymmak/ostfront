@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { CoachHint } from "@/lib/teach/coach"
 import type { TeachFeedback } from "@/lib/teach/feedback"
@@ -10,6 +11,7 @@ type TeachPanelProps = {
   meta: LessonMeta
   intro: string
   question: string
+  briefing: string
   variant: "guided" | "silent"
   pedagogyDisclosure: string
   reasoning: string
@@ -31,12 +33,15 @@ type TeachPanelProps = {
   onSilent: () => void
   silentAvailable: boolean
   onSupplyLesson?: () => void
+  /** When true, omit outer aside chrome (floating window already provides it). */
+  embedded?: boolean
 }
 
 export function TeachPanel({
   meta,
   intro,
   question,
+  briefing,
   variant,
   reasoning,
   onReasoning,
@@ -58,30 +63,49 @@ export function TeachPanel({
   onSilent,
   silentAvailable,
   onSupplyLesson,
+  embedded = false,
 }: TeachPanelProps) {
   const nextHint = hints.find((item) => item.level === hintLevel + 1)
+  const [briefingOpen, setBriefingOpen] = useState(false)
 
-  return (
-    <aside
-      className="flex min-h-0 flex-col border-l border-border bg-background"
-      data-testid="teach-panel"
-      data-teach-variant={variant}
-    >
-      <div className="border-b border-border px-4 py-3">
-        <p className="text-xs tracking-wide text-muted-foreground uppercase">Teaching drill</p>
-        <h2 className="font-display text-xl leading-tight">{meta.title}</h2>
+  const body = (
+    <>
+      <div className={embedded ? "border-b border-leather/25 px-3 py-2.5" : "border-b border-border px-4 py-3"}>
+        {!embedded && (
+          <p className="text-xs tracking-wide text-muted-foreground uppercase">Teaching drill</p>
+        )}
+        <h2 className={`font-display leading-tight ${embedded ? "text-lg" : "text-xl"}`}>{meta.title}</h2>
         <p className="mt-1 text-xs text-muted-foreground">{intro}</p>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-sm leading-6">
+      <div
+        className={`min-h-0 flex-1 overflow-y-auto text-sm leading-6 ${embedded ? "px-3 py-2.5" : "px-4 py-3"}`}
+      >
         <p className="font-medium" data-testid="teach-question">
           {question}
         </p>
+        <button
+          type="button"
+          className="mt-2 text-xs font-medium text-primary underline-offset-2 hover:underline"
+          data-testid="teach-briefing-toggle"
+          aria-expanded={briefingOpen}
+          onClick={() => setBriefingOpen((open) => !open)}
+        >
+          {briefingOpen ? "Hide briefing" : "More context"}
+        </button>
+        {briefingOpen && (
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="teach-briefing">
+            {briefing}
+          </p>
+        )}
         {variant === "guided" && (
           <div className="mt-3 space-y-2" data-testid="teach-hints">
             {hints
               .filter((item) => item.level <= hintLevel)
               .map((hint) => (
-                <p key={hint.level} className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs">
+                <p
+                  key={hint.level}
+                  className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs"
+                >
                   <span className="font-medium">Hint {hint.level}. </span>
                   {hint.text}
                 </p>
@@ -102,42 +126,58 @@ export function TeachPanel({
         )}
         {variant === "silent" && (
           <p className="mt-3 text-xs text-muted-foreground" data-testid="teach-silent-banner">
-            Coach is silent until after you resolve. Plan on the map and state your reasoning. After resolve,
-            the server reports whether your attempt was stored privately — only when that write is verified.
+            Coach is silent until after you resolve. Plan on the map; the server reports whether your
+            attempt was stored only when that write is verified.
           </p>
         )}
         {beliefRecall && (
-          <p className="mt-3 text-xs text-muted-foreground" data-testid="teach-belief-recall">
-            Earlier belief (server record): {beliefRecall.summary} {beliefRecall.question}
-          </p>
+          <details className="mt-3 text-xs text-muted-foreground" data-testid="teach-belief-recall">
+            <summary className="cursor-pointer font-medium text-ink">Earlier belief</summary>
+            <p className="mt-1">
+              {beliefRecall.summary} {beliefRecall.question}
+            </p>
+          </details>
         )}
         {variant === "guided" && (
-          <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs" data-testid="teach-pedagogy-notice">
-            {pedagogyDisclosure}
-          </p>
+          <details className="mt-3 text-xs" data-testid="teach-pedagogy-notice">
+            <summary className="cursor-pointer font-medium text-ink">Teaching die note</summary>
+            <p className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5">
+              {pedagogyDisclosure}
+            </p>
+          </details>
         )}
-        <label className="mt-4 block text-xs font-medium text-muted-foreground" htmlFor="teach-reasoning">
+        <label
+          className="mt-4 block text-xs font-medium text-muted-foreground"
+          htmlFor="teach-prediction"
+        >
+          Prediction (required)
+        </label>
+        <textarea
+          id="teach-prediction"
+          data-testid="teach-prediction"
+          className={`mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm ${
+            embedded ? "min-h-[2.25rem]" : "min-h-[3.5rem]"
+          }`}
+          value={prediction}
+          onChange={(event) => onPrediction(event.target.value)}
+          placeholder="What happens on resolve, and why?"
+          disabled={Boolean(feedback) || busy}
+        />
+        <label
+          className="mt-3 block text-xs font-medium text-muted-foreground"
+          htmlFor="teach-reasoning"
+        >
           Your reasoning
         </label>
         <textarea
           id="teach-reasoning"
           data-testid="teach-reasoning"
-          className="mt-1 min-h-[4.5rem] w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          className={`mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm ${
+            embedded ? "min-h-[2.25rem]" : "min-h-[3.5rem]"
+          }`}
           value={reasoning}
           onChange={(event) => onReasoning(event.target.value)}
-          placeholder="A sentence on why you chose this plan…"
-          disabled={Boolean(feedback) || busy}
-        />
-        <label className="mt-4 block text-xs font-medium text-muted-foreground" htmlFor="teach-prediction">
-          Your prediction (required before resolve)
-        </label>
-        <textarea
-          id="teach-prediction"
-          data-testid="teach-prediction"
-          className="mt-1 min-h-[4.5rem] w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-          value={prediction}
-          onChange={(event) => onPrediction(event.target.value)}
-          placeholder="What will happen when you resolve, and why?"
+          placeholder="Why this plan…"
           disabled={Boolean(feedback) || busy}
         />
         {variant === "guided" && !feedback && (
@@ -154,17 +194,27 @@ export function TeachPanel({
           </Button>
         )}
         {coachReply && !feedback && (
-          <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-2 text-xs" data-testid="teach-coach-reply" data-coach-source={coachSource ?? undefined} data-coach-stance={coachStance ?? undefined}>
+          <div
+            className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-2 text-xs"
+            data-testid="teach-coach-reply"
+            data-coach-source={coachSource ?? undefined}
+            data-coach-stance={coachStance ?? undefined}
+          >
             <p>{coachReply}</p>
             {coachSource === "fallback" && (
-              <p className="text-muted-foreground">Deterministic coach fallback (model unavailable or timed out).</p>
+              <p className="text-muted-foreground">
+                Deterministic coach fallback (model unavailable or timed out).
+              </p>
             )}
             {followUp && <p className="italic text-muted-foreground">{followUp}</p>}
           </div>
         )}
         {feedback && <TeachFeedbackBlock feedback={feedback} />}
       </div>
-      <div className="border-t border-border p-3">
+      <div
+        className={`shrink-0 border-t border-border ${embedded ? "p-2.5" : "p-3"}`}
+        data-testid="teach-resolve-bar"
+      >
         {!feedback ? (
           <Button
             type="button"
@@ -196,19 +246,42 @@ export function TeachPanel({
           <p className="text-center text-xs text-muted-foreground">Drill complete.</p>
         )}
       </div>
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-1 flex-col"
+        data-testid="teach-panel"
+        data-teach-variant={variant}
+      >
+        {body}
+      </div>
+    )
+  }
+
+  return (
+    <aside
+      className="flex min-h-0 flex-col border-l border-border bg-background"
+      data-testid="teach-panel"
+      data-teach-variant={variant}
+    >
+      {body}
     </aside>
   )
 }
 
 function TeachFeedbackBlock({ feedback }: { feedback: TeachFeedback }) {
   return (
-    <div className="mt-4 space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3" data-testid="teach-feedback">
+    <div
+      className="mt-4 space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3"
+      data-testid="teach-feedback"
+    >
       <p className="font-display text-lg" data-feedback-kind={feedback.kind}>
         {feedback.headline}
       </p>
-      {feedback.coachReply && (
-        <p data-testid="teach-coach-post">{feedback.coachReply}</p>
-      )}
+      {feedback.coachReply && <p data-testid="teach-coach-post">{feedback.coachReply}</p>}
       {feedback.beliefSummary && (
         <p className="text-xs text-muted-foreground" data-testid="teach-belief-stored">
           Recorded belief: {feedback.beliefSummary}

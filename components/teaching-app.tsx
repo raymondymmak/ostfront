@@ -1,8 +1,10 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { FloatingWindow } from "@/components/floating-window"
 import { Hud } from "@/components/hud"
+import { MapLegend } from "@/components/map-legend"
 import { OrderPanel } from "@/components/order-panel"
 import { ProvincePanel } from "@/components/province-panel"
 import { TeachPanel } from "@/components/teach-panel"
@@ -18,11 +20,25 @@ import type { CoachHint } from "@/lib/teach/coach"
 import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lessons"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { teachSelectedProvinceIds } from "@/lib/teach/selected-provinces"
+import {
+  closeTeachWindow,
+  closeTopmostTeachWindow,
+  createDefaultTeachWindows,
+  focusTeachWindow,
+  isTeachWindowOpen,
+  moveTeachWindow,
+  teachLegendHeightCap,
+  teachLessonHeightCap,
+  TEACH_WINDOW_TITLES,
+  type TeachWindowId,
+  type TeachWindowState,
+} from "@/lib/ui/teach-windows"
+import { useDesktopShell } from "@/lib/ui/use-desktop-shell"
 import type { GameState, PlayerOrder, TurnRecord, UnitKind } from "@/lib/types"
 
 type SessionPayload = {
   meta: LessonMeta
-  prompt: { question: string; intro: string }
+  prompt: { question: string; intro: string; briefing?: string }
   hints: CoachHint[]
   state: GameState
   pedagogy: { disclosure: string }
@@ -31,6 +47,11 @@ type SessionPayload = {
 }
 
 export function TeachingApp() {
+  const desktopShell = useDesktopShell()
+  const mapStageRef = useRef<HTMLDivElement>(null)
+  const [windows, setWindows] = useState<TeachWindowState[]>(() => createDefaultTeachWindows())
+  const [lessonHeightCap, setLessonHeightCap] = useState(() => teachLessonHeightCap(820))
+  const [legendHeightCap, setLegendHeightCap] = useState(() => teachLegendHeightCap(820))
   const [lessonId, setLessonId] = useState<TeachLessonId>("converging-lublin")
   const [variant, setVariant] = useState<TeachVariant>("guided")
   const [session, setSession] = useState<SessionPayload | null>(null)
@@ -43,6 +64,7 @@ export function TeachingApp() {
   const [queue, setQueue] = useState<QueuedOrder[]>([])
   const [hintLevel, setHintLevel] = useState(0)
   const [coachHighlightIds, setCoachHighlightIds] = useState<string[]>([])
+  const [showRails, setShowRails] = useState(true)
   const [reasoning, setReasoning] = useState("")
   const [prediction, setPrediction] = useState("")
   const [busy, setBusy] = useState(false)
@@ -59,49 +81,48 @@ export function TeachingApp() {
   const [coachStance, setCoachStance] = useState<string | null>(null)
   const [followUp, setFollowUp] = useState<string | null>(null)
 
-  const loadSession = useCallback(async (
-    nextLessonId: TeachLessonId,
-    nextVariant: TeachVariant,
-    nextPriorAttemptId?: string | null,
-  ) => {
-    setBusy(true)
-    setError(null)
-    setFeedback(null)
-    setRecord(null)
-    setQueue([])
-    setReasoning("")
-    setPrediction("")
-    setHintLevel(0)
-    setFlash([])
-    setCoachReply(null)
-    setCoachSource(null)
-    setCoachStance(null)
-    setFollowUp(null)
-    try {
-      const priorQuery = nextPriorAttemptId ? `&priorAttemptId=${nextPriorAttemptId}` : ""
-      const response = await fetch(
-        `/api/teach/session?lessonId=${nextLessonId}&variant=${nextVariant}${priorQuery}`,
-      )
-      const payload = (await response.json()) as SessionPayload & { error?: string }
-      if (!response.ok) throw new Error(payload.error ?? "Could not load teaching session.")
-      setSession(payload)
-      setState(payload.state)
-      setLessonId(nextLessonId)
-      setVariant(nextVariant)
-      setPriorAttemptId(nextPriorAttemptId ?? null)
-      setBeliefRecall(payload.beliefRecall ?? null)
-      setSelectedId(payload.meta.targetProvinceId)
-      setCoachHighlightIds(
-        payload.highlights.map((item) => item.provinceId).filter((id): id is string => Boolean(id)),
-      )
-      setSetupOpen(false)
-      setPedagogyDisclosure(payload.pedagogy?.disclosure ?? "")
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Session load failed.")
-    } finally {
-      setBusy(false)
-    }
-  }, [])
+  const loadSession = useCallback(
+    async (nextLessonId: TeachLessonId, nextVariant: TeachVariant, nextPriorAttemptId?: string | null) => {
+      setBusy(true)
+      setError(null)
+      setFeedback(null)
+      setRecord(null)
+      setQueue([])
+      setReasoning("")
+      setPrediction("")
+      setHintLevel(0)
+      setFlash([])
+      setCoachReply(null)
+      setCoachSource(null)
+      setCoachStance(null)
+      setFollowUp(null)
+      try {
+        const priorQuery = nextPriorAttemptId ? `&priorAttemptId=${nextPriorAttemptId}` : ""
+        const response = await fetch(
+          `/api/teach/session?lessonId=${nextLessonId}&variant=${nextVariant}${priorQuery}`,
+        )
+        const payload = (await response.json()) as SessionPayload & { error?: string }
+        if (!response.ok) throw new Error(payload.error ?? "Could not load teaching session.")
+        setSession(payload)
+        setState(payload.state)
+        setLessonId(nextLessonId)
+        setVariant(nextVariant)
+        setPriorAttemptId(nextPriorAttemptId ?? null)
+        setBeliefRecall(payload.beliefRecall ?? null)
+        setSelectedId(payload.meta.targetProvinceId)
+        setCoachHighlightIds(
+          payload.highlights.map((item) => item.provinceId).filter((id): id is string => Boolean(id)),
+        )
+        setSetupOpen(false)
+        setPedagogyDisclosure(payload.pedagogy?.disclosure ?? "")
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Session load failed.")
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
 
   const provinces = useMemo<MapProvince[]>(() => {
     if (!state) return []
@@ -112,12 +133,71 @@ export function TeachingApp() {
     }))
   }, [state])
 
+  const lessonFocus = useMemo(() => {
+    if (!session) return undefined
+    return {
+      targets: [session.meta.targetProvinceId],
+      sources: [...session.meta.prongProvinceIds],
+    }
+  }, [session])
+
+  const teachWindowOpen = useMemo(
+    () => ({
+      lesson: isTeachWindowOpen(windows, "lesson"),
+      orders: isTeachWindowOpen(windows, "orders"),
+      province: isTeachWindowOpen(windows, "province"),
+      legend: isTeachWindowOpen(windows, "legend"),
+    }),
+    [windows],
+  )
+
+  function resetTeachWindows() {
+    const node = mapStageRef.current
+    const width = node?.clientWidth || (typeof window !== "undefined" ? window.innerWidth : 1440)
+    const height =
+      node?.clientHeight ||
+      Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
+    setWindows(createDefaultTeachWindows(width, height))
+    setLessonHeightCap(teachLessonHeightCap(height))
+    setLegendHeightCap(teachLegendHeightCap(height))
+  }
+
+  useEffect(() => {
+    if (setupOpen) return
+    const frame = window.requestAnimationFrame(() => resetTeachWindows())
+    return () => window.cancelAnimationFrame(frame)
+  }, [setupOpen, desktopShell])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      if (!desktopShell) {
+        setSelectedId(null)
+        return
+      }
+      if (windows.some((item) => item.open)) {
+        setWindows((current) => closeTopmostTeachWindow(current))
+        return
+      }
+      setSelectedId(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [desktopShell, windows])
+
+  function setWindowOpen(id: TeachWindowId, open: boolean) {
+    setWindows((current) => (open ? focusTeachWindow(current, id) : closeTeachWindow(current, id)))
+  }
+
+  function onToggleTeachWindow(id: TeachWindowId) {
+    // Open or focus only (Close is on the window chrome; demo-check re-clicks tab-orders).
+    setWindows((current) => focusTeachWindow(current, id))
+  }
+
   const attacking = new Set(
     queue.filter((order) => order.kind === "attack").flatMap((order) => order.unitIds),
   )
-  const budget = state
-    ? spendable(state, "central", attacking)
-    : { mp: 0, ip: 0 }
+  const budget = state ? spendable(state, "central", attacking) : { mp: 0, ip: 0 }
   const selected = state?.provinces.find((province) => province.id === selectedId) ?? null
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
@@ -142,7 +222,9 @@ export function TeachingApp() {
     const chosen = leaveDepotGarrison(available, from.depot === "central", commitAll)
     const departing = new Set(partyOf(from.units, chosen.map((unit) => unit.id)).map((unit) => unit.id))
     const remaining = independentFormations(
-      from.units.filter((unit) => unit.faction === "central" && !departing.has(unit.id) && !claimed.has(unit.id)),
+      from.units.filter(
+        (unit) => unit.faction === "central" && !departing.has(unit.id) && !claimed.has(unit.id),
+      ),
     )
     if (from.supply < 30) {
       setHint(`${from.name} is below supply 30.`)
@@ -200,7 +282,13 @@ export function TeachingApp() {
         }),
       })
       const payload = (await response.json()) as {
-        coach?: { reply: string; source: string; stance: string; followUp: string | null; highlights?: Array<{ provinceId?: string }> }
+        coach?: {
+          reply: string
+          source: string
+          stance: string
+          followUp: string | null
+          highlights?: Array<{ provinceId?: string }>
+        }
         error?: string
       }
       if (!response.ok) throw new Error(payload.error ?? "Coach request failed.")
@@ -283,6 +371,9 @@ export function TeachingApp() {
       if (payload.feedback.attemptId && variant === "guided" && lessonId === "converging-lublin") {
         setPriorAttemptId(payload.feedback.attemptId)
       }
+      if (desktopShell) {
+        setWindows((current) => focusTeachWindow(current, "lesson"))
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Resolve failed.")
     } finally {
@@ -296,11 +387,10 @@ export function TeachingApp() {
         className="flex min-h-dvh items-center justify-center bg-background px-6"
         data-testid="teach-setup"
       >
-        <div className="max-w-md space-y-4 rounded-lg border border-border p-6">
+        <div className="max-w-md space-y-4 rounded-lg border border-leather/40 bg-paper p-6 text-ink shadow-sm">
           <h1 className="font-display text-2xl">Teaching drills</h1>
           <p className="text-sm text-muted-foreground">
-            Converging attacks on Lublin, then supply vs headcount. Predict outcomes before resolve; beliefs are
-            stored server-side for silent follow-ups.
+            Converging attacks, then supply vs headcount. Plan on the map; beliefs stay server-side.
           </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button
@@ -330,8 +420,80 @@ export function TeachingApp() {
     )
   }
 
+  const orderPanel = (
+    <OrderPanel
+      state={state}
+      directive=""
+      onDirective={() => {}}
+      queue={queue}
+      onQueue={setQueue}
+      orderMode={orderMode && !feedback}
+      onOrderMode={setOrderMode}
+      hint={hint}
+      busy={busy}
+      onEndTurn={() => {}}
+      onSelect={setSelectedId}
+      ordersLocked={Boolean(feedback)}
+      hideEndTurn
+    />
+  )
+
+  const provincePanel = (
+    <ProvincePanel
+      state={state}
+      province={selected}
+      budget={budget}
+      onSelect={setSelectedId}
+      onOrder={addArrow}
+      onFortify={fortify}
+      onRecruit={recruit}
+      onCancelRecruit={() => {}}
+      queue={queue}
+      recruitDisabled
+    />
+  )
+
+  const teachPanel = (
+    <TeachPanel
+      meta={session.meta}
+      intro={session.prompt.intro}
+      question={session.prompt.question}
+      briefing={session.prompt.briefing ?? session.meta.briefing}
+      variant={variant}
+      pedagogyDisclosure={pedagogyDisclosure}
+      reasoning={reasoning}
+      onReasoning={setReasoning}
+      prediction={prediction}
+      onPrediction={setPrediction}
+      beliefRecall={beliefRecall}
+      hints={session.hints}
+      hintLevel={hintLevel}
+      onHint={() => void requestHint()}
+      coachReply={coachReply}
+      coachSource={coachSource}
+      coachStance={coachStance}
+      followUp={followUp}
+      onDiscussPlan={() => void discussPlan()}
+      busy={busy}
+      onResolve={() => void resolveDrill()}
+      feedback={feedback}
+      silentAvailable
+      onSilent={() => void loadSession("converging-lublin", "silent", priorAttemptId)}
+      onSupplyLesson={
+        lessonId === "converging-lublin" && variant === "guided" && feedback
+          ? () => void loadSession("supply-tradeoff", "guided")
+          : undefined
+      }
+      embedded
+    />
+  )
+
   return (
-    <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden" data-testid="teach-app">
+    <div
+      className="flex h-dvh flex-col overflow-hidden bg-background"
+      data-testid="teach-app"
+      data-teach-shell={desktopShell ? "desktop" : "stacked"}
+    >
       <Hud
         state={state}
         armReset={false}
@@ -339,14 +501,21 @@ export function TeachingApp() {
         advisorOpen={false}
         onAdvisor={() => {}}
         teachMode
+        teachGoal={session.meta.title}
+        tableShell={desktopShell}
+        teachWindowOpen={teachWindowOpen}
+        onToggleTeachWindow={onToggleTeachWindow}
       />
       {error && (
-        <p className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive" role="alert">
+        <p
+          className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+          role="alert"
+        >
           {error}
         </p>
       )}
       {record && (
-        <div className="border-b border-border px-4 py-2 text-xs" data-testid="teach-resolution-log">
+        <div className="border-b border-leather/35 bg-paper-deep px-4 py-2 text-xs text-ink" data-testid="teach-resolution-log">
           {record.resolutions
             .filter((item) => item.proposal.type === "attack")
             .map((item) => (
@@ -354,8 +523,21 @@ export function TeachingApp() {
             ))}
         </div>
       )}
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_minmax(18rem,22rem)_minmax(16rem,20rem)]">
-        <div className="relative min-h-[45vh] lg:min-h-0">
+      <div
+        className={`min-h-0 flex-1 overflow-hidden ${
+          desktopShell
+            ? "grid"
+            : "flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(16rem,20rem)]"
+        }`}
+      >
+        <div
+          ref={mapStageRef}
+          className={
+            desktopShell
+              ? "relative min-h-0 flex-1 overflow-hidden"
+              : "relative max-h-[min(36vh,15rem)] min-h-[9rem] shrink-0 overflow-hidden lg:max-h-none lg:min-h-0 lg:flex-1"
+          }
+        >
           <WarMap
             provinces={provinces}
             selectedId={selectedId}
@@ -363,87 +545,142 @@ export function TeachingApp() {
             orders={queue}
             flashIds={flash}
             coachHighlightIds={coachHighlightIds}
+            lessonFocus={lessonFocus}
             orderMode={orderMode && !feedback}
+            showMapLegend={!desktopShell}
+            showRails={showRails}
+            onShowRails={setShowRails}
             onSelect={(id) => setSelectedId((current) => toggleSelection(current, id))}
             onDraw={addArrow}
             onOverlay={setOverlay}
           />
+          {desktopShell &&
+            windows.map((win) => {
+              if (!win.open) return null
+              const focus = () => setWindows((current) => focusTeachWindow(current, win.id))
+              const close = () => setWindowOpen(win.id, false)
+              const onMove = (x: number, y: number) =>
+                setWindows((current) => moveTeachWindow(current, win.id, x, y))
+              if (win.id === "lesson") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TEACH_WINDOW_TITLES.lesson}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    widthClassName="w-[min(21.25rem,calc(100%-1.5rem))]"
+                    maxHeightClassName="max-h-[min(62dvh,30rem)]"
+                    heightCap={lessonHeightCap}
+                    bodyScroll={false}
+                    testId="teach-lesson-window"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    {teachPanel}
+                  </FloatingWindow>
+                )
+              }
+              if (win.id === "orders") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TEACH_WINDOW_TITLES.orders}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    testId="teach-orders-window"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <aside className="flex min-h-0 flex-col">{orderPanel}</aside>
+                  </FloatingWindow>
+                )
+              }
+              if (win.id === "province") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TEACH_WINDOW_TITLES.province}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    testId="teach-province-window"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <aside className="flex min-h-0 flex-col">{provincePanel}</aside>
+                  </FloatingWindow>
+                )
+              }
+              if (win.id === "legend") {
+                return (
+                  <FloatingWindow
+                    key={win.id}
+                    title={TEACH_WINDOW_TITLES.legend}
+                    open={win.open}
+                    x={win.x}
+                    y={win.y}
+                    z={win.z}
+                    widthClassName="w-[min(17.5rem,calc(100%-1.5rem))]"
+                    maxHeightClassName="max-h-[min(36dvh,16.5rem)]"
+                    heightCap={legendHeightCap}
+                    testId="legend-window"
+                    onFocus={focus}
+                    onClose={close}
+                    onMove={onMove}
+                  >
+                    <MapLegend
+                      embedded
+                      showRails={showRails}
+                      onToggleRails={() => setShowRails((value) => !value)}
+                      overlay={overlay}
+                    />
+                  </FloatingWindow>
+                )
+              }
+              return null
+            })}
         </div>
-        <aside className="flex min-h-0 flex-col border-t border-border lg:border-t-0 lg:border-l">
-          <Tabs value={sideTab} onValueChange={setSideTab} className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="mx-3 mt-3 w-[calc(100%-1.5rem)]">
-              <TabsTrigger value="orders" data-testid="tab-orders">
-                Orders
-              </TabsTrigger>
-              <TabsTrigger value="front" data-testid="tab-province">
-                Province
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="orders" className="min-h-0 flex-1">
-              <OrderPanel
-                state={state}
-                directive=""
-                onDirective={() => {}}
-                queue={queue}
-                onQueue={setQueue}
-                orderMode={orderMode && !feedback}
-                onOrderMode={setOrderMode}
-                hint={hint}
-                busy={busy}
-                onEndTurn={() => void resolveDrill()}
-                onSelect={setSelectedId}
-                endTurnLabel="Resolve this fortnight"
-                ordersLocked={Boolean(feedback)}
-              />
-            </TabsContent>
-            <TabsContent value="front" className="min-h-0 flex-1">
-              <ProvincePanel
-                state={state}
-                province={selected}
-                budget={budget}
-                onSelect={setSelectedId}
-                onOrder={addArrow}
-                onFortify={fortify}
-                onRecruit={recruit}
-                onCancelRecruit={() => {}}
-                queue={queue}
-                recruitDisabled
-              />
-            </TabsContent>
-          </Tabs>
-        </aside>
-        <TeachPanel
-          meta={session.meta}
-          intro={session.prompt.intro}
-          question={session.prompt.question}
-          variant={variant}
-          pedagogyDisclosure={pedagogyDisclosure}
-          reasoning={reasoning}
-          onReasoning={setReasoning}
-          prediction={prediction}
-          onPrediction={setPrediction}
-          beliefRecall={beliefRecall}
-          hints={session.hints}
-          hintLevel={hintLevel}
-          onHint={() => void requestHint()}
-          coachReply={coachReply}
-          coachSource={coachSource}
-          coachStance={coachStance}
-          followUp={followUp}
-          onDiscussPlan={() => void discussPlan()}
-          busy={busy}
-          onResolve={() => void resolveDrill()}
-          feedback={feedback}
-          silentAvailable
-          onSilent={() => void loadSession("converging-lublin", "silent", priorAttemptId)}
-          onSupplyLesson={
-            lessonId === "converging-lublin" && variant === "guided" && feedback
-              ? () => void loadSession("supply-tradeoff", "guided")
-              : undefined
-          }
-        />
+        {!desktopShell && (
+          <>
+            {/* Bounded Lesson so Resolve stays in the viewport; body scrolls inside. */}
+            <div
+              className="flex min-h-[11rem] flex-1 flex-col overflow-hidden border-t border-leather/35 bg-paper"
+              data-testid="teach-lesson-stack"
+            >
+              {teachPanel}
+            </div>
+            <aside className="flex max-h-[min(28vh,11rem)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-border lg:max-h-none">
+              <Tabs value={sideTab} onValueChange={setSideTab} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <TabsList className="mx-3 mt-2 w-[calc(100%-1.5rem)] shrink-0">
+                  <TabsTrigger value="orders" data-testid="tab-orders">
+                    Orders
+                  </TabsTrigger>
+                  <TabsTrigger value="front" data-testid="tab-province">
+                    Province
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto">
+                  {orderPanel}
+                </TabsContent>
+                <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto">
+                  {provincePanel}
+                </TabsContent>
+              </Tabs>
+            </aside>
+          </>
+        )}
       </div>
-      <div className="border-t border-border px-4 py-2 text-center text-xs text-muted-foreground">
+      <div className="shrink-0 border-t border-leather/35 bg-paper px-4 py-2 text-center text-xs text-muted-foreground">
         <Link href="/" className="underline" data-testid="teach-exit-campaign">
           Return to full campaign
         </Link>
