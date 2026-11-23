@@ -53,7 +53,6 @@ async function dragPaperTowardTray(page, dialog, { release = true, edge = false 
   const ex = trayBox.x + trayBox.width / 2
   // Prefer the tray edge so short papers (OHL) stay mostly on-screen while highlighting.
   const ey = edge ? trayBox.y + 2 : trayBox.y + 6
-  void edge
   await page.mouse.move(sx, sy)
   await page.mouse.down()
   await page.mouse.move(ex, ey, { steps: 14 })
