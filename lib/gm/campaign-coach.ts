@@ -260,10 +260,14 @@ export function scrubCoachLedgerNoise(reply: string): string {
   return out
 }
 
+/**
+ * Only claims that the coach itself filed/noted/queued an order — not ordinary
+ * talk about the player's queued arrows ("this queued attack", "your queue").
+ */
 const FILED_CLAIM_SENTENCE =
-  /\b(?:filed as noted|noted as filed)|(?:\b(?:i(?:'ve| have)|we(?:'ve| have)|order(?:s)?|it|that|this)\b[^.?!]{0,40}\b(?:filed|noted|queued)\b)|(?:\b(?:filed|noted|queued)\b[^.?!]{0,20}\b(?:order|orders)\b)/i
+  /\bfiled as noted\b|\bnoted as filed\b|\bi(?:'ve| have)\s+(?:filed|noted|queued)\b|\bwe(?:'ve| have)\s+(?:filed|noted|queued)\b|\b(?:order|orders)\s+(?:(?:was|were|has been|have been|is|are)\s+)?(?:filed|noted)(?:\s+as\s+noted)?\b|\b(?:it|that|this)\s+(?:(?:was|has been|is)\s+)?(?:filed|noted)(?:\s+as\s+noted)?\b/i
 
-/** Never claim an order was filed, noted, or queued — coach cannot issue orders. */
+/** Never claim an order was filed or noted — coach cannot issue orders. */
 export function scrubCoachFiledClaims(reply: string): string {
   const sentences = splitCoachSentences(reply)
   const out: string[] = []

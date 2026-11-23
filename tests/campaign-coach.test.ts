@@ -459,6 +459,12 @@ describe("campaign coach", () => {
     expect(filed).not.toMatch(/Filed as noted/i)
     expect(filed).toMatch(/I do not file orders/i)
 
+    // Mentioning the player's queue must not be scrubbed away.
+    const aboutQueue =
+      "What do you expect this queued attack to achieve? The engine rates that column at about 4.7:1 if the Russians don't reinforce."
+    expect(scrubCoachFiledClaims(aboutQueue)).toBe(aboutQueue)
+    expect(scrubCoachFiledClaims("Your queued orders into Kielce look sound.")).toMatch(/queued orders/i)
+
     const result = await coachCampaign({
       state: createInitialState(),
       log: [],
