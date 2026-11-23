@@ -833,28 +833,36 @@ function buildSteps(cli, targets) {
         if (!mid) throw new Error("Orders missing before lower drag")
         const hx = mid.x + Math.min(80, mid.width / 2)
         const hy = mid.y + 12
-        await page.mouse.move(hx, hy)
-        await page.mouse.down()
-        await page.mouse.move(hx, trayBox.y + trayBox.height / 2, { steps: 16 })
-        await page.waitForTimeout(80)
-        const overTray = await orders.getAttribute("data-over-tray")
-        const dropActive = await tray.getAttribute("data-drop-active")
-        if (overTray !== "true" && dropActive !== "true") {
-          throw new Error("Expected tray drop highlight while dragging Orders over the tray")
+        try {
+          await page.mouse.move(hx, hy)
+          await page.mouse.down()
+          await page.mouse.move(hx, trayBox.y + trayBox.height / 2, { steps: 16 })
+          await page.waitForTimeout(80)
+          const overTray = await orders.getAttribute("data-over-tray")
+          const dropActive = await tray.getAttribute("data-drop-active")
+          if (overTray !== "true" && dropActive !== "true") {
+            throw new Error("Expected tray drop highlight while dragging Orders over the tray")
+          }
+          // Use layout top (not getBoundingClientRect) — tuck scale skews the visual box.
+          const layout = await orders.evaluate((el) => ({
+            top: el.offsetTop,
+            height: el.offsetHeight,
+            stageH: (el.offsetParent instanceof HTMLElement ? el.offsetParent.clientHeight : 0),
+          }))
+          if (layout.top < 0) throw new Error(`Orders header went off-screen: top=${layout.top}`)
+          if (layout.top + 36 > layout.stageH - 4) {
+            throw new Error(
+              `Orders header past stage bottom (clamp failed): top=${layout.top} stageH=${layout.stageH}`,
+            )
+          }
+          if (layout.top + layout.height < layout.stageH - 48 - 4) {
+            throw new Error(
+              `Orders could not reach tray band (old full-height clamp?): bottom=${layout.top + layout.height} stageH=${layout.stageH}`,
+            )
+          }
+        } finally {
+          await page.mouse.up().catch(() => {})
         }
-        const deep = await orders.boundingBox()
-        if (!deep) throw new Error("Orders missing mid lower-drag")
-        // Header (top of paper) must stay on-screen; bottom may reach/overlap tray.
-        if (deep.y < 0) throw new Error(`Orders header went off-screen: y=${deep.y}`)
-        if (deep.y + 36 > trayBox.y + trayBox.height + 8) {
-          throw new Error(`Orders header below tray (clamp failed): paperY=${deep.y} tray=${JSON.stringify(trayBox)}`)
-        }
-        if (deep.y + deep.height < trayBox.y - 4) {
-          throw new Error(
-            `Orders could not reach tray band (old full-height clamp?): bottom=${deep.y + deep.height} trayTop=${trayBox.y}`,
-          )
-        }
-        await page.mouse.up()
         await page.waitForTimeout(200)
         // Released over tray → filed.
         await orders.waitFor({ state: "hidden", timeout: 5_000 })
@@ -1325,13 +1333,18 @@ function buildSteps(cli, targets) {
       id: "24-teach-queue-converging",
       name: "Queue two-prong attack on Lublin",
       async run({ page }) {
+        await stowPapersForMapClick(page)
         const krakow = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
         const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
         if (!krakow || !kielce) throw new Error("Map projection unavailable for teaching drill.")
         await page.mouse.click(krakow.x, krakow.y)
         await page.waitForTimeout(350)
         await restoreTrayTab(page, "tab-province")
-        const attackLublin = page.getByRole("button", { name: /Attack/i }).filter({ hasText: /Lublin/i })
+        await page.locator("[data-testid=teach-province-window]").waitFor({ state: "visible", timeout: 5_000 })
+        const attackLublin = page
+          .locator("[data-testid=teach-province-window]")
+          .getByRole("button", { name: /Attack/i })
+          .filter({ hasText: /Lublin/i })
         await attackLublin.first().click()
         await page.mouse.click(kielce.x, kielce.y)
         await page.waitForTimeout(350)
@@ -1345,6 +1358,8 @@ function buildSteps(cli, targets) {
       id: "25-teach-discuss",
       name: "Discuss reasoning with coach (guided)",
       async run({ page }) {
+        await restoreTrayTab(page, "teach-lesson-toggle")
+        await page.locator("[data-testid=teach-lesson-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=teach-pedagogy-notice]").waitFor({ state: "visible" })
         await page.locator("[data-testid=teach-reasoning]").fill(
           "Two separate battles from Kraków and Kielce.",
@@ -1393,13 +1408,16 @@ function buildSteps(cli, targets) {
         if (await page.locator("[data-testid=teach-request-hint]").count()) {
           throw new Error("Hint control visible in silent mode")
         }
+        await stowPapersForMapClick(page)
         const krakow = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
         const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
         if (!krakow || !kielce) throw new Error("Map projection unavailable for silent drill.")
         await page.mouse.click(krakow.x, krakow.y)
         await page.waitForTimeout(350)
         await restoreTrayTab(page, "tab-province")
+        await page.locator("[data-testid=teach-province-window]").waitFor({ state: "visible", timeout: 5_000 })
         await page
+          .locator("[data-testid=teach-province-window]")
           .getByRole("button", { name: /Attack/i })
           .filter({ hasText: /Lublin/i })
           .first()
@@ -1408,10 +1426,12 @@ function buildSteps(cli, targets) {
         await page.waitForTimeout(350)
         await restoreTrayTab(page, "tab-province")
         await page
+          .locator("[data-testid=teach-province-window]")
           .getByRole("button", { name: /Attack/i })
           .filter({ hasText: /Lublin/i })
           .first()
           .click()
+        await restoreTrayTab(page, "teach-lesson-toggle")
         await page.locator("[data-testid=teach-reasoning]").fill("Silent plan: Kraków and Kielce together.")
         await page.locator("[data-testid=teach-prediction]").fill(
           "Still one merged battle; odds may hurt us on roll 4 but convergence is sound.",
