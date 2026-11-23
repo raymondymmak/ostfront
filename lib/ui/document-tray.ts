@@ -326,6 +326,17 @@ export const CAMPAIGN_TRAY_ITEMS: TrayItemSpec<
   { id: "ohl", label: "OHL", testId: "ohl-toggle", title: "Orders from OHL" },
 ]
 
+/**
+ * Phone campaign strip: Orders / Province swap the aside; Chief of Staff swaps in
+ * the embedded advisor panel. Log / Legend / OHL stay map-corner or header chrome
+ * below `lg`. Order follows `trayOrder` via `orderTrayItems`.
+ */
+export const CAMPAIGN_PHONE_TRAY_ITEMS: TrayItemSpec<"orders" | "province" | "advisor">[] = [
+  { id: "orders", label: "Orders", testId: "tab-orders" },
+  { id: "province", label: "Province", testId: "tab-province" },
+  { id: "advisor", label: "Chief of Staff", testId: "advisor-toggle", title: "Chief of Staff" },
+]
+
 export const TEACH_TRAY_ITEMS: TrayItemSpec<"lesson" | "orders" | "province" | "legend">[] = [
   { id: "lesson", label: "Lesson", testId: "teach-lesson-toggle" },
   { id: "orders", label: "Orders", testId: "tab-orders" },

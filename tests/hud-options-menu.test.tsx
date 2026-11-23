@@ -150,7 +150,6 @@ describe("Hud slim layout", () => {
 
   it("renders a compact header with options next to the date", async () => {
     const onReset = vi.fn()
-    const onAdvisor = vi.fn()
     const host = document.createElement("div")
     document.body.append(host)
     const root = createRoot(host)
@@ -161,8 +160,6 @@ describe("Hud slim layout", () => {
           state={createInitialState("normal")}
           armReset={false}
           onReset={onReset}
-          advisorOpen={false}
-          onAdvisor={onAdvisor}
           tableShell
         />,
       )
@@ -177,6 +174,7 @@ describe("Hud slim layout", () => {
     expect(header.textContent).toContain("2 May 1915")
     expect(header.textContent).toContain("Strength")
     expect(header.textContent).toContain("Manpower")
+    expect(header.textContent).not.toContain("Chief of Staff")
     // Restart is no longer a top-level HUD button.
     expect(header.querySelector('button[data-testid="hud-options-restart"]')).toBeNull()
 

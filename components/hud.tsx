@@ -1,6 +1,5 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
 import { HudOptionsMenu } from "@/components/hud-options-menu"
 import { listedStrength } from "@/lib/engine/echelon"
 import { projectIncome } from "@/lib/engine/economy"
@@ -14,8 +13,6 @@ type HudProps = {
   state: GameState
   armReset: boolean
   onReset: () => void
-  advisorOpen: boolean
-  onAdvisor: () => void
   teachMode?: boolean
   /** Short lesson goal shown instead of the campaign objective on /teach. */
   teachGoal?: string
@@ -27,12 +24,11 @@ export function Hud({
   state,
   armReset,
   onReset,
-  advisorOpen,
-  onAdvisor,
   teachMode,
   teachGoal,
-  tableShell = false,
+  tableShell: _tableShell = false,
 }: HudProps) {
+  void _tableShell
   const central = strength(state, "central")
   const russia = strength(state, "russia")
   const held = {
@@ -178,22 +174,6 @@ export function Hud({
             >
               Teaching drill
             </span>
-          ) : !tableShell ? (
-            <Button
-              type="button"
-              size="sm"
-              variant={advisorOpen ? "default" : "outline"}
-              aria-expanded={advisorOpen}
-              data-testid="advisor-toggle"
-              className={
-                advisorOpen
-                  ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
-                  : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
-              }
-              onClick={onAdvisor}
-            >
-              Chief of Staff
-            </Button>
           ) : null}
           <HudOptionsMenu armReset={armReset} teachMode={teachMode} onReset={onReset} />
         </div>
