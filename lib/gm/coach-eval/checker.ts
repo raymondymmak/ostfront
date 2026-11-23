@@ -1,6 +1,8 @@
 import {
   extractCoachOddsRatio,
   hasDanglingCoachClause,
+  hasMissingQuestionMark,
+  hasVerblessTrailingSubordinate,
   scrubCoachFiledClaims,
   splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
@@ -109,6 +111,9 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
   const dangling =
     hasDanglingCoachClause(reply) ||
     sentences.some((sentence) => hasDanglingCoachClause(sentence)) ||
+    sentences.some((sentence) => hasVerblessTrailingSubordinate(sentence)) ||
+    hasMissingQuestionMark(reply) ||
+    sentences.some((sentence) => hasMissingQuestionMark(sentence)) ||
     /\brising\s+to\s+if\b|\braise\s+it\s+to\s*[.!?]|\blift(?:ing)?\s+it\s+to\s*[.!?]|\bpools?\s+to\s+(?:only\s*)?[.!?]|\bmake\s+it\s+(?:two-pronged\s+)?at\s*[.!?]/i.test(
       reply,
     )
@@ -116,7 +121,7 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
     id: "no_dangling_clause",
     pass: !dangling,
     detail: dangling
-      ? "Dangling comparison / truncated preposition clause"
+      ? "Dangling comparison / verbless subordinate / question missing ?"
       : "No dangling odds clauses",
   })
 

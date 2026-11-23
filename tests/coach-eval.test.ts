@@ -149,6 +149,18 @@ describe("coach eval harness", () => {
     )
     expect(dangling.find((item) => item.id === "no_dangling_clause")?.pass).toBe(false)
 
+    const verbless = checkHardRules(
+      "Do you accept Lublin's two forts at about 2.2:1 when Kielce, taken by the same Kraków columns plus Katowice's Landwehr.",
+      sound.facts,
+    )
+    expect(verbless.find((item) => item.id === "no_dangling_clause")?.pass).toBe(false)
+
+    const missingMark = checkHardRules(
+      "Do you accept Lublin's two forts at about 2.2:1 if the Russians don't reinforce.",
+      sound.facts,
+    )
+    expect(missingMark.find((item) => item.id === "no_dangling_clause")?.pass).toBe(false)
+
     const badOdds = checkHardRules(
       "What do you expect at Kielce? About 99:1 if the Russians don't reinforce.",
       sound.facts,

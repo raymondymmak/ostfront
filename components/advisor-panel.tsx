@@ -269,7 +269,7 @@ export function AdvisorPanel({
               }
               data-testid={message.role === "advisor" ? "advisor-reply" : undefined}
             >
-              {message.role === "user" ? `You. ${message.content}` : message.content}
+              {message.role === "user" ? `You: ${message.content}` : message.content}
             </p>
             {message.role === "advisor" && message.followUp ? (
               <p className="text-xs text-muted-foreground" data-testid="advisor-follow-up">

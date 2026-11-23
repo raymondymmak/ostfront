@@ -15,7 +15,10 @@ import {
   formatBattleForCoach,
   formatBattleReviewForPlayer,
   detectQueuedOrderConflicts,
+  fortLevelPhrase,
   hasDanglingCoachClause,
+  hasMissingQuestionMark,
+  hasVerblessTrailingSubordinate,
   keepOneOddsFigure,
   latestBattleFacts,
   playerStatedIntent,
@@ -24,9 +27,12 @@ import {
   renderChronicle,
   sanitizeHighlights,
   scrubCoachFiledClaims,
+  scrubCoachFortLabels,
   scrubCoachJargon,
+  scrubCoachOddsDecimals,
   scrubCoachOddsLanguage,
   scrubDanglingOddsClauses,
+  scrubVerblessSubordinates,
   shapeCoachReply,
   splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
@@ -361,7 +367,9 @@ describe("campaign coach", () => {
       selectedProvinceId: "krakow",
     })
     expect(playerStatedIntent([{ role: "user", content: "What do you make of my queued plan?" }])).toBe(false)
-    expect(result.reply).toMatch(/What do you (?:expect|need) Kielce/i)
+    expect(result.reply).toMatch(
+      /What do you (?:expect taking Kielce|need Kielce)|How do you take Kielce/i,
+    )
     expect(result.reply).toMatch(/about [\d.]+:1 if the Russians don't reinforce/i)
     expect(result.reply).not.toMatch(/before the dice|as the engine resolves this fortnight/i)
     expect(result.reply).not.toMatch(/Ordered:|unavailable offline|159 against|Filed as noted/i)
@@ -536,6 +544,68 @@ describe("campaign coach", () => {
     ).not.toMatch(/raise it to\s*\./i)
   })
 
+  it("cuts verbless when-clauses after stripping a second odds figure and restores ?", () => {
+    const liveBroken =
+      "Do you accept Lublin's two forts at about 2.20:1 when Kielce, taken by the same Kraków columns plus Katowice's Landwehr. The map shows Kielce held only by X Corps with no fort, while Lublin's garrison sits behind fort 2."
+    expect(hasVerblessTrailingSubordinate(liveBroken.split(/(?<=\.)\s+/)[0]!)).toBe(true)
+    expect(
+      hasVerblessTrailingSubordinate(
+        "Do you accept Lublin's two forts at about 2.20:1 when Kielce, taken by the same Kraków columns plus Katowice's Landwehr.",
+      ),
+    ).toBe(true)
+
+    const withSecondOdds =
+      "Do you accept Lublin's two forts at about 2.20:1 when Kielce offers about 6.1:1, taken by the same Kraków columns plus Katowice's Landwehr?"
+    const kept = keepOneOddsFigure(withSecondOdds)
+    expect(kept.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+    expect(kept).toMatch(/2\.20:1/)
+    expect(kept).not.toMatch(/\bwhen Kielce\b/i)
+    expect(kept.trim().endsWith("?")).toBe(true)
+    expect(hasVerblessTrailingSubordinate(kept)).toBe(false)
+    expect(hasDanglingCoachClause(kept)).toBe(false)
+    expect(scrubCoachOddsDecimals(kept)).toMatch(/2\.2:1/)
+
+    const alreadyStripped =
+      "Do you accept Lublin's two forts at about 2.20:1 when Kielce, taken by the same Kraków columns plus Katowice's Landwehr."
+    const scrubbed = scrubVerblessSubordinates(alreadyStripped)
+    expect(scrubbed).toMatch(/2\.20:1\?$|2\.2:1\?$/)
+    expect(scrubbed).not.toMatch(/\bwhen Kielce\b/i)
+    expect(hasMissingQuestionMark(alreadyStripped)).toBe(true)
+    expect(hasMissingQuestionMark(scrubbed)).toBe(false)
+
+    const capped = capCoachReply(liveBroken)
+    expect(capped.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBeLessThanOrEqual(1)
+    expect(capped).not.toMatch(/\bwhen Kielce, taken\b/i)
+    expect(capped).not.toMatch(/\bfort\s+\d+\b/i)
+    expect(capped).not.toMatch(/\bThe map shows\b/i)
+    expect(capped).toMatch(/2\.2:1/)
+    expect(capped).toMatch(/\?/)
+    expect(hasVerblessTrailingSubordinate(capped)).toBe(false)
+    expect(hasMissingQuestionMark(capped)).toBe(false)
+  })
+
+  it("normalizes fort labels and odds decimals for staff speech", () => {
+    expect(fortLevelPhrase(0)).toBe("no forts")
+    expect(fortLevelPhrase(1)).toBe("a fort")
+    expect(fortLevelPhrase(2)).toBe("two forts")
+    expect(scrubCoachFortLabels("Lublin sits behind fort 2.")).toBe("Lublin sits behind two forts.")
+    expect(scrubCoachFortLabels("Przemyśl has fort 1.")).toBe("Przemyśl has a fort.")
+    expect(scrubCoachOddsDecimals("about 2.20:1 if the Russians don't reinforce")).toBe(
+      "about 2.2:1 if the Russians don't reinforce",
+    )
+    expect(scrubCoachOddsDecimals("stands at 2.37:1")).toBe("stands at 2.4:1")
+    expect(scrubCoachOddsDecimals("about 6.0:1")).toBe("about 6:1")
+    expect(capCoachReply("What holds Lublin? The garrison sits behind fort 2 at about 2.20:1.")).toMatch(
+      /two forts/,
+    )
+    expect(capCoachReply("What holds Lublin? The garrison sits behind fort 2 at about 2.20:1.")).toMatch(
+      /2\.2:1/,
+    )
+    expect(capCoachReply("What holds Lublin? The garrison sits behind fort 2 at about 2.20:1.")).not.toMatch(
+      /fort\s+\d+|2\.20:1/,
+    )
+  })
+
   it("scrubs residual dice / combined-odds / staff-figures jargon", () => {
     expect(scrubCoachJargon("What did you expect the dice to give you?")).toMatch(
       /what outcome did you expect/i,
@@ -544,6 +614,8 @@ describe("campaign coach", () => {
     expect(
       scrubCoachJargon("The figure you cite does not appear in my staff figures."),
     ).toMatch(/map dispatch/i)
+    expect(scrubCoachJargon("the objective the map sets")).toMatch(/OHL's objective/i)
+    expect(scrubCoachJargon("The map shows Kielce held only by X Corps.")).toMatch(/^Kielce held/i)
     expect(capCoachReply("What did you expect the dice to give you? Kielce held.")).not.toMatch(
       /\bdice\b|staff figures|combined-odds board/i,
     )

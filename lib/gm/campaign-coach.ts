@@ -77,30 +77,37 @@ const CoachJsonSchema = z
   })
   .strict()
 
-const COACH_SYSTEM = `You are General Erich von Falkenhayn, Chief of the General Staff, coaching the player who commands the Central Powers in the Gorlice–Tarnów offensive (2 May–11 July 1915).
+const COACH_SYSTEM = `You are General Erich von Falkenhayn, Chief of the General Staff, coaching the player who commands the Central Powers in the Gorlice–Tarnów offensive (2 May–11 July 1915). Speak like a sharp, concise Chief of Staff — not a quiz template or legal waiver.
 
 You do NOT issue orders. You never return suggestions, Accept cards, or order JSON. You speak only in reply to the player's latest question.
 
-You know only the DISPATCH in the user message: engine map facts, QUEUE_CONFLICTS (if any), the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say calmly that the map or chronicle does not show it — never scold, and never say "staff figures".
+You know only the DISPATCH in the user message: engine map facts, QUEUE_CONFLICTS (if any), the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say calmly you do not see it on the dispatch — never scold, and never say "staff figures".
 
-Socratic style (strict):
-- At most 2–3 short sentences in "reply". The intent/prediction question MUST come first when you ask one; then exactly one engine fact as evidence.
-- Tailor the opening question to the player's latest ask and the real blind spot in front of them (queue conflict, empty flank, low supply, chronicle result, illegal axis). Do NOT reuse a stock "Kielce / Lemberg push" opener when that is not the issue.
-- If QUEUE_CONFLICTS is non-empty, diagnose that conflict first (e.g. fortify and attack from the same province).
-- Return exactly one highlight that matches that evidence (one provinceId or one uiId). Never invent screen coordinates.
-- Post-battle: ask what outcome they expected. If they already stated a prediction in CONVERSATION, compare it to the chronicle result (odds, roll, losses, who holds the province). Plain map language only — never say "the dice" or "what did you expect the dice to give you".
-- Odds: quote ONLY from QUEUED_RESOLUTION_ODDS when attacks are queued; otherwise one contact figure from the DISPATCH. Say "about X:1 if the Russians don't reinforce". Quote exactly ONE ratio. Never compare two ratios. Never write dangling comparisons such as "adding X would raise it to" / "lift it to" / "pools to" without a finished figure — if you would need a second figure, omit the comparison entirely.
-- Never say "before the dice", "combined-odds board", or other internal UI/debug names. Say "the Orders paper" or "the map" if you must point at the interface.
-- Pushback: if the player refuses to answer or insists on a weak plan, stay concise and Socratic, but anchor on ONE concrete overlooked map fact (supply, fort, empty neighbor, reinforcement risk). Rhetorical pressure alone is not enough.
-- You do not file, note, or queue orders. Never claim an order was filed, noted, or queued (e.g. never "Filed as noted").
-- Battle review: cite the most recent battle in the CHRONICLE and name its fortnight (e.g. "In fortnight 2…"). Do not say no battle resolved this fortnight when an earlier fortnight has a battle. Only if the chronicle has no battles at all, say so plainly.
+Voice and wording:
+- At most 2–3 short sentences. Question first when you ask one; then one operational fact. No em-dash parentheticals. No "The map shows…" prefix — state the fact directly ("Lemberg is still held by three Russian formations…").
+- Vary challenge phrasing every turn. Never reuse the same skeleton back-to-back (especially avoid repeating "Do you accept…?"). Prefer natural staff questions such as "If Kraków ties up on Lublin, who takes Lemberg before 13 June?" or "How do you crack Lublin's two forts and still swing south in time?".
+- When the player sticks to their plan across turns (e.g. "yes" / "we'll deal with Warsaw first"), acknowledge briefly and probe the next concrete risk in THEIR chosen plan — do not restate the same objection.
+- Objectives come from OHL ("OHL's 13 June objective" / "our 13 June objective") — never "the objective the map sets".
+- Forts: say "a fort" / "two forts" — never raw labels like "fort 1" or "fort 2".
+- Rails marked cut in the DISPATCH mean the line crosses the front into enemy-held ground (one end is Russian), not a destroyed rail behind friendly lines. Do not invent destroyed track as the reason columns cannot swing back.
 
-Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE / QUEUED_RESOLUTION_ODDS. Never invent ratios.
+Socratic content:
+- Tailor the question to the latest ask and the real blind spot (queue conflict, empty flank, low supply, chronicle result, illegal axis).
+- If QUEUE_CONFLICTS is non-empty, diagnose that conflict first.
+- Return exactly one highlight matching that evidence (one provinceId or one uiId).
+- Post-battle: ask what outcome they expected; compare to the chronicle if they already predicted. Never say "the dice".
+- Odds: quote exactly ONE ratio from QUEUED_RESOLUTION_ODDS (if attacks are queued) or one DISPATCH contact. Round to one decimal (or a whole number): "about 2.2:1 if the Russians don't reinforce". Never quote two ratios. Never write comparison sentences that need a second figure ("when Kielce offers…", "while X stands at…"). If you would need two figures, omit the comparison and keep one fact.
+- Never say "before the dice", "combined-odds board", or other internal UI names.
+- Pushback: stay Socratic and cite ONE concrete overlooked fact (supply, forts, empty neighbor, reinforcement risk).
+- Never claim an order was filed, noted, or queued.
+- Battle review: name the chronicle fortnight of the most recent battle; if none exist, say so plainly.
 
-Optional followUp is one short question or null (prefer putting the intent question first in "reply" itself).
+Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE / QUEUED_RESOLUTION_ODDS.
+
+Optional followUp is one short question or null (prefer the intent question in "reply").
 
 Return one JSON object and no markdown:
-{"reply":"Which job should that Kraków garrison keep — digging in or marching on Kielce? Your queue both fortifies Kraków and attacks from it.","followUp":null,"highlights":[{"provinceId":"krakow"}]}
+{"reply":"Which job should that Kraków garrison keep: digging in, or marching on Kielce? Your queue both fortifies Kraków and attacks from it.","followUp":null,"highlights":[{"provinceId":"krakow"}]}
 
 Do not include a suggestions key. Do not include order objects.`
 
@@ -134,7 +141,10 @@ export async function coachCampaign(input: {
   const queuedOdds = renderQueuedResolutionOdds(map, queued)
   const queueConflicts = detectQueuedOrderConflicts(map, queued)
   // DISPATCH contacts still use advisor formatOdds ("before the dice"); scrub so the model cannot copy it.
-  const dispatch = scrubCoachOddsLanguage(renderSituation(situation))
+  const dispatch = scrubCoachOddsLanguage(renderSituation(situation)).replace(
+    /(\S+)–(\S+) cut\b/g,
+    "$1–$2 crosses the front (enemy holds one end; not a destroyed friendly rail)",
+  )
   const prompt = [
     dispatch,
     "",
@@ -156,7 +166,7 @@ export async function coachCampaign(input: {
     "CONVERSATION",
     renderConversation(input.messages),
     "",
-    "Answer the latest question. Use the dispatch, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. Diagnose the real blind spot (conflict, flank, supply, chronicle). Do not issue or claim to file orders. Put any intent question first; quote at most one odds figure; never leave a dangling comparison clause.",
+    "Answer the latest question. Use the dispatch, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders. Vary your challenge phrasing; put any intent question first; quote at most one odds figure (one decimal); never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
   ].join("\n")
 
   let failure: "empty" | "http" | "timeout" | null = null
@@ -314,8 +324,76 @@ export function scrubCoachJargon(reply: string): string {
   )
   out = out.replace(/\bin my staff figures\b/gi, "on the map dispatch")
   out = out.replace(/\sstaff figures\b/gi, "map figures")
+  out = out.replace(/\bthe objective the map sets\b/gi, "OHL's objective")
+  out = out.replace(/\bobjective the map sets\b/gi, "OHL's objective")
+  out = out.replace(/\bThe map shows that\b/g, "")
+  out = out.replace(/\bThe map shows\b/g, "")
+  out = out.replace(/\bthe map shows that\b/gi, "")
+  out = out.replace(/\bthe map shows\b/gi, "")
   out = out.replace(/\s{2,}/g, " ").replace(/\s+([,;:.!?])/g, "$1").trim()
+  // Recapitalize after stripping a "The map shows" prefix mid-reply.
+  out = out.replace(/(^|[.!?]\s+)([a-z])/g, (_, edge: string, letter: string) => `${edge}${letter.toUpperCase()}`)
   return out
+}
+
+/** Never leave raw fort-level game labels in player-facing coach copy. */
+export function scrubCoachFortLabels(reply: string): string {
+  return reply
+    .replace(/\bfort\s+1\b/gi, "a fort")
+    .replace(/\bfort\s+2\b/gi, "two forts")
+    .replace(/\bfort\s+3\b/gi, "three forts")
+    .replace(/\bfort\s+(\d+)\b/gi, (_, n: string) => `${n} forts`)
+}
+
+/** Round odds figures to one decimal (or a whole number) for staff speech. */
+export function scrubCoachOddsDecimals(reply: string): string {
+  return reply.replace(/(\d+\.\d+)\s*:\s*1\b/g, (_, raw: string) => `${trimRatio(raw)}:1`)
+}
+
+const SUBORDINATE_STARTER =
+  /\s+(?:when|while|whereas|compared to|against|versus|than)\b/i
+
+const FINITE_VERB_IN_CLAUSE =
+  /\b(?:offers?|stands?|sits?|is|are|was|were|has|have|had|holds?|held|remains?|lies?|lay|does|do|did|can|could|will|would|should|must|needs?|takes?|took|cracks?|swings?|marches?|grinds?|accepts?|keeps?|stays?|comes?|goes?|gets?|makes?|leaves?|sits)\b/i
+
+const OPENING_QUESTION =
+  /^(?:Do you|Does |Did |What |Which |Who |How |Why |Where |When )\b/i
+
+function looksLikeOpenQuestion(sentence: string): boolean {
+  return OPENING_QUESTION.test(sentence.trim())
+}
+
+function finishCoachSentence(body: string, wasQuestion: boolean): string {
+  const cleaned = body.replace(/[,;:\s]+$/, "").trim()
+  if (!cleaned) return ""
+  if (wasQuestion) {
+    const stem = cleaned.replace(/[.!?…]+$/, "").trim()
+    return stem ? `${stem}?` : ""
+  }
+  if (/[.!?]$/.test(cleaned)) return cleaned
+  return `${cleaned}.`
+}
+
+/**
+ * True when a trailing when/while/whereas/… clause has no finite verb
+ * (e.g. "…at about 2.2:1 when Kielce, taken by the same Kraków columns.").
+ * Omits bare "against" — "about 2.2:1 against the garrison" is ordinary odds phrasing.
+ */
+export function hasVerblessTrailingSubordinate(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  const match = trimmed.match(/\s+(?:when|while|whereas|compared to|versus|than)\b([\s\S]*)$/i)
+  if (!match) return false
+  const tail = (match[1] ?? "").replace(/[.!?…]+$/, "").trim()
+  if (!tail) return true
+  return !FINITE_VERB_IN_CLAUSE.test(tail)
+}
+
+/** Opening interrogative skeleton that lost its question mark. */
+export function hasMissingQuestionMark(text: string): boolean {
+  const first = (splitCoachSentences(text)[0] ?? text).trim()
+  if (!first || /\?/.test(first)) return false
+  return looksLikeOpenQuestion(first)
 }
 
 /** True when prose ends on a truncated preposition/clause after odds scrubbing. */
@@ -332,7 +410,32 @@ export function hasDanglingCoachClause(text: string): boolean {
   if (/\b(?:raising|lifting|pooling)\s+to\s*(?:if\b|[.!?…]|$)/i.test(trimmed)) return true
   if (/\bmake\s+it\s+(?:two-pronged\s+|concentric\s+)?at\s*[.!?…]*$/i.test(trimmed)) return true
   if (/\bpools?\s+to\s+(?:only\s*)?[.!?…]*$/i.test(trimmed)) return true
+  if (hasVerblessTrailingSubordinate(trimmed)) return true
   return false
+}
+
+/**
+ * Strip verbless trailing subordinates and restore lost `?` on open questions.
+ */
+export function scrubVerblessSubordinates(reply: string): string {
+  const out: string[] = []
+  for (const sentence of splitCoachSentences(reply)) {
+    let primary = sentence.trim()
+    const wasQuestion = /\?\s*$/.test(primary) || looksLikeOpenQuestion(primary)
+    if (hasVerblessTrailingSubordinate(primary)) {
+      const cut = primary.search(SUBORDINATE_STARTER)
+      if (cut > 20) {
+        primary = finishCoachSentence(primary.slice(0, cut), wasQuestion)
+      } else {
+        continue
+      }
+    } else if (wasQuestion && !/\?/.test(primary)) {
+      primary = finishCoachSentence(primary, true)
+    }
+    primary = primary.replace(/\s{2,}/g, " ").trim()
+    if (primary && !hasVerblessTrailingSubordinate(primary)) out.push(primary)
+  }
+  return out.join(" ").trim()
 }
 
 /**
@@ -344,7 +447,11 @@ export function scrubDanglingOddsClauses(reply: string): string {
   const out: string[] = []
   for (const sentence of sentences) {
     let primary = sentence.trim()
-    if (!hasDanglingCoachClause(primary) && !/\b(?:adding|including)\b[\s\S]{0,80}\b(?:to|at)\s*[.!?]*$/i.test(primary)) {
+    const wasQuestion = /\?\s*$/.test(primary) || looksLikeOpenQuestion(primary)
+    if (
+      !hasDanglingCoachClause(primary) &&
+      !/\b(?:adding|including)\b[\s\S]{0,80}\b(?:to|at)\s*[.!?]*$/i.test(primary)
+    ) {
       out.push(primary)
       continue
     }
@@ -354,19 +461,24 @@ export function scrubDanglingOddsClauses(reply: string): string {
       const after = primary.slice(first.index + first[0].length)
       const reinforce = after.match(/^\s*(if the Russians don't reinforce)?/i)
       const end = first.index + first[0].length + (reinforce?.[0]?.length ?? 0)
-      primary = `${primary.slice(0, end).replace(/[,;:\s]+$/, "")}.`
+      primary = finishCoachSentence(primary.slice(0, end), wasQuestion)
     } else {
-      const cut = primary.search(/,\s*(?:but|while|and|though|although|adding|including)\b/i)
+      const cut = primary.search(SUBORDINATE_STARTER)
       if (cut > 20) {
-        primary = `${primary.slice(0, cut).replace(/[,;:\s]+$/, "")}.`
+        primary = finishCoachSentence(primary.slice(0, cut), wasQuestion)
       } else {
-        continue
+        const softCut = primary.search(/,\s*(?:but|while|and|though|although|adding|including)\b/i)
+        if (softCut > 20) {
+          primary = finishCoachSentence(primary.slice(0, softCut), wasQuestion)
+        } else {
+          continue
+        }
       }
     }
     primary = primary.replace(/\s{2,}/g, " ").trim()
     if (primary.length >= 12 && !hasDanglingCoachClause(primary)) out.push(primary)
   }
-  return out.join(" ").trim()
+  return scrubVerblessSubordinates(out.join(" ").trim())
 }
 
 /**
@@ -395,8 +507,9 @@ const ODDS_FIGURE =
 
 /**
  * Keep the first odds ratio; drop later sentences that carry another ratio.
- * When two ratios share one sentence, cut the whole comparison clause before the
- * second figure — never blank the second ratio in place (that left "raise it to.").
+ * When two ratios share one sentence, cut at the subordinate comparison
+ * (when/while/whereas/…) after the first figure — never at a late comma inside
+ * a participial phrase (that left "…2.2:1 when Kielce, taken by…").
  */
 export function keepOneOddsFigure(reply: string): string {
   const sentences = splitCoachSentences(reply)
@@ -412,40 +525,58 @@ export function keepOneOddsFigure(reply: string): string {
     if (!seen) {
       seen = true
       let primary = sentence
+      const wasQuestion = /\?\s*$/.test(sentence.trim()) || looksLikeOpenQuestion(sentence)
       ODDS_FIGURE.lastIndex = 0
       const first = ODDS_FIGURE.exec(sentence)
       const second = first ? ODDS_FIGURE.exec(sentence) : null
       if (first && second) {
-        const head = sentence.slice(0, second.index)
-        const cutPatterns = [
-          /,\s*while\b/i,
-          /,\s*but\b/i,
-          /;\s+and\s+/i,
-          /,\s*and\s+(?:also\s+)?/i,
-          /\s+but\s+(?:adding|including)\b/i,
-          /\s+(?:while|though|although)\s+/i,
-          /,\s*(?:adding|including)\b/i,
-          /\s+(?:rising|raising|lifting|pooling)\s+to\b/i,
-          /\s+(?:raise|lift|pool|make)\s+it\b/i,
-          /\s+would\s+(?:raise|lift|make|pool)\b/i,
-          /\s+adding\b/i,
-        ]
-        let cut = -1
-        for (const pattern of cutPatterns) {
-          const at = head.search(pattern)
-          if (at > 0 && (cut < 0 || at < cut)) cut = at
-        }
-        if (cut < 0) {
-          const lastBreak = Math.max(head.lastIndexOf(","), head.lastIndexOf(";"))
-          if (lastBreak > 20) cut = lastBreak
-        }
-        if (cut > 0) {
-          primary = `${sentence.slice(0, cut).replace(/[,;:\s]+$/, "")}.`
+        const afterFirst = sentence.slice(first.index + first[0].length, second.index)
+        const reinforce = afterFirst.match(/^\s*(?:if the Russians don't reinforce)?/i)
+        const afterReinforce = afterFirst.slice(reinforce?.[0]?.length ?? 0)
+        const subAt = afterReinforce.search(SUBORDINATE_STARTER)
+        if (subAt >= 0) {
+          const cut =
+            first.index + first[0].length + (reinforce?.[0]?.length ?? 0) + subAt
+          primary = finishCoachSentence(sentence.slice(0, cut), wasQuestion)
         } else {
-          const afterFirst = sentence.slice(first.index + first[0].length)
-          const reinforce = afterFirst.match(/^\s*(?:if the Russians don't reinforce)?/i)
-          const end = first.index + first[0].length + (reinforce?.[0]?.length ?? 0)
-          primary = `${sentence.slice(0, end).replace(/[,;:\s]+$/, "")}.`
+          const head = sentence.slice(0, second.index)
+          const cutPatterns = [
+            /,\s*while\b/i,
+            /,\s*but\b/i,
+            /;\s+and\s+/i,
+            /,\s*and\s+(?:also\s+)?/i,
+            /\s+but\s+(?:adding|including)\b/i,
+            /\s+(?:while|though|although)\s+/i,
+            /,\s*(?:adding|including)\b/i,
+            /\s+(?:rising|raising|lifting|pooling)\s+to\b/i,
+            /\s+(?:raise|lift|pool|make)\s+it\b/i,
+            /\s+would\s+(?:raise|lift|make|pool)\b/i,
+            /\s+adding\b/i,
+          ]
+          let cut = -1
+          for (const pattern of cutPatterns) {
+            const at = head.search(pattern)
+            if (at > 0 && (cut < 0 || at < cut)) cut = at
+          }
+          // Do not fall back to the last comma — that eats verbs from
+          // "when Kielce, taken by…" participial tails.
+          if (cut > 0) {
+            primary = finishCoachSentence(sentence.slice(0, cut), wasQuestion)
+          } else {
+            const end =
+              first.index + first[0].length + (reinforce?.[0]?.length ?? 0)
+            primary = finishCoachSentence(sentence.slice(0, end), wasQuestion)
+          }
+        }
+      } else if (first && hasVerblessTrailingSubordinate(sentence)) {
+        const afterFirst = sentence.slice(first.index + first[0].length)
+        const reinforce = afterFirst.match(/^\s*(?:if the Russians don't reinforce)?/i)
+        const afterReinforce = afterFirst.slice(reinforce?.[0]?.length ?? 0)
+        const subAt = afterReinforce.search(SUBORDINATE_STARTER)
+        if (subAt >= 0) {
+          const cut =
+            first.index + first[0].length + (reinforce?.[0]?.length ?? 0) + subAt
+          primary = finishCoachSentence(sentence.slice(0, cut), wasQuestion)
         }
       }
       // Never blank-replace a leftover second ratio in place.
@@ -456,15 +587,16 @@ export function keepOneOddsFigure(reply: string): string {
         const afterFirst = primary.slice(stillFirst.index + stillFirst[0].length)
         const reinforce = afterFirst.match(/^\s*(?:if the Russians don't reinforce)?/i)
         const end = stillFirst.index + stillFirst[0].length + (reinforce?.[0]?.length ?? 0)
-        primary = `${primary.slice(0, end).replace(/[,;:\s]+$/, "")}.`
+        primary = finishCoachSentence(primary.slice(0, end), wasQuestion)
       }
       primary = scrubDanglingOddsClauses(primary)
+      primary = scrubVerblessSubordinates(primary)
       if (primary.length >= 12) out.push(primary)
       continue
     }
     // Later odds sentences: drop entirely (do not strip in place).
   }
-  return scrubDanglingOddsClauses(out.join(" ").trim())
+  return scrubVerblessSubordinates(scrubDanglingOddsClauses(out.join(" ").trim()))
 }
 
 /** Move the first question sentence to the front when intent/prediction asks trail evidence. */
@@ -506,11 +638,16 @@ export function fitCoachReplyLength(reply: string, maxChars = COACH_REPLY_MAX_CH
 export function capCoachReply(reply: string): string {
   let cleaned = scrubCoachLedgerNoise(reply.replace(/\s+/g, " ").trim())
   cleaned = scrubCoachOddsLanguage(cleaned)
+  cleaned = scrubCoachFortLabels(cleaned)
+  cleaned = scrubCoachOddsDecimals(cleaned)
   cleaned = scrubCoachJargon(cleaned)
   cleaned = scrubCoachFiledClaims(cleaned)
   cleaned = keepOneOddsFigure(cleaned)
   cleaned = scrubDanglingOddsClauses(cleaned)
+  cleaned = scrubVerblessSubordinates(cleaned)
   cleaned = scrubCoachOddsLanguage(cleaned)
+  cleaned = scrubCoachFortLabels(cleaned)
+  cleaned = scrubCoachOddsDecimals(cleaned)
   cleaned = scrubCoachJargon(cleaned)
   cleaned = putQuestionFirst(cleaned)
   if (!cleaned) return cleaned
@@ -912,12 +1049,22 @@ export function detectQueuedOrderConflicts(map: GameState, queued: PlayerOrder[]
   return conflicts
 }
 
+/** Natural fort wording for staff speech — never "fort 1" / "fort 2". */
+export function fortLevelPhrase(level: number): string {
+  if (level <= 0) return "no forts"
+  if (level === 1) return "a fort"
+  if (level === 2) return "two forts"
+  if (level === 3) return "three forts"
+  return `${level} forts`
+}
+
 /** Varied intent openers — avoid a stock Kielce/Lemberg line on every turn. */
 export function intentQuestionForTarget(targetName: string): string {
   const options = [
     `What do you need ${targetName} for this fortnight?`,
     `What do you expect taking ${targetName} to unlock?`,
     `What happens to your line if ${targetName} holds?`,
+    `How do you take ${targetName} and still keep OHL's timetable?`,
   ]
   let hash = 0
   for (let i = 0; i < targetName.length; i += 1) hash = (hash + targetName.charCodeAt(i) * (i + 1)) % options.length
@@ -973,7 +1120,7 @@ function rulesCoach(
     const name = provinceLabel(conflict.provinceId)
     const target = provinceLabel(conflict.targetId)
     return {
-      reply: `Which job should that ${name} garrison keep — digging in or marching on ${target}? Your queue both fortifies ${name} and attacks from it.`,
+      reply: `Which job should that ${name} garrison keep: digging in, or marching on ${target}? Your queue both fortifies ${name} and attacks from it.`,
       followUp: null,
       highlights: [{ provinceId: conflict.provinceId }],
     }
@@ -989,10 +1136,10 @@ function rulesCoach(
       const oddsBit = Number.isFinite(weak.ratio)
         ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
         : weak.empty
-          ? " — undefended if the Russians don't reinforce"
+          ? ", undefended if the Russians don't reinforce"
           : " if the Russians don't reinforce"
       return {
-        reply: `I do not file orders. ${intentQuestionForTarget(weak.targetName)} The strongest contact is ${weak.fromName} into ${weak.targetName}${oddsBit}.`,
+        reply: `I do not file orders. ${intentQuestionForTarget(weak.targetName)} ${weak.fromName} into ${weak.targetName} is the strongest contact${oddsBit}.`,
         followUp: null,
         highlights: [{ provinceId: weak.targetId }],
       }
@@ -1010,8 +1157,11 @@ function rulesCoach(
       const [targetId, oddsPhrase] = [...oddsByTarget.entries()][0]!
       const target = provinceLabel(targetId)
       const evidence = oddsPhrase
-        ? `The engine rates that column at ${oddsPhrase}.`
-        : `The engine has that column queued into ${target}.`
+        ? `That column stands at ${oddsPhrase}.`
+        : `You have a column queued into ${target}.`
+      const affirmsPlan = /^(?:yes|yep|yeah|ok|okay|sure|agreed|we(?:'ll| will| can)|deal with)\b/i.test(
+        lower.trim(),
+      )
       if (!hasIntent) {
         return {
           reply: `${intentQuestionForTarget(target)} ${evidence}`,
@@ -1019,8 +1169,15 @@ function rulesCoach(
           highlights: [{ provinceId: targetId }],
         }
       }
+      if (affirmsPlan) {
+        return {
+          reply: `Understood. What stops the Russians from reinforcing ${target} while you grind there? ${evidence}`,
+          followUp: null,
+          highlights: [{ provinceId: targetId }],
+        }
+      }
       return {
-        reply: `What map fact cuts against that aim? ${evidence}`,
+        reply: `Where does that plan break first? ${evidence}`,
         followUp: null,
         highlights: [{ provinceId: targetId }],
       }
@@ -1039,6 +1196,7 @@ function rulesCoach(
     const id = selected.split(" ")[0]
     const province = map.provinces.find((item) => item.id === id)
     const name = province?.name ?? id
+    const forts = fortLevelPhrase(province?.fort ?? 0)
     if (!hasIntent) {
       return {
         reply: `What are you weighing at ${name}? It is ${province?.controller ?? "unknown"}-held.`,
@@ -1047,7 +1205,7 @@ function rulesCoach(
       }
     }
     return {
-      reply: `${name} is ${province?.controller ?? "unknown"}-held with fort ${province?.fort ?? 0}. I advise only; you draw the arrows.`,
+      reply: `${name} is ${province?.controller ?? "unknown"}-held with ${forts}. I advise only; you draw the arrows.`,
       followUp: null,
       highlights: id ? [{ provinceId: id }] : [{ uiId: "tab-province" }],
     }
@@ -1058,17 +1216,17 @@ function rulesCoach(
     const oddsBit = Number.isFinite(weak.ratio)
       ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
       : weak.empty
-        ? " — undefended if the Russians don't reinforce"
+        ? ", undefended if the Russians don't reinforce"
         : " if the Russians don't reinforce"
     return {
-      reply: `What axis are you weighing this fortnight? The strongest engine contact is ${weak.fromName} into ${weak.targetName}${oddsBit}.`,
+      reply: `What axis are you weighing this fortnight? ${weak.fromName} into ${weak.targetName} is the strongest contact${oddsBit}.`,
       followUp: null,
       highlights: [{ provinceId: weak.targetId }],
     }
   }
 
   return {
-    reply: "What are you trying to achieve this fortnight? The dispatch shows no open march into an enemy neighbor.",
+    reply: "What are you trying to achieve this fortnight? No open march into an enemy neighbor shows on the dispatch.",
     followUp: null,
     highlights: [{ uiId: "tab-orders" }],
   }
