@@ -647,6 +647,14 @@ function buildSteps(cli, targets) {
         await page.waitForSelector("[data-testid=war-map]", { timeout: 60_000 })
         await page.waitForTimeout(MAP_SETTLE_MS)
         await page.locator("[data-testid=scenario-picker]").waitFor({ state: "hidden", timeout: 10_000 })
+        // No province auto-selected at Begin (Kraków used to be).
+        const selectedAtStart = await page.evaluate(() => {
+          const filter = window.__ostfrontMap?.getFilter?.("selected")
+          return Array.isArray(filter) ? filter[2] : null
+        })
+        if (selectedAtStart) {
+          throw new Error(`Expected no province selected at campaign start, got: ${selectedAtStart}`)
+        }
       },
     },
     {
@@ -1212,6 +1220,14 @@ function buildSteps(cli, targets) {
         const app = page.locator("[data-testid=teach-app]")
         await app.waitFor({ state: "visible", timeout: 60_000 })
         await page.locator("[data-testid=teach-question]").waitFor({ state: "visible", timeout: 15_000 })
+        await page.waitForTimeout(MAP_SETTLE_MS)
+        const teachSelectedAtStart = await page.evaluate(() => {
+          const filter = window.__ostfrontMap?.getFilter?.("selected")
+          return Array.isArray(filter) ? filter[2] : null
+        })
+        if (teachSelectedAtStart) {
+          throw new Error(`Expected no province selected at /teach start, got: ${teachSelectedAtStart}`)
+        }
         const shell = await app.getAttribute("data-teach-shell")
         if (shell !== "desktop") {
           throw new Error(`Expected desktop teach shell at 1440×900, got: ${shell ?? "(none)"}`)

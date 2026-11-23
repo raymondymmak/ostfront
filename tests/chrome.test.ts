@@ -68,6 +68,23 @@ describe("top bar and map chrome", () => {
     expect(drawer).toContain("lg:hidden")
   })
 
+  it("starts campaign and /teach with no province auto-selected", () => {
+    expect(app).toMatch(/useState<string \| null>\(null\)/)
+    expect(app).not.toMatch(/useState<string \| null>\("krakow"\)/)
+    expect(app).toContain("setSelectedId(null)")
+    expect(app).not.toContain('setSelectedId("krakow")')
+    const teach = readFileSync("components/teaching-app.tsx", "utf8")
+    expect(teach).toMatch(/useState<string \| null>\(null\)/)
+    expect(teach).not.toMatch(/useState<string \| null>\("lublin"\)/)
+    expect(teach).toContain("setSelectedId(null)")
+    expect(teach).not.toContain("setSelectedId(payload.meta.targetProvinceId)")
+    // demo-check still selects Kraków explicitly when a step needs it
+    const demo = readFileSync("scripts/demo-check.mjs", "utf8")
+    expect(demo).toContain("selectKrakowOnMap")
+    expect(demo).toContain("krakowIsSelected")
+    expect(demo).toContain("Expected no province selected at campaign start")
+  })
+
   it("puts /teach on the same general's-table shell with lesson focus highlights", () => {
     const teach = readFileSync("components/teaching-app.tsx", "utf8")
     const hud = readFileSync("components/hud.tsx", "utf8")

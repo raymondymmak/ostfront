@@ -83,7 +83,7 @@ export function TeachingApp() {
   const [priorAttemptId, setPriorAttemptId] = useState<string | null>(null)
   const [beliefRecall, setBeliefRecall] = useState<{ summary: string; question: string } | null>(null)
   const [state, setState] = useState<GameState | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>("lublin")
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
   const [orderMode, setOrderMode] = useState(true)
   const [queue, setQueue] = useState<QueuedOrder[]>([])
@@ -134,7 +134,7 @@ export function TeachingApp() {
         setVariant(nextVariant)
         setPriorAttemptId(nextPriorAttemptId ?? null)
         setBeliefRecall(payload.beliefRecall ?? null)
-        setSelectedId(payload.meta.targetProvinceId)
+        setSelectedId(null)
         setCoachHighlightIds(
           payload.highlights.map((item) => item.provinceId).filter((id): id is string => Boolean(id)),
         )
