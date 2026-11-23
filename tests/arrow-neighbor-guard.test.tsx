@@ -125,7 +125,7 @@ describe("arrow neighbor UI guard", () => {
 
     // jsdom has no elementFromPoint — install a stub for touch-capture hit-testing.
     let hit: Element | null = farPath
-    document.elementFromPoint = ((_x: number, _y: number) => hit) as typeof document.elementFromPoint
+    document.elementFromPoint = (() => hit) as typeof document.elementFromPoint
 
     await act(async () => {
       // Bubbles to the svg handler which hit-tests hover/drop.
