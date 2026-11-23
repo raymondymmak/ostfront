@@ -110,19 +110,13 @@ export function FloatingWindow({
   const [dragging, setDragging] = useState(false)
   const [overTray, setOverTray] = useState(false)
   const [resizing, setResizing] = useState(false)
-  const [heightPx, setHeightPx] = useState<number | undefined>(heightProp)
-
-  useEffect(() => {
-    if (heightProp !== undefined) {
-      lockedHeightRef.current = heightProp
-      setHeightPx(heightProp)
-    }
-  }, [heightProp])
+  /** Local measure/resize height when the parent has not yet persisted one. */
+  const [localHeight, setLocalHeight] = useState<number | undefined>(undefined)
+  const heightPx = heightProp ?? localHeight
 
   useEffect(() => {
     if (!open) {
       if (heightProp === undefined) lockedHeightRef.current = null
-      setOverTray(false)
       onTrayHover?.(false)
       return
     }
@@ -133,6 +127,7 @@ export function FloatingWindow({
       const stage = measureStage(node)
       // Height budget uses full stage (papers may overlap tray); preferred still caps size.
       const preferredMax = parseCssMaxHeight(maxHeightClassName, stage.height)
+      if (heightProp !== undefined) lockedHeightRef.current = heightProp
       const nextH = resolveWindowHeight({
         lockedHeight: lockedHeightRef.current,
         preferredMax,
@@ -143,8 +138,10 @@ export function FloatingWindow({
       if (lockedHeightRef.current === null && !dragging && !resizing) {
         lockedHeightRef.current = nextH
       }
-      const applied = lockedHeightRef.current ?? nextH
-      setHeightPx((current) => (current === applied ? current : applied))
+      const applied = heightProp ?? lockedHeightRef.current ?? nextH
+      if (heightProp === undefined) {
+        setLocalHeight((current) => (current === applied ? current : applied))
+      }
       const ww = widthPx ?? (node.offsetWidth || 320)
       // Header-only Y: body may sit over the tray; grip stays on-screen.
       const maxY = Math.max(
@@ -192,7 +189,8 @@ export function FloatingWindow({
 
   if (!open) return null
 
-  const tuck = dragging && overTray
+  const trayHover = overTray
+  const tuck = dragging && trayHover
   const lift = tuck
     ? "motion-safe:scale-[0.82] motion-safe:translate-y-2 shadow-[0_8px_18px_rgba(20,14,8,0.35)] opacity-90"
     : dragging
@@ -215,7 +213,7 @@ export function FloatingWindow({
       }}
       data-testid={testId}
       data-dragging={dragging ? "true" : undefined}
-      data-over-tray={overTray ? "true" : undefined}
+      data-over-tray={trayHover ? "true" : undefined}
       role="dialog"
       aria-label={title}
       onMouseDown={onFocus}
@@ -350,7 +348,7 @@ export function FloatingWindow({
               minHeight: 140,
             })
             lockedHeightRef.current = next
-            setHeightPx(next)
+            setLocalHeight(next)
             const ww = widthPx ?? rootRef.current?.offsetWidth ?? 320
             onSize?.({ width: ww, height: next })
           }}
