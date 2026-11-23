@@ -32,7 +32,7 @@ import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { CampaignStart } from "@/components/campaign-start"
 import { EndgameModal } from "@/components/endgame-modal"
 import { NewsCardQueue } from "@/components/news-card"
-import { objectiveValue, scenarioSpec } from "@/lib/data/objectives"
+import { objectiveValue } from "@/lib/data/objectives"
 import { independentFormations } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
 import {
