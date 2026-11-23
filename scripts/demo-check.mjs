@@ -679,6 +679,9 @@ function buildSteps(cli, targets) {
       name: "Document tray stow / restore on campaign",
       async run({ page }) {
         await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 5_000 })
+        // Province shares the Orders column; stow it so Orders Stow is clickable.
+        await closeFloatingProvinceIfOpen(page)
+        await page.locator("[data-testid=tab-orders]").click()
         const orders = page.locator('[role="dialog"][aria-label="Orders"]')
         await orders.waitFor({ state: "visible", timeout: 5_000 })
         await orders.getByRole("button", { name: "Stow Orders" }).click()
@@ -694,14 +697,18 @@ function buildSteps(cli, targets) {
       id: "07b-window-drag",
       name: "Press-drag-release Orders without size change",
       async run({ page }) {
+        await closeFloatingProvinceIfOpen(page)
+        await page.locator("[data-testid=tab-orders]").click()
         const orders = page.locator('[role="dialog"][aria-label="Orders"]')
         await orders.waitFor({ state: "visible", timeout: 5_000 })
-        await orders.locator("[data-testid=floating-window-drag-handle]").waitFor({ state: "visible" })
+        const handle = orders.locator("[data-testid=floating-window-drag-handle]")
+        await handle.waitFor({ state: "visible" })
         const before = await orders.boundingBox()
         if (!before) throw new Error("Orders window missing bounding box")
         const startX = before.x + Math.min(80, before.width / 2)
         const startY = before.y + 12
-        await page.mouse.move(startX, startY)
+        // Drag via the handle locator so pointer events hit the Orders header, not a covering paper.
+        await handle.hover({ position: { x: Math.min(80, before.width / 2), y: 12 } })
         await page.mouse.down()
         await page.mouse.move(startX - 60, startY + 40, { steps: 8 })
         await page.mouse.up()
