@@ -236,10 +236,22 @@ export async function coachCampaign(input: {
   }
 
   const reply = scrubAdvisorReply(parsed.reply, map)
-  const shaped = shapeCoachReply(
+  let shaped = shapeCoachReply(
     reply || rules.reply,
     parsed.followUp?.trim() ? parsed.followUp.trim().slice(0, 160) : null,
   )
+  // If scrubbing gutted every sentence, fall back to the rules path rather than an empty LLM reply.
+  if (!shaped.reply.trim()) {
+    shaped = shapeCoachReply(rules.reply, rules.followUp)
+    return {
+      reply: finishAdvisorReply(shaped.reply),
+      source: "rules",
+      unavailable: false,
+      followUp: shaped.followUp,
+      highlights: capCoachHighlights(rules.highlights),
+      ordersClosed,
+    }
+  }
   return {
     reply: finishAdvisorReply(shaped.reply),
     source: "llm",
@@ -350,11 +362,15 @@ export function scrubCoachOddsDecimals(reply: string): string {
   return reply.replace(/(\d+\.\d+)\s*:\s*1\b/g, (_, raw: string) => `${trimRatio(raw)}:1`)
 }
 
+/** Cut points when stripping a second odds figure (broader than the verbless check). */
 const SUBORDINATE_STARTER =
   /\s+(?:when|while|whereas|compared to|against|versus|than)\b/i
 
+/** Verbless check only: post-odds comparison shapes, not ordinary when/than prose. */
+const VERBLESS_SUBORDINATE_STARTER = /\s+(?:when|while|whereas|compared to)\b/i
+
 const FINITE_VERB_IN_CLAUSE =
-  /\b(?:offers?|stands?|sits?|is|are|was|were|has|have|had|holds?|held|remains?|lies?|lay|does|do|did|can|could|will|would|should|must|needs?|takes?|took|cracks?|swings?|marches?|grinds?|accepts?|keeps?|stays?|comes?|goes?|gets?|makes?|leaves?|sits)\b/i
+  /\b(?:offers?|stands?|sits?|is|are|was|were|has|have|had|holds?|held|remains?|lies?|lay|does|do|did|can|could|will|would|should|must|needs?|takes?|took|cracks?|swings?|marches?|grinds?|accepts?|keeps?|stays?|comes?|goes?|gets?|makes?|leaves?|falls?|fell|reaches?|reached|reinforces?|reinforced|attacks?|attacked|defends?|defended)\b/i
 
 const OPENING_QUESTION =
   /^(?:Do you|Does |Did |What |Which |Who |How |Why |Where |When )\b/i
@@ -375,16 +391,18 @@ function finishCoachSentence(body: string, wasQuestion: boolean): string {
 }
 
 /**
- * True when a trailing when/while/whereas/… clause has no finite verb
- * (e.g. "…at about 2.2:1 when Kielce, taken by the same Kraków columns.").
- * Omits bare "against" — "about 2.2:1 against the garrison" is ordinary odds phrasing.
+ * True when a trailing when/while/whereas/compared-to clause after an odds
+ * figure has no finite verb (e.g. "…at about 2.2:1 when Kielce, taken by…").
+ * Ordinary prose ("Lemberg falls when the Russians reinforce") is not flagged.
  */
 export function hasVerblessTrailingSubordinate(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
-  const match = trimmed.match(/\s+(?:when|while|whereas|compared to|versus|than)\b([\s\S]*)$/i)
+  const match = trimmed.match(
+    /(?:\d+(?:\.\d+)?\s*:\s*1)\b[^?]{0,100}?(when|while|whereas|compared to)\b([\s\S]*)$/i,
+  )
   if (!match) return false
-  const tail = (match[1] ?? "").replace(/[.!?…]+$/, "").trim()
+  const tail = (match[2] ?? "").replace(/[.!?…]+$/, "").trim()
   if (!tail) return true
   return !FINITE_VERB_IN_CLAUSE.test(tail)
 }
@@ -423,7 +441,7 @@ export function scrubVerblessSubordinates(reply: string): string {
     let primary = sentence.trim()
     const wasQuestion = /\?\s*$/.test(primary) || looksLikeOpenQuestion(primary)
     if (hasVerblessTrailingSubordinate(primary)) {
-      const cut = primary.search(SUBORDINATE_STARTER)
+      const cut = primary.search(VERBLESS_SUBORDINATE_STARTER)
       if (cut > 20) {
         primary = finishCoachSentence(primary.slice(0, cut), wasQuestion)
       } else {

@@ -544,6 +544,17 @@ describe("campaign coach", () => {
     ).not.toMatch(/raise it to\s*\./i)
   })
 
+  it("does not strip ordinary when/than clauses that are not post-odds fragments", () => {
+    const conditional = "Kielce is held lightly, and Lemberg falls when the Russians reinforce."
+    expect(hasVerblessTrailingSubordinate(conditional)).toBe(false)
+    expect(hasDanglingCoachClause(conditional)).toBe(false)
+    expect(capCoachReply(conditional)).toMatch(/when the Russians reinforce/i)
+
+    const comparison = "Kielce is weaker than Lublin."
+    expect(hasVerblessTrailingSubordinate(comparison)).toBe(false)
+    expect(capCoachReply(comparison)).toMatch(/weaker than Lublin/i)
+  })
+
   it("cuts verbless when-clauses after stripping a second odds figure and restores ?", () => {
     const liveBroken =
       "Do you accept Lublin's two forts at about 2.20:1 when Kielce, taken by the same Kraków columns plus Katowice's Landwehr. The map shows Kielce held only by X Corps with no fort, while Lublin's garrison sits behind fort 2."
