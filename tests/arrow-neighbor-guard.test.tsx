@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi, afterEach } from "vitest"
 import { act } from "react"
 import { createRoot } from "react-dom/client"
 import { readFileSync } from "node:fs"
@@ -22,7 +22,24 @@ function mapProvinces(): MapProvince[] {
   }))
 }
 
+/** jsdom lacks PointerEvent — minimal Event subclass with pointer fields. */
+class TestPointerEvent extends Event {
+  pointerId: number
+  clientX: number
+  clientY: number
+  constructor(type: string, init: PointerEventInit & { pointerId?: number } = {}) {
+    super(type, init)
+    this.pointerId = init.pointerId ?? 1
+    this.clientX = init.clientX ?? 0
+    this.clientY = init.clientY ?? 0
+  }
+}
+
 describe("arrow neighbor UI guard", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it("wires MapLibre + SVG preview invalid styling and touch/pointer drag", () => {
     const war = readFileSync("components/war-map.tsx", "utf8")
     expect(war).toContain("data-arrow-drag")
@@ -31,6 +48,9 @@ describe("arrow neighbor UI guard", () => {
     expect(war).toContain("touchstart")
     expect(war).toContain("touchmove")
     expect(war).toContain("touchend")
+    expect(war).toContain("touchcancel")
+    expect(war).toContain("cancelDrag")
+    expect(war).toContain("pointercancel")
     expect(war).toMatch(/properties:\s*\{\s*valid:/)
 
     const layers = readFileSync("lib/map/war-map-layers.ts", "utf8")
@@ -42,6 +62,11 @@ describe("arrow neighbor UI guard", () => {
     expect(svg).toContain("not-allowed")
     expect(svg).toContain("onPointerDown")
     expect(svg).toContain("onPointerUp")
+    expect(svg).toContain("elementFromPoint")
+    expect(svg).toContain("releasePointerCapture")
+    expect(svg).toContain('touchAction: orderMode ? "none"')
+    expect(svg).toContain("onPointerCancel")
+    expect(svg).toContain("provinceIdAt")
 
     const game = readFileSync("components/game-app.tsx", "utf8")
     expect(game).toContain("isNeighborOrderTarget")
@@ -53,7 +78,7 @@ describe("arrow neighbor UI guard", () => {
     expect(teach).toContain("nonAdjacentArrowHint")
   })
 
-  it("marks SVG preview invalid over a non-neighbor and valid over a neighbor", async () => {
+  it("hit-tests drop target via elementFromPoint (touch capture safe)", async () => {
     const provinces = mapProvinces()
     const host = document.createElement("div")
     document.body.append(host)
@@ -77,57 +102,116 @@ describe("arrow neighbor UI guard", () => {
       )
     })
 
+    const svg = host.querySelector('[data-testid="svg-map"]') as SVGSVGElement
     const fromPath = host.querySelector('[data-province-id="krakow"]') as SVGPathElement
     const neighborPath = host.querySelector('[data-province-id="kielce"]') as SVGPathElement
     const farPath = host.querySelector('[data-province-id="warszawa"]') as SVGPathElement
     expect(fromPath).toBeTruthy()
     expect(neighborPath).toBeTruthy()
     expect(farPath).toBeTruthy()
+    expect(svg.style.touchAction).toBe("none")
 
-    // jsdom lacks PointerEvent — polyfill a minimal Event subclass.
-    class TestPointerEvent extends Event {
-      pointerId: number
-      clientX: number
-      clientY: number
-      constructor(type: string, init: PointerEventInit & { pointerId?: number } = {}) {
-        super(type, init)
-        this.pointerId = init.pointerId ?? 1
-        this.clientX = init.clientX ?? 0
-        this.clientY = init.clientY ?? 0
-      }
-    }
+    const release = vi.fn()
+    fromPath.hasPointerCapture = () => true
+    fromPath.releasePointerCapture = release
 
     await act(async () => {
       fromPath.dispatchEvent(
         new TestPointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1 }),
       )
     })
-    expect(host.querySelector('[data-testid="svg-map"]')?.getAttribute("data-arrow-drag")).toBe(
-      "invalid",
-    )
+    expect(release).toHaveBeenCalledWith(1)
+    expect(svg.getAttribute("data-arrow-drag")).toBe("invalid")
+
+    // jsdom has no elementFromPoint — install a stub for touch-capture hit-testing.
+    let hit: Element | null = farPath
+    document.elementFromPoint = ((_x: number, _y: number) => hit) as typeof document.elementFromPoint
 
     await act(async () => {
-      farPath.dispatchEvent(new TestPointerEvent("pointerover", { bubbles: true, pointerId: 1 }))
-    })
-    expect(host.querySelector('[data-testid="svg-map"]')?.getAttribute("data-arrow-drag")).toBe(
-      "invalid",
-    )
-
-    await act(async () => {
-      neighborPath.dispatchEvent(
-        new TestPointerEvent("pointerover", { bubbles: true, pointerId: 1 }),
+      // Bubbles to the svg handler which hit-tests hover/drop.
+      fromPath.dispatchEvent(
+        new TestPointerEvent("pointermove", {
+          bubbles: true,
+          clientX: 40,
+          clientY: 40,
+          pointerId: 1,
+        }),
       )
     })
-    expect(host.querySelector('[data-testid="svg-map"]')?.getAttribute("data-arrow-drag")).toBe(
-      "valid",
-    )
+    expect(svg.getAttribute("data-arrow-drag")).toBe("invalid")
 
+    hit = neighborPath
     await act(async () => {
-      farPath.dispatchEvent(
-        new TestPointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1 }),
+      fromPath.dispatchEvent(
+        new TestPointerEvent("pointermove", {
+          bubbles: true,
+          clientX: 50,
+          clientY: 50,
+          pointerId: 1,
+        }),
+      )
+    })
+    expect(svg.getAttribute("data-arrow-drag")).toBe("valid")
+
+    hit = farPath
+    await act(async () => {
+      // pointerup still fires on the origin path (implicit capture) — hit-test must win.
+      fromPath.dispatchEvent(
+        new TestPointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 60,
+          clientY: 60,
+          pointerId: 1,
+        }),
       )
     })
     expect(onDraw).toHaveBeenCalledWith("krakow", "warszawa")
+    expect(onSelect).not.toHaveBeenCalled()
+
+    await act(async () => {
+      root.unmount()
+    })
+    host.remove()
+  })
+
+  it("cancels SVG drag on pointercancel without committing", async () => {
+    const provinces = mapProvinces()
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    const onDraw = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <SvgMap
+          provinces={provinces}
+          selectedId="krakow"
+          overlay="none"
+          orders={[]}
+          flashIds={[]}
+          orderMode
+          showRails={false}
+          onSelect={() => {}}
+          onDraw={onDraw}
+        />,
+      )
+    })
+
+    const svg = host.querySelector('[data-testid="svg-map"]') as SVGSVGElement
+    const fromPath = host.querySelector('[data-province-id="krakow"]') as SVGPathElement
+    await act(async () => {
+      fromPath.dispatchEvent(
+        new TestPointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1 }),
+      )
+    })
+    expect(svg.getAttribute("data-arrow-drag")).toBe("invalid")
+
+    await act(async () => {
+      svg.dispatchEvent(new TestPointerEvent("pointercancel", { bubbles: true, pointerId: 1 }))
+    })
+    expect(svg.getAttribute("data-arrow-drag")).toBeNull()
+    expect(onDraw).not.toHaveBeenCalled()
 
     await act(async () => {
       root.unmount()

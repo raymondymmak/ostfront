@@ -333,18 +333,32 @@ export function WarMap({
         if (!startId) return
         finish(event.point)
       })
-      const onWindowUp = (event: MouseEvent | TouchEvent) => {
+      const cancelDrag = () => {
         if (!startId) return
-        const canvas = map.getCanvas()
-        if (event.target === canvas) return
         startId = null
         clearPreview()
+        map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : ""
       }
+      // System gestures / app switches send touchcancel, not touchend — clear
+      // without committing so a later background touch cannot reuse startId.
+      map.on("touchcancel", () => cancelDrag())
+      const canvas = map.getCanvas()
+      const onCanvasPointerCancel = () => cancelDrag()
+      canvas.addEventListener("pointercancel", onCanvasPointerCancel)
+      const onWindowUp = (event: MouseEvent | TouchEvent) => {
+        if (!startId) return
+        if (event.target === canvas) return
+        cancelDrag()
+      }
+      const onWindowCancel = () => cancelDrag()
       window.addEventListener("mouseup", onWindowUp)
       window.addEventListener("touchend", onWindowUp)
+      window.addEventListener("touchcancel", onWindowCancel)
       map.once("remove", () => {
         window.removeEventListener("mouseup", onWindowUp)
         window.removeEventListener("touchend", onWindowUp)
+        window.removeEventListener("touchcancel", onWindowCancel)
+        canvas.removeEventListener("pointercancel", onCanvasPointerCancel)
       })
 
       map.on("click", "provinces", (event: maplibregl.MapLayerMouseEvent) => {

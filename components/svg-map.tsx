@@ -94,16 +94,32 @@ export function SvgMap({
   function point(event: ReactPointerEvent<Element>) {
     const svg = svgRef.current
     if (!svg) return null
-    const matrix = svg.getScreenCTM()
-    if (!matrix) return null
-    const local = svg.createSVGPoint()
-    local.x = event.clientX
-    local.y = event.clientY
-    const mapped = local.matrixTransform(matrix.inverse())
-    return [mapped.x, mapped.y] as [number, number]
+    try {
+      const matrix = svg.getScreenCTM?.()
+      if (!matrix) return null
+      const local = svg.createSVGPoint()
+      local.x = event.clientX
+      local.y = event.clientY
+      const mapped = local.matrixTransform(matrix.inverse())
+      return [mapped.x, mapped.y] as [number, number]
+    } catch {
+      // jsdom / environments without SVG layout — hover hit-test still works.
+      return null
+    }
+  }
+
+  /** Hit-test province under the pointer (works even when touch implicitly captures the origin path). */
+  function provinceIdAt(clientX: number, clientY: number): string | null {
+    if (typeof document === "undefined" || !document.elementFromPoint) return null
+    const hit = document.elementFromPoint(clientX, clientY)
+    if (!(hit instanceof Element)) return null
+    const node = hit.closest("[data-province-id]")
+    const id = node?.getAttribute("data-province-id")
+    return id || null
   }
 
   function clearDrag() {
+    originIdRef.current = null
     setOriginId(null)
     setPreview(null)
     setHoverTargetId(null)
@@ -118,6 +134,20 @@ export function SvgMap({
     else if (target) onSelect(target)
   }
 
+  function onArrowPointerMove(event: ReactPointerEvent<Element>) {
+    if (!originIdRef.current) return
+    setPreview(point(event))
+    const under = provinceIdAt(event.clientX, event.clientY)
+    setHoverTargetId(under)
+  }
+
+  function onArrowPointerUp(event: ReactPointerEvent<Element>) {
+    if (!originIdRef.current) return
+    event.stopPropagation()
+    const under = provinceIdAt(event.clientX, event.clientY)
+    commit(under)
+  }
+
   return (
     <>
       <svg
@@ -126,14 +156,16 @@ export function SvgMap({
         className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
         data-testid="svg-map"
         data-arrow-drag={arrowDrag ?? undefined}
-        onPointerMove={(event) => {
-          if (!originId) return
-          setPreview(point(event))
+        style={{ touchAction: orderMode ? "none" : undefined }}
+        onPointerMove={onArrowPointerMove}
+        onPointerUp={onArrowPointerUp}
+        onPointerCancel={() => {
+          if (!originIdRef.current) return
+          clearDrag()
         }}
-        onPointerUp={() => commit(null)}
         onPointerLeave={() => {
           setHoverTip(null)
-          if (!originId) return
+          if (!originIdRef.current) return
           clearDrag()
         }}
       >
@@ -233,24 +265,31 @@ export function SvgMap({
               }}
               onPointerOver={() => {
                 setHoverTip(tip)
-                if (originIdRef.current) setHoverTargetId(province.id)
               }}
               onPointerOut={() => {
                 setHoverTip(null)
-                if (originIdRef.current) setHoverTargetId(null)
               }}
               onPointerDown={(event) => {
                 if (!orderMode) return
                 event.preventDefault()
                 event.stopPropagation()
+                // Touch browsers implicitly capture the down target; release so
+                // moves/up can hit-test the province under the finger.
+                const target = event.currentTarget
+                if (target.hasPointerCapture?.(event.pointerId)) {
+                  target.releasePointerCapture(event.pointerId)
+                }
                 originIdRef.current = province.id
                 setOriginId(province.id)
                 setHoverTargetId(null)
               }}
               onPointerUp={(event) => {
                 event.stopPropagation()
-                if (orderMode && originIdRef.current) commit(province.id)
-                else onSelect(province.id)
+                if (orderMode && originIdRef.current) {
+                  onArrowPointerUp(event)
+                  return
+                }
+                onSelect(province.id)
               }}
             >
               <title>{tip}</title>
