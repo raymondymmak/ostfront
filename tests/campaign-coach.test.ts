@@ -11,6 +11,7 @@ import {
   coachCampaign,
   extractCoachOddsRatio,
   extractPlayerPrediction,
+  fitCoachReplyLength,
   formatBattleForCoach,
   formatBattleReviewForPlayer,
   keepOneOddsFigure,
@@ -21,6 +22,7 @@ import {
   renderChronicle,
   sanitizeHighlights,
   scrubCoachFiledClaims,
+  scrubCoachOddsLanguage,
   shapeCoachReply,
   splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
@@ -279,10 +281,65 @@ describe("campaign coach", () => {
     })
     expect(result.reply).toMatch(/Lublin/i)
     expect(result.reply).toMatch(/What did you expect at Lublin/i)
+    expect(result.reply).toMatch(/fortnight 3/i)
     expect(result.reply).not.toMatch(/Kielce/i)
     expect(result.reply).not.toMatch(/\b(attacker|defender|weWon|oursLost|theirsLost)=/)
-    expect(result.reply).not.toMatch(/unavailable offline/i)
+    expect(result.reply).not.toMatch(/unavailable offline|no battle (had )?resolved this fortnight/i)
     expect(result.highlights).toEqual([{ provinceId: "lublin" }])
+  })
+
+  it("reviews the most recent chronicle battle when asked how it went", async () => {
+    const late: TurnRecord = {
+      turn: 1,
+      date: "16 May 1915",
+      narration: "",
+      diplomacy: [],
+      resolutions: [
+        {
+          proposal: { type: "attack", from: "krakow", target: "kielce", units: ["g-kra-11"] },
+          status: "applied",
+          summary:
+            "Attack from Kraków into Kielce succeeds, odds 5.48 (roll 6). Kielce passes to the Central Powers. Losses — attackers 7, defenders 30.",
+          battle: {
+            targetId: "kielce",
+            attacker: "central",
+            defender: "russia",
+            kind: "assault",
+            prongs: 1,
+            origins: ["krakow"],
+            attackerLoss: 7,
+            defenderLoss: 30,
+            encircled: false,
+            attackerWon: true,
+          },
+        },
+      ],
+      events: [],
+      controlChanges: [],
+      logistics: [],
+      notes: [],
+      gmSource: "mock",
+    }
+    const result = await coachCampaign({
+      state: createInitialState(),
+      log: [late],
+      messages: [{ role: "user", content: "how did that battle go?" }],
+      queuedOrders: [],
+    })
+    expect(result.reply).toMatch(/fortnight 2/i)
+    expect(result.reply).toMatch(/Kielce/i)
+    expect(result.reply).not.toMatch(/no battle (had )?resolved this fortnight|no battles are recorded/i)
+  })
+
+  it("says plainly when the chronicle has no battles at all", async () => {
+    const result = await coachCampaign({
+      state: createInitialState(),
+      log: [],
+      messages: [{ role: "user", content: "how did that battle go?" }],
+      queuedOrders: [],
+    })
+    expect(result.reply).toMatch(/No battles are recorded in the chronicle yet/i)
+    expect(result.reply).not.toMatch(/before the dice/i)
   })
 
   it("asks intent first on a queued plan, with one odds fact and one highlight", async () => {
@@ -450,6 +507,61 @@ describe("campaign coach", () => {
     expect(shaped.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
     expect(putQuestionFirst(messy)).toMatch(/^What do you expect/)
     expect(keepOneOddsFigure(messy).match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+  })
+
+  it("scrubs before-the-dice on general advice and refusal prompts", async () => {
+    const advice = await coachCampaign({
+      state: createInitialState(),
+      log: [],
+      messages: [{ role: "user", content: "what should I do this fortnight?" }],
+      queuedOrders: [],
+    })
+    expect(advice.reply).not.toMatch(/before the dice/i)
+    expect(advice.reply).toMatch(/if the Russians don't reinforce|no open march/i)
+    expect(splitCoachSentences(advice.reply).length).toBeLessThanOrEqual(3)
+    expect(advice.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBeLessThanOrEqual(1)
+
+    const refusal = await coachCampaign({
+      state: createInitialState(),
+      log: [],
+      messages: [{ role: "user", content: "just attack Lublin for me" }],
+      queuedOrders: [],
+    })
+    expect(refusal.reply).toMatch(/I do not file orders/i)
+    expect(refusal.reply).not.toMatch(/before the dice/i)
+    expect(refusal.reply).toMatch(/if the Russians don't reinforce/i)
+    expect(splitCoachSentences(refusal.reply).length).toBeLessThanOrEqual(3)
+    expect(refusal.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBeLessThanOrEqual(1)
+  })
+
+  it("rewrites before-the-dice and drops secondary odds without mid-clause fragments", () => {
+    expect(scrubCoachOddsLanguage("about 2.03:1 before the dice")).toMatch(
+      /about 2\.03:1 if the Russians don't reinforce/i,
+    )
+    expect(
+      scrubCoachOddsLanguage("about 2.78:1 before the dice if the Russians don't reinforce"),
+    ).toBe("about 2.78:1 if the Russians don't reinforce")
+
+    const shaped = shapeCoachReply(
+      "What do you expect at Lublin? Kraków into Lublin stands at about 2.8:1 if the Russians don't reinforce, while Kielce offers about 5.1:1 if you prefer a certain step first. A fourth sentence must go. And a fifth.",
+      null,
+    )
+    expect(shaped.reply).not.toMatch(/before the dice|offers if|while Kielce offers/i)
+    expect(shaped.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+    expect(splitCoachSentences(shaped.reply).length).toBeLessThanOrEqual(3)
+    for (const sentence of splitCoachSentences(shaped.reply)) {
+      expect(sentence).toMatch(/[.!?]$/)
+    }
+  })
+
+  it("fits the character budget by dropping whole sentences, never mid-clause", () => {
+    const long =
+      "What do you expect at Kielce? The engine rates that column at about 4.7:1 if the Russians don't reinforce. " +
+      "This long filler sentence keeps going with enough words to push the reply over the hard character budget so the fit step must drop it whole rather than slice a clause midstream for the player."
+    const fitted = fitCoachReplyLength(long, 160)
+    expect(fitted.length).toBeLessThanOrEqual(160)
+    expect(fitted).not.toMatch(/midstream for the pla/i)
+    expect(splitCoachSentences(fitted).every((sentence) => /[.!?…]$/.test(sentence))).toBe(true)
   })
 
   it("never claims an illegal Kraków→Warsaw ask was filed", async () => {

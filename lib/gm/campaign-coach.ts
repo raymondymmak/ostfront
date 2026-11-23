@@ -86,8 +86,9 @@ Socratic style (strict):
 - If the player has not said their intent or expectation, open with one short question (e.g. "What do you expect Kielce to do for the Lemberg push?"), then one evidence sentence.
 - Return exactly one highlight that matches that evidence (one provinceId or one uiId). Never invent screen coordinates.
 - Post-battle: ask what they predicted. If they already stated a prediction in CONVERSATION, compare it to the chronicle result (odds, roll, losses, who holds the province). Do not recite ledger noise such as raw supply pairs (e.g. "159 against 56") unless that supply fact directly explains the outcome.
-- Odds: quote ONLY from QUEUED_RESOLUTION_ODDS (one figure per attack). Those match engagementOdds after staffMap supply decay/capacity — the same preview resolveTurn uses when the garrison does not change. Say "about X:1 if the Russians don't reinforce". Never quote two ratios. Never say "before the dice". Never invent higher card-style odds.
+- Odds: quote ONLY from QUEUED_RESOLUTION_ODDS when attacks are queued; otherwise one contact figure from the DISPATCH. Those match engagementOdds after staffMap supply decay/capacity — the same preview resolveTurn uses when the garrison does not change. Say "about X:1 if the Russians don't reinforce". Never quote two ratios. Never say "before the dice". Never invent higher card-style odds.
 - You do not file, note, or queue orders. Never claim an order was filed, noted, or queued (e.g. never "Filed as noted").
+- Battle review: cite the most recent battle in the CHRONICLE and name its fortnight (e.g. "In fortnight 2…"). Do not say no battle resolved this fortnight when an earlier fortnight has a battle. Only if the chronicle has no battles at all, say so plainly.
 
 Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE / QUEUED_RESOLUTION_ODDS. Never invent ratios.
 
@@ -126,8 +127,10 @@ export async function coachCampaign(input: {
   }
 
   const queuedOdds = renderQueuedResolutionOdds(map, queued)
+  // DISPATCH contacts still use advisor formatOdds ("before the dice"); scrub so the model cannot copy it.
+  const dispatch = scrubCoachOddsLanguage(renderSituation(situation))
   const prompt = [
-    renderSituation(situation),
+    dispatch,
     "",
     "QUEUED_RESOLUTION_ODDS",
     queuedOdds,
@@ -248,14 +251,38 @@ export function splitCoachSentences(text: string): string[] {
   return parts
 }
 
-/** Drop raw supply ledger pairs (e.g. "159 against 56") unless left alone after scrubbing. */
+/** Drop raw supply ledger pairs (e.g. "159 against 56") — whole sentences only, never mid-clause fragments. */
 export function scrubCoachLedgerNoise(reply: string): string {
-  let out = reply
+  const out: string[] = []
+  for (const sentence of splitCoachSentences(reply)) {
+    const before = sentence
+    let cleaned = sentence
+      .replace(
+        /\s*(?:,|;|:)?\s*(?:and\s+)?(?:(?:the|our|their)\s+)?over[- ]supply(?:\s+of|\s+line(?:\s+reads)?)?\s+\d+\s+against\s+(?:their\s+)?\d+/gi,
+        "",
+      )
+      .replace(/\b\d{2,3}\s+against\s+\d{2,3}\b/g, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+([,;:.!?])/g, "$1")
+      .trim()
+    // Only drop when scrubbing gutted the sentence; keep short intentional sentences.
+    if (!cleaned) continue
+    if (cleaned !== before.trim() && cleaned.length < 12) continue
+    out.push(cleaned)
+  }
+  return out.join(" ").trim()
+}
+
+/**
+ * Rewrite forbidden dice phrasing on every reply path (LLM may copy DISPATCH
+ * "before the dice" from advisor formatOdds). Dedupe the reinforce clause.
+ */
+export function scrubCoachOddsLanguage(reply: string): string {
+  let out = reply.replace(/\bbefore the dice\b/gi, "if the Russians don't reinforce")
   out = out.replace(
-    /\s*(?:,|;|:)?\s*(?:and\s+)?(?:(?:the|our|their)\s+)?over[- ]supply(?:\s+of|\s+line(?:\s+reads)?)?\s+\d+\s+against\s+(?:their\s+)?\d+/gi,
-    "",
+    /(?:\s*if the Russians don't reinforce)+\b/gi,
+    " if the Russians don't reinforce",
   )
-  out = out.replace(/\b\d{2,3}\s+against\s+\d{2,3}\b/g, "")
   out = out.replace(/\s{2,}/g, " ").replace(/\s+([,;:.!?])/g, "$1").trim()
   return out
 }
@@ -284,7 +311,10 @@ export function scrubCoachFiledClaims(reply: string): string {
 const ODDS_FIGURE =
   /\b(?:odds\s+(?:about\s+)?)?(?:\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+\d+(?:\.\d+)?\s*:\s*1\b/gi
 
-/** Keep the first odds ratio; strip later ratios so replies never quote two figures. */
+/**
+ * Keep the first odds ratio; drop later sentences that carry another ratio
+ * (never strip mid-clause — that left fragments like "while Kielce offers if…").
+ */
 export function keepOneOddsFigure(reply: string): string {
   const sentences = splitCoachSentences(reply)
   let seen = false
@@ -298,8 +328,23 @@ export function keepOneOddsFigure(reply: string): string {
     }
     if (!seen) {
       seen = true
+      // When a second odds figure sits after ", while" / "; and", keep only the first clause.
+      // Do not cut on every semicolon (battle reviews use "; we lost…").
+      let primary = sentence
+      ODDS_FIGURE.lastIndex = 0
+      const first = ODDS_FIGURE.exec(sentence)
+      const second = first ? ODDS_FIGURE.exec(sentence) : null
+      if (first && second) {
+        const head = sentence.slice(0, second.index)
+        const whileCut = head.search(/,\s*while\b/i)
+        const andCut = head.search(/;\s+and\s+/i)
+        const cut = Math.max(whileCut, andCut)
+        if (cut > 0) {
+          primary = `${sentence.slice(0, cut).replace(/[,;:\s]+$/, "")}.`
+        }
+      }
       let count = 0
-      const trimmed = sentence
+      primary = primary
         .replace(ODDS_FIGURE, (match) => {
           count += 1
           return count === 1 ? match : ""
@@ -307,19 +352,10 @@ export function keepOneOddsFigure(reply: string): string {
         .replace(/\s{2,}/g, " ")
         .replace(/\s+([,;:.!?])/g, "$1")
         .trim()
-      if (trimmed) out.push(trimmed)
+      if (primary.length >= 12) out.push(primary)
       continue
     }
-    const stripped = sentence
-      .replace(ODDS_FIGURE, "")
-      .replace(/\b(?:two-pronged|concentric),?\s*/gi, "")
-      .replace(/\bif the Russians don't reinforce\b/gi, "")
-      .replace(/\bas the engine resolves this fortnight\b/gi, "")
-      .replace(/\sbefore the dice\b/gi, "")
-      .replace(/\s{2,}/g, " ")
-      .replace(/\s+([,;:.!?])/g, "$1")
-      .trim()
-    if (stripped.length >= 12) out.push(stripped)
+    // Later odds sentences: drop entirely (do not strip in place).
   }
   return out.join(" ").trim()
 }
@@ -335,21 +371,42 @@ export function putQuestionFirst(reply: string): string {
 }
 
 /**
- * Post-process coach prose: scrub false filing claims, one odds figure, question first,
- * then the 2–3 sentence / character cap.
+ * Enforce the character budget by dropping whole trailing sentences — never cut mid-clause.
+ * Only if a single remaining sentence still exceeds the cap, truncate at a word boundary.
+ */
+export function fitCoachReplyLength(reply: string, maxChars = COACH_REPLY_MAX_CHARS): string {
+  let sentences = splitCoachSentences(reply)
+  if (!sentences.length) return ""
+  while (sentences.length > 1 && sentences.join(" ").length > maxChars) {
+    sentences = sentences.slice(0, -1)
+  }
+  let out = sentences.join(" ").trim()
+  if (out.length <= maxChars) return out
+  // One long sentence: keep a complete leading clause if possible, else word-boundary ellipsis.
+  const clauseCut = out.search(/,\s+(?:while|though|although|and|but)\b/i)
+  if (clauseCut > 40 && clauseCut < maxChars - 1) {
+    const clause = `${out.slice(0, clauseCut).replace(/[,;:\s]+$/, "")}.`
+    if (clause.length <= maxChars) return clause
+  }
+  const sliced = out.slice(0, maxChars - 1).replace(/\s+\S*$/, "").replace(/[,;:\s]+$/, "").trim()
+  return sliced ? `${sliced}…` : out.slice(0, maxChars - 1).trimEnd() + "…"
+}
+
+/**
+ * Post-process coach prose on every path: scrub dice/filing noise, one odds figure,
+ * question first, 2–3 sentence cap, then whole-sentence character fit.
  */
 export function capCoachReply(reply: string): string {
   let cleaned = scrubCoachLedgerNoise(reply.replace(/\s+/g, " ").trim())
+  cleaned = scrubCoachOddsLanguage(cleaned)
   cleaned = scrubCoachFiledClaims(cleaned)
   cleaned = keepOneOddsFigure(cleaned)
+  cleaned = scrubCoachOddsLanguage(cleaned)
   cleaned = putQuestionFirst(cleaned)
   if (!cleaned) return cleaned
   const kept = splitCoachSentences(cleaned).slice(0, COACH_MAX_SENTENCES)
-  let out = putQuestionFirst(kept.join(" ").trim())
-  if (out.length > COACH_REPLY_MAX_CHARS) {
-    out = `${out.slice(0, COACH_REPLY_MAX_CHARS - 1).replace(/\s+\S*$/, "").trim()}…`
-  }
-  return out
+  const ordered = putQuestionFirst(kept.join(" ").trim())
+  return fitCoachReplyLength(ordered)
 }
 
 /** Merge a trailing follow-up question into reply-first form; then cap. */
@@ -733,18 +790,51 @@ function rulesCoach(
       const last = battles[battles.length - 1]!
       const target = provinceLabel(last.battle.targetId)
       const evidence = formatBattleReviewForPlayer(last.turn, last.date, last.battle, last.summary)
+      const evidenceBody = evidence.replace(/^In /, "").replace(/\.$/, "")
       if (prediction) {
         return {
-          reply: `You expected ${prediction.replace(/\.$/, "")}; the chronicle shows ${evidence.replace(/^In /, "").replace(/\.$/, "")}.`,
+          reply: `You expected ${prediction.replace(/\.$/, "")}; the chronicle shows ${evidenceBody}.`,
           followUp: null,
           highlights: [{ provinceId: last.battle.targetId }],
         }
       }
+      // Name the fortnight even when the open fortnight has no battle yet.
       return {
-        reply: `What did you expect at ${target}? The chronicle shows ${evidence.replace(/^In fortnight \d+ \([^)]+\) /, "").replace(/\.$/, "")}.`,
+        reply: `What did you expect at ${target}? The chronicle shows ${evidenceBody}.`,
         followUp: null,
         highlights: [{ provinceId: last.battle.targetId }],
       }
+    }
+    return {
+      reply:
+        "No battles are recorded in the chronicle yet. What outcome are you trying to force this fortnight?",
+      followUp: null,
+      highlights: [{ uiId: "chronicle-log-toggle" }],
+    }
+  }
+
+  const wantsFiling =
+    /(?:just |please )?(?:attack|fortify|move|recruit).{0,60}\bfor me\b|\bfile (?:an? )?orders?\b|\byou (?:should )?(?:attack|order)\b/i.test(
+      lower,
+    )
+  if (wantsFiling) {
+    const weak = [...situation.contacts].sort((a, b) => b.ratio - a.ratio)[0]
+    if (weak) {
+      const oddsBit = Number.isFinite(weak.ratio)
+        ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
+        : weak.empty
+          ? " — undefended if the Russians don't reinforce"
+          : " if the Russians don't reinforce"
+      return {
+        reply: `I do not file orders. What do you expect ${weak.targetName} to do for the Lemberg push? The strongest contact is ${weak.fromName} into ${weak.targetName}${oddsBit}.`,
+        followUp: null,
+        highlights: [{ provinceId: weak.targetId }],
+      }
+    }
+    return {
+      reply: "I do not file orders. What are you trying to achieve this fortnight?",
+      followUp: null,
+      highlights: [{ uiId: "tab-orders" }],
     }
   }
 
@@ -799,8 +889,13 @@ function rulesCoach(
 
   const weak = [...situation.contacts].sort((a, b) => b.ratio - a.ratio)[0]
   if (weak) {
+    const oddsBit = Number.isFinite(weak.ratio)
+      ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
+      : weak.empty
+        ? " — undefended if the Russians don't reinforce"
+        : " if the Russians don't reinforce"
     return {
-      reply: `What axis are you weighing this fortnight? The strongest engine contact is ${weak.fromName} into ${weak.targetName}.`,
+      reply: `What axis are you weighing this fortnight? The strongest engine contact is ${weak.fromName} into ${weak.targetName}${oddsBit}.`,
       followUp: null,
       highlights: [{ provinceId: weak.targetId }],
     }
