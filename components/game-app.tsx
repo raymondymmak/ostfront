@@ -789,7 +789,8 @@ export function GameApp() {
           />
           {desktopShell &&
             windows.map((win) => {
-              if (!win.open) return null
+              // Keep Chief of Staff mounted while filed so drafts/suggestions survive.
+              if (!win.open && win.id !== "advisor") return null
               const focus = () => setWindows((current) => focusWindow(current, win.id))
               const stow = () => setWindowOpen(win.id, false)
               const stowAt = (clientX?: number) => stowPaper(win.id, clientX)
@@ -922,6 +923,7 @@ export function GameApp() {
                     key={win.id}
                     title={TABLE_WINDOW_TITLES.advisor}
                     open={win.open}
+                    keepMounted
                     x={win.x}
                     y={win.y}
                     z={win.z}
@@ -933,7 +935,7 @@ export function GameApp() {
                     {...paperProps}
                   >
                     <AdvisorPanel
-                      open
+                      open={win.open}
                       embedded
                       state={game.state}
                       queue={queue}
@@ -1015,7 +1017,7 @@ export function GameApp() {
               <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto">
                 {provincePanel}
               </TabsContent>
-              <TabsContent value="advisor" className="min-h-0 flex-1 overflow-hidden">
+              <TabsContent value="advisor" keepMounted className="min-h-0 flex-1 overflow-hidden">
                 <AdvisorPanel
                   open={sideTab === "advisor"}
                   embedded

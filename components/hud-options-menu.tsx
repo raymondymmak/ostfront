@@ -69,7 +69,16 @@ export function HudOptionsMenu({ armReset, teachMode, onReset }: HudOptionsMenuP
       }
     }
 
+    function focusInsideMenu() {
+      const root = rootRef.current
+      const active = document.activeElement
+      return Boolean(root && active instanceof Node && root.contains(active))
+    }
+
     function onKeyDown(event: KeyboardEvent) {
+      // Do not steal map/tray shortcuts once focus has left the menu.
+      if (!focusInsideMenu()) return
+
       if (event.key === "Escape") {
         event.preventDefault()
         event.stopPropagation()
@@ -113,13 +122,23 @@ export function HudOptionsMenu({ armReset, teachMode, onReset }: HudOptionsMenuP
       }
     }
 
+    function onFocusIn(event: FocusEvent) {
+      const root = rootRef.current
+      if (!root) return
+      if (event.target instanceof Node && !root.contains(event.target)) {
+        closeMenu(false)
+      }
+    }
+
     document.addEventListener("mousedown", onPointerDown)
     document.addEventListener("keydown", onKeyDown, true)
+    document.addEventListener("focusin", onFocusIn)
     focusItem(items[0]!.id)
 
     return () => {
       document.removeEventListener("mousedown", onPointerDown)
       document.removeEventListener("keydown", onKeyDown, true)
+      document.removeEventListener("focusin", onFocusIn)
     }
     // items / enabledIds are stable for a given open session (labels may change
     // with armReset but the id list does not).

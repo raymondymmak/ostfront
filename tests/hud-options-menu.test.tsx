@@ -76,6 +76,60 @@ describe("HudOptionsMenu", () => {
     host.remove()
   })
 
+  it("ignores navigation keys once focus leaves the menu", async () => {
+    const onReset = vi.fn()
+    const host = document.createElement("div")
+    document.body.append(host)
+    const outside = document.createElement("button")
+    outside.textContent = "map"
+    document.body.append(outside)
+    const root = createRoot(host)
+
+    await act(async () => {
+      root.render(<HudOptionsMenu armReset={false} onReset={onReset} />)
+    })
+
+    const trigger = host.querySelector('[data-testid="hud-options"]') as HTMLButtonElement
+    await act(async () => {
+      trigger.click()
+    })
+    expect(host.querySelector('[data-testid="hud-options-menu"]')).toBeTruthy()
+
+    // Focus leaving the menu closes it so map/tray shortcuts are free again.
+    await act(async () => {
+      outside.focus()
+    })
+    expect(host.querySelector('[data-testid="hud-options-menu"]')).toBeNull()
+
+    const arrow = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    })
+    const escape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    })
+    await act(async () => {
+      document.dispatchEvent(arrow)
+      document.dispatchEvent(escape)
+    })
+    expect(arrow.defaultPrevented).toBe(false)
+    expect(escape.defaultPrevented).toBe(false)
+    expect(host.querySelector('[data-testid="hud-options-menu"]')).toBeNull()
+
+    const src = readFileSync("components/hud-options-menu.tsx", "utf8")
+    expect(src).toContain("focusInsideMenu")
+    expect(src).toContain('document.addEventListener("focusin", onFocusIn)')
+
+    await act(async () => {
+      root.unmount()
+    })
+    host.remove()
+    outside.remove()
+  })
+
   it("closes when clicking outside the menu", async () => {
     const onReset = vi.fn()
     const host = document.createElement("div")
