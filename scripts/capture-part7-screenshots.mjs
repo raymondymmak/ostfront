@@ -51,7 +51,9 @@ async function dragPaperTowardTray(page, dialog, { release = true, edge = false 
   const sx = box.x + Math.min(60, box.width / 2)
   const sy = box.y + 10
   const ex = trayBox.x + trayBox.width / 2
-  const ey = edge ? trayBox.y + 2 : trayBox.y + trayBox.height / 2
+  // Prefer the tray edge so short papers (OHL) stay mostly on-screen while highlighting.
+  const ey = edge ? trayBox.y + 2 : trayBox.y + 6
+  void edge
   await page.mouse.move(sx, sy)
   await page.mouse.down()
   await page.mouse.move(ex, ey, { steps: 14 })
@@ -71,10 +73,27 @@ try {
 
   const ohl = page.locator("[data-testid=ohl-orders-window]")
   await ohl.waitFor({ state: "visible", timeout: 10_000 })
+  // File other papers first so the mid-drag OHL shot is uncluttered (keep OHL out).
+  for (const label of ["Orders", "Legend"]) {
+    const win = page.locator(`[role="dialog"][aria-label="${label}"]`)
+    if (!(await win.isVisible().catch(() => false))) continue
+    await win.locator("[data-testid=floating-window-drag-handle]").click().catch(() => {})
+    await page.keyboard.press("Escape")
+    await win.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {})
+  }
+  await ohl.waitFor({ state: "visible", timeout: 5_000 })
   await dragPaperTowardTray(page, ohl, { release: false })
+  await page.waitForFunction(
+    () =>
+      document.querySelector("[data-testid=ohl-orders-window]")?.getAttribute("data-over-tray") === "true" ||
+      document.querySelector("[data-testid=document-tray]")?.getAttribute("data-drop-active") === "true",
+    null,
+    { timeout: 5_000 },
+  )
   await shot(page, "part7-ohl-mid-drag-tray-1440x900.png")
   await page.mouse.up()
   await page.waitForTimeout(250)
+  await ohl.waitFor({ state: "hidden", timeout: 5_000 })
   await shot(page, "part7-ohl-filed-1440x900.png")
 
   // Take Orders out and drop at the tray edge.

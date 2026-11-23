@@ -116,6 +116,6 @@ describe("document-tray", () => {
     const ohl = lifted.find((item) => item.id === "ohl")
     expect(ohl).toBeTruthy()
     expect(ohl!.y + WINDOW_HEADER_HEIGHT).toBeLessThanOrEqual(trayTopY(stageH))
-    expect(ohl!.z).toBeGreaterThan(40)
+    expect(ohl!.z).toBeGreaterThan(30)
   })
 })

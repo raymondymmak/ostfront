@@ -118,5 +118,6 @@ describe("window-drag", () => {
     }
     expect(ensurePaperZ(22)).toBe(PAPER_Z_FLOOR)
     expect(ensurePaperZ(80)).toBe(80)
+    expect(PAPER_Z_FLOOR).toBeGreaterThan(DOCUMENT_TRAY_Z)
   })
 })

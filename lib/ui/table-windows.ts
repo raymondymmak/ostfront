@@ -40,8 +40,11 @@ export function stageHeightForWindows(
  * Papers paint above the document tray (`DOCUMENT_TRAY_Z` / CSS `z-[40]`).
  * A paper must never render behind the tray bar — including session-restored z.
  */
-export const DOCUMENT_TRAY_Z = 40
-export const PAPER_Z_FLOOR = DOCUMENT_TRAY_Z + 10
+/** Tray bar stacking — papers always use a higher z (see PAPER_Z_FLOOR). */
+export const DOCUMENT_TRAY_Z = 30
+export const PAPER_Z_FLOOR = DOCUMENT_TRAY_Z + 20
+/** While dragging over the tray, lift further so short papers stay visible on top. */
+export const PAPER_DRAG_Z = 200
 const BASE_Z = PAPER_Z_FLOOR
 
 export type ClampWindowOptions = {

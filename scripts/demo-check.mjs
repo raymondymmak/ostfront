@@ -778,8 +778,8 @@ function buildSteps(cli, targets) {
           if (!(paper instanceof HTMLElement) || !(bar instanceof HTMLElement)) return false
           const pz = Number(getComputedStyle(paper).zIndex) || 0
           const tz = Number(getComputedStyle(bar).zIndex) || 0
-          // Tray wrapper may be z-40; paper style.zIndex should be higher than 40.
-          return pz > 40 || pz > tz
+          // Tray wrapper is z-30; while dragging papers use PAPER_DRAG_Z (200).
+          return pz >= 50 || pz > tz
         })
         if (!zOk) throw new Error("OHL z-index is not above the document tray while dragging")
         await page.mouse.up()

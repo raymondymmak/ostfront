@@ -909,7 +909,7 @@ export function GameApp() {
               return null
             })}
           {desktopShell && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[40]">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[30]">
               <DocumentTray
                 items={CAMPAIGN_TRAY_ITEMS}
                 openById={windowOpenMap}
