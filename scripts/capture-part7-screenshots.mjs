@@ -7,13 +7,21 @@ const BASE = process.env.DEMO_URL || "http://127.0.0.1:3456"
 const OUT = process.env.OUT_DIR || "/opt/cursor/artifacts"
 mkdirSync(OUT, { recursive: true })
 
+function withPath(base, path) {
+  const url = new URL(base)
+  url.pathname = path
+  return url.toString()
+}
+
 async function beginCampaign(page) {
-  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" })
+  // Visit share URL first so protection cookies stick, then clear game storage
+  // without dropping the share query (reload alone can lose Vercel share auth).
+  await page.goto(withPath(BASE, "/"), { waitUntil: "domcontentloaded", timeout: 60_000 })
   await page.evaluate(() => {
     localStorage.removeItem("ostfront-1915-v1")
     sessionStorage.clear()
   })
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await page.goto(withPath(BASE, "/"), { waitUntil: "domcontentloaded", timeout: 60_000 })
   await page.locator("[data-testid=begin-scenario]").waitFor({ state: "visible", timeout: 60_000 })
   await page.locator("[data-testid=begin-scenario]").click()
   await page.locator("[data-testid=war-map]").waitFor({ state: "visible", timeout: 60_000 })
@@ -21,8 +29,9 @@ async function beginCampaign(page) {
 }
 
 async function beginTeach(page) {
-  await page.goto(`${BASE}/teach`, { waitUntil: "domcontentloaded" })
+  await page.goto(withPath(BASE, "/teach"), { waitUntil: "domcontentloaded", timeout: 60_000 })
   await page.evaluate(() => sessionStorage.clear())
+  await page.goto(withPath(BASE, "/teach"), { waitUntil: "domcontentloaded", timeout: 60_000 })
   await page.locator("[data-testid=teach-begin]").waitFor({ state: "visible", timeout: 60_000 })
   await page.locator("[data-testid=teach-begin]").click()
   await page.locator("[data-testid=teach-app]").waitFor({ state: "visible", timeout: 60_000 })
