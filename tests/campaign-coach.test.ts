@@ -14,7 +14,6 @@ import {
   renderChronicle,
   sanitizeHighlights,
 } from "@/lib/gm/campaign-coach"
-import { buildSituation } from "@/lib/gm/advisor"
 import type { BattleFacts, TurnRecord } from "@/lib/types"
 import { playTurn } from "@/lib/gm"
 import { createInitialState } from "@/lib/data/scenario"
@@ -245,8 +244,27 @@ describe("campaign coach", () => {
 
   it("does not attach unrelated combat odds when the queue has no attack", () => {
     const state = createInitialState()
-    const situation = buildSituation(state, [{ type: "fortify", provinceId: "krakow" }])
-    expect(queuedAttackPreview(situation, [{ type: "fortify", provinceId: "krakow" }])).toBeNull()
+    expect(queuedAttackPreview(state, [{ type: "fortify", provinceId: "krakow" }])).toBeNull()
+  })
+
+  it("quotes odds for the committed unitIds, not default formations", () => {
+    const state = createInitialState()
+    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    const centrals = krakow.units.filter((unit) => unit.faction === "central")
+    expect(centrals.length).toBeGreaterThan(1)
+    const one = centrals[0]!
+    const allIds = centrals.map((unit) => unit.id)
+    const committed = queuedAttackPreview(state, [
+      { type: "attack", from: "krakow", target: "kielce", unitIds: [one.id] },
+    ])
+    const full = queuedAttackPreview(state, [
+      { type: "attack", from: "krakow", target: "kielce", unitIds: allIds },
+    ])
+    expect(committed?.targetId).toBe("kielce")
+    expect(full?.targetId).toBe("kielce")
+    expect(committed?.odds).toBeTruthy()
+    expect(full?.odds).toBeTruthy()
+    expect(committed?.odds).not.toBe(full?.odds)
   })
 })
 

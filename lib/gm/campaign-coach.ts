@@ -2,11 +2,13 @@ import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import {
   buildSituation,
   finishAdvisorReply,
+  formatOdds,
   renderSituation,
   scrubAdvisorReply,
   staffMap,
   type Situation,
 } from "@/lib/gm/advisor"
+import { combinedEngagementOdds, engagementOdds } from "@/lib/engine/turn"
 import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
 import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
 import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
@@ -98,7 +100,7 @@ export async function coachCampaign(input: {
   const situation = buildSituation(map, queued)
   const chronicle = renderChronicle(input.log)
   const selected = renderSelected(map, input.selectedProvinceId)
-  const rules = rulesCoach(situation, selected, input.log, input.messages, queued)
+  const rules = rulesCoach(map, situation, selected, input.log, input.messages, queued)
   const ordersClosed = situation.over
 
   if (!llmConfigured() && !fixtureEnabled()) {
@@ -287,32 +289,42 @@ function renderSelected(state: GameState, selectedProvinceId?: string | null): s
   return `${province.id} ${province.name} controller=${province.controller} supply=${province.supply} fort=${province.fort} centralStrength=${strength}`
 }
 
-/** Engine preview for the player's actual queued attacks (not an unrelated contact). */
+/**
+ * Engine preview for the player's committed queued attacks.
+ * Uses order.unitIds (same path as the order panel), never default-formation contacts.
+ */
 export function queuedAttackPreview(
-  situation: Situation,
+  map: GameState,
   queued: PlayerOrder[],
 ): { targetId: string; odds: string | null } | null {
-  const attacks = queued.filter((order) => order.type === "attack")
+  const attacks = queued.filter(
+    (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
+  )
   if (!attacks.length) return null
-  for (const battle of situation.combined) {
-    const hits = attacks.some((order) => order.type === "attack" && order.target === battle.targetId)
-    if (!hits) continue
-    if (battle.queuedOdds || battle.prongs.some((prong) => prong.queued)) {
-      return { targetId: battle.targetId, odds: battle.queuedOdds ?? battle.odds }
-    }
-  }
+
+  const byTarget = new Map<string, Extract<PlayerOrder, { type: "attack" }>[]>()
   for (const order of attacks) {
-    if (order.type !== "attack") continue
-    const contact = situation.contacts.find(
-      (item) => item.fromId === order.from && item.targetId === order.target,
-    )
-    if (contact) return { targetId: contact.targetId, odds: contact.odds }
+    const group = byTarget.get(order.target) ?? []
+    group.push(order)
+    byTarget.set(order.target, group)
   }
-  const first = attacks[0]
-  return first && first.type === "attack" ? { targetId: first.target, odds: null } : null
+
+  for (const [targetId, prongs] of byTarget) {
+    const preview =
+      prongs.length >= 2
+        ? combinedEngagementOdds(
+            map,
+            targetId,
+            prongs.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
+          )
+        : engagementOdds(map, prongs[0]!.from, targetId, prongs[0]!.unitIds)
+    return { targetId, odds: formatOdds(preview) }
+  }
+  return null
 }
 
 function rulesCoach(
+  map: GameState,
   situation: Situation,
   selected: string,
   log: TurnRecord[],
@@ -339,7 +351,7 @@ function rulesCoach(
   }
 
   if (situation.queue.length) {
-    const preview = queuedAttackPreview(situation, queued)
+    const preview = queuedAttackPreview(map, queued)
     if (preview) {
       highlights.push({ provinceId: preview.targetId, uiId: "queued-orders" })
       return {
