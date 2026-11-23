@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import { HudOptionsMenu } from "@/components/hud-options-menu"
 import { listedStrength } from "@/lib/engine/echelon"
 import { projectIncome } from "@/lib/engine/economy"
 import { standing } from "@/lib/engine/victory"
@@ -49,9 +50,9 @@ export function Hud({
   const fortnight = Math.min(state.turn + 1, spec.length)
 
   return (
-    <header className="table-hud px-3 py-2.5 sm:px-4">
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-2 md:flex-nowrap md:items-center">
-        <p className="shrink-0 font-display text-[1.65rem] leading-none tracking-wide text-primary italic">
+    <header className="table-hud px-3 py-1.5 sm:px-4" data-testid="table-hud">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 md:flex-nowrap">
+        <p className="shrink-0 font-display text-[1.35rem] leading-none tracking-wide text-primary italic sm:text-[1.45rem]">
           Ostfront
         </p>
         <div
@@ -69,7 +70,7 @@ export function Hud({
           {!teachMode && (
             <>
               <div
-                className="flex h-3 w-full overflow-hidden rounded-full border border-leather/25 bg-paper shadow-inner"
+                className="flex h-2.5 w-full overflow-hidden rounded-full border border-leather/25 bg-paper shadow-inner"
                 role="img"
                 aria-label={`Listed strength. ${FACTION_LABEL.central} ${central} versus ${FACTION_LABEL.russia} ${russia}.`}
               >
@@ -84,7 +85,7 @@ export function Hud({
                   title={`${FACTION_LABEL.russia} listed strength ${russia}`}
                 />
               </div>
-              <p className="mt-1 text-center text-xs text-muted-foreground">
+              <div className="mt-0.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-center text-[11px] leading-tight text-muted-foreground sm:text-xs lg:justify-start lg:gap-x-2.5 xl:flex-nowrap">
                 <span title={`${FACTION_LABEL.central} listed strength versus ${FACTION_LABEL.russia}`}>
                   Strength{" "}
                   <span
@@ -103,7 +104,9 @@ export function Hud({
                     {russia}
                   </span>
                 </span>
-                <span aria-hidden="true"> · </span>
+                <span aria-hidden="true" className="hidden sm:inline">
+                  ·
+                </span>
                 <span title={`Provinces held, ${FACTION_LABEL.central} versus ${FACTION_LABEL.russia}`}>
                   Provinces{" "}
                   <span title={`Provinces held by the ${FACTION_LABEL.central}`}>
@@ -116,8 +119,9 @@ export function Hud({
                     {held.russia}
                   </span>
                 </span>
-              </p>
-              <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-muted-foreground">
+                <span aria-hidden="true" className="hidden lg:inline">
+                  ·
+                </span>
                 <span data-testid="treasury">
                   Manpower{" "}
                   <span title="Manpower in the treasury">{purse.mp}</span>{" "}
@@ -127,9 +131,15 @@ export function Hud({
                   <span title="Industry in the treasury">{purse.ip}</span>{" "}
                   <span title="Industry income this fortnight">(+{income.ip})</span>
                 </span>
+                <span aria-hidden="true" className="hidden lg:inline">
+                  ·
+                </span>
                 <span title="Eastern victory points you hold, of those on the map">
                   ★ VP <span title="Eastern victory points you hold">{board.captured}</span>
                   /<span title="Eastern victory points available">{board.available}</span>
+                </span>
+                <span aria-hidden="true" className="hidden lg:inline">
+                  ·
                 </span>
                 {state.result ? (
                   <span data-testid="grade" title="The campaign is over">
@@ -147,13 +157,13 @@ export function Hud({
             </>
           )}
         </div>
-        <div className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
-          <div className="text-right">
-            <p className="font-display text-xl leading-none" title="Date of this fortnight">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <div className="text-right leading-tight">
+            <p className="font-display text-base leading-none sm:text-lg" title="Date of this fortnight">
               {state.date}
             </p>
             {!teachMode && (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">
                 Fortnight{" "}
                 <span title="This fortnight, counting from the start of the campaign">{fortnight}</span>
                 {" / "}
@@ -161,41 +171,31 @@ export function Hud({
               </p>
             )}
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            {teachMode ? (
-              <span
-                className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs"
-                data-testid="teach-mode-badge"
-              >
-                Teaching drill
-              </span>
-            ) : !tableShell ? (
-              <Button
-                type="button"
-                size="sm"
-                variant={advisorOpen ? "default" : "outline"}
-                aria-expanded={advisorOpen}
-                data-testid="advisor-toggle"
-                className={
-                  advisorOpen
-                    ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
-                    : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
-                }
-                onClick={onAdvisor}
-              >
-                Chief of Staff
-              </Button>
-            ) : null}
+          {teachMode ? (
+            <span
+              className="hidden rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] sm:inline sm:text-xs"
+              data-testid="teach-mode-badge"
+            >
+              Teaching drill
+            </span>
+          ) : !tableShell ? (
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
-              onClick={onReset}
+              variant={advisorOpen ? "default" : "outline"}
+              aria-expanded={advisorOpen}
+              data-testid="advisor-toggle"
+              className={
+                advisorOpen
+                  ? "rounded-sm border-brass/70 bg-brass text-ink shadow-sm hover:bg-brass/90 hover:text-ink"
+                  : "rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
+              }
+              onClick={onAdvisor}
             >
-              {armReset ? "Confirm restart" : teachMode ? "Restart drill" : "Restart"}
+              Chief of Staff
             </Button>
-          </div>
+          ) : null}
+          <HudOptionsMenu armReset={armReset} teachMode={teachMode} onReset={onReset} />
         </div>
       </div>
     </header>

@@ -1,0 +1,7 @@
+# Slim the top HUD and put Restart behind an Options menu
+
+**Status:** proposed  
+**Date:** 2026-11-23  
+**Context:** After Parts 5–7, the parchment top bar still stacked the date above a full **Restart** button, with strength / provinces / treasury on separate lines — making the strip taller than the map needed. Raymond’s Part 8 brief asked for a noticeably thinner HUD (about one stats line plus the strength bar), with Restart moved beside the date as an Options control that can grow Settings later, without touching engine, AI, API, or rules, and without breaking Part 7 tray / paper clamps.  
+**Decision:** Compact `components/hud.tsx` (tighter padding, smaller wordmark/date, stats on one row at wide widths). Replace the Restart button with a gear **Options** control (`components/hud-options-menu.tsx`) to the right of the date/fortnight. The menu is an accessible `role="menu"`: Escape and outside-click close it; arrow keys move among items; Restart keeps the existing arm → confirm behaviour; **Settings (soon)** is present but `aria-disabled`. `/teach` shares the same HUD. Floating papers still live in the map stage under the header; tray Y clamp remains header-grip-only so saved positions cannot sit under the tray (and never under the top bar).  
+**Consequences:** Demo-check and FEATURES open Restart via `[data-testid=hud-options]` / `[data-testid=hud-options-restart]`. Extending Options later is additive menu items. ADR 012 tray behaviour is unchanged.

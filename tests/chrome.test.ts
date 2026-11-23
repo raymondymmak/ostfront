@@ -28,6 +28,9 @@ describe("top bar and map chrome", () => {
     expect(hud).toContain("tableShell")
     // Desktop window toggles live in the document tray, not the HUD.
     expect(hud).toMatch(/data-testid="advisor-toggle"/)
+    expect(hud).toContain("HudOptionsMenu")
+    expect(hud).toContain('data-testid="table-hud"')
+    expect(hud).not.toMatch(/>Restart</)
   })
 
   it("puts map mode on the map and the rails toggle inside the open legend", () => {
