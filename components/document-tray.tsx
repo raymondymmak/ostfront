@@ -2,7 +2,12 @@
 
 import { useRef, useState } from "react"
 import type { TrayItemSpec } from "@/lib/ui/document-tray"
-import { pointerMovedEnough } from "@/lib/ui/document-tray"
+import {
+  insertIndexAtClientX,
+  placeIdInOrder,
+  pointerMovedEnough,
+  shiftTrayId,
+} from "@/lib/ui/document-tray"
 import { DOCUMENT_TRAY_HEIGHT } from "@/lib/ui/window-drag"
 
 type DocumentTrayProps<Id extends string> = {
@@ -17,6 +22,12 @@ type DocumentTrayProps<Id extends string> = {
   onRestoreAt?: (id: Id, clientX: number, clientY: number) => void
   /** Highlight when a paper is dragged over the tray (desktop file target). */
   dropHighlight?: boolean
+  /** Insert slot while a paper is dragged over the tray (0…visible length). */
+  insertIndex?: number | null
+  /** Full tray id order (including open papers). Required for reorder + insert. */
+  trayOrder?: Id[]
+  /** Persist a new full tray order after drop-insert or sideways tab drag. */
+  onTrayOrderChange?: (order: Id[]) => void
   className?: string
   /** Compact strip for phone stacked layout. */
   variant?: "desktop" | "phone"
@@ -25,8 +36,8 @@ type DocumentTrayProps<Id extends string> = {
 /**
  * Bottom parchment tray: stowed papers sit as tabs.
  * Desktop — drag a tab up onto the map (or Enter) to take it out; drop highlight
- * while filing a paper in. Not a row of show/hide toggles.
- * Phone — tab strip that swaps the stacked panel.
+ * while filing a paper in; sideways drag (or Alt+←/→) reorders tabs.
+ * Phone — tab strip that swaps the stacked panel (same order as desktop).
  */
 export function DocumentTray<Id extends string>({
   items,
@@ -35,9 +46,13 @@ export function DocumentTray<Id extends string>({
   onRestore,
   onRestoreAt,
   dropHighlight = false,
+  insertIndex = null,
+  trayOrder,
+  onTrayOrderChange,
   className = "",
   variant = "desktop",
 }: DocumentTrayProps<Id>) {
+  const rootRef = useRef<HTMLElement>(null)
   const drag = useRef<{
     id: Id
     pointerId: number
@@ -46,15 +61,42 @@ export function DocumentTray<Id extends string>({
     moved: boolean
   } | null>(null)
   const [lifting, setLifting] = useState<Id | null>(null)
+  const [reorderInsert, setReorderInsert] = useState<number | null>(null)
 
   const desktopItems =
     variant === "desktop" ? items.filter((item) => !openById[item.id]) : items
 
+  const order = trayOrder ?? items.map((item) => item.id)
+
+  function measureVisibleSlots(excludeId?: Id) {
+    const root = rootRef.current
+    if (!root) return [] as { id: Id; left: number; width: number }[]
+    const nodes = root.querySelectorAll<HTMLElement>("[data-tray-id]")
+    const slots: { id: Id; left: number; width: number }[] = []
+    nodes.forEach((node) => {
+      const id = node.getAttribute("data-tray-id") as Id | null
+      if (!id || id === excludeId) return
+      if (variant === "desktop" && openById[id]) return
+      const rect = node.getBoundingClientRect()
+      slots.push({ id, left: rect.left, width: rect.width })
+    })
+    return slots
+  }
+
+  const markerIndex = reorderInsert ?? (dropHighlight ? insertIndex : null)
+
+  function commitPlace(id: Id, index: number, amongIds: Id[]) {
+    if (!onTrayOrderChange) return
+    onTrayOrderChange(placeIdInOrder(order, id, index, amongIds))
+  }
+
   return (
     <nav
+      ref={rootRef}
       data-testid="document-tray"
       aria-label="Document tray"
       data-drop-active={dropHighlight ? "true" : undefined}
+      data-insert-index={markerIndex != null ? String(markerIndex) : undefined}
       className={`pointer-events-auto flex w-full items-end gap-1.5 overflow-x-auto border-t px-2 py-1.5 transition-[box-shadow,background-color,border-color] duration-150 ${className} ${
         dropHighlight
           ? "border-brass bg-brass/25 shadow-[0_-6px_20px_rgba(122,92,40,0.35)]"
@@ -74,106 +116,158 @@ export function DocumentTray<Id extends string>({
           {dropHighlight ? "Release to file" : "Drag a paper here to file it"}
         </p>
       ) : null}
-      {desktopItems.map((item) => {
+      {desktopItems.map((item, index) => {
         const out = Boolean(openById[item.id])
         const pressed = activeId != null ? activeId === item.id : out
         const stowed = !out
+        const showMarkerBefore = markerIndex === index
         return (
-          <button
-            key={item.id}
-            type="button"
-            data-testid={item.testId}
-            data-tray-id={item.id}
-            data-stowed={stowed ? "true" : "false"}
-            aria-pressed={variant === "phone" ? pressed : undefined}
-            aria-label={
-              variant === "phone"
-                ? `Show ${item.title ?? item.label}`
-                : `Take out ${item.title ?? item.label}`
-            }
-            title={item.title ?? item.label}
-            className={`document-tray-tab relative shrink-0 rounded-t-[3px] border border-b-0 px-3 py-1.5 font-display text-sm leading-none transition-[transform,box-shadow] duration-150 ease-out touch-none ${
-              variant === "phone" && pressed
-                ? "z-[1] border-brass/70 bg-paper text-ink shadow-[0_-2px_8px_rgba(36,28,20,0.18)]"
-                : "border-leather/40 bg-paper text-ink shadow-[0_-1px_4px_rgba(36,28,20,0.12)] hover:bg-paper-deep"
-            } ${lifting === item.id ? "motion-safe:-translate-y-2 motion-safe:scale-105" : ""}`}
-            style={{
-              backgroundImage:
-                "linear-gradient(180deg, rgba(255,250,240,0.7) 0%, rgba(243,234,215,0.35) 100%)",
-            }}
-            onClick={() => {
-              if (drag.current?.moved) return
-              if (variant === "phone") {
-                onRestore(item.id)
+          <span key={item.id} className="flex shrink-0 items-end gap-1.5">
+            {showMarkerBefore ? <InsertMarker /> : null}
+            <button
+              type="button"
+              data-testid={item.testId}
+              data-tray-id={item.id}
+              data-stowed={stowed ? "true" : "false"}
+              aria-pressed={variant === "phone" ? pressed : undefined}
+              aria-keyshortcuts={variant === "desktop" ? "Alt+ArrowLeft Alt+ArrowRight" : undefined}
+              aria-label={
+                variant === "phone"
+                  ? `Show ${item.title ?? item.label}`
+                  : `Take out ${item.title ?? item.label}`
               }
-              // Desktop: click focuses the tab for keyboard; Enter takes it out.
-            }}
-            onKeyDown={(event) => {
-              if (variant === "phone") return
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault()
-                onRestore(item.id)
+              title={
+                variant === "desktop"
+                  ? `${item.title ?? item.label} · Alt+←/→ reorder`
+                  : (item.title ?? item.label)
               }
-            }}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return
-              if (variant === "phone") return
-              drag.current = {
-                id: item.id,
-                pointerId: event.pointerId,
-                startX: event.clientX,
-                startY: event.clientY,
-                moved: false,
-              }
-              setLifting(item.id)
-              event.currentTarget.setPointerCapture(event.pointerId)
-            }}
-            onPointerMove={(event) => {
-              const state = drag.current
-              if (!state || state.pointerId !== event.pointerId) return
-              if (
-                !state.moved &&
-                pointerMovedEnough(
-                  { clientX: state.startX, clientY: state.startY },
-                  { clientX: event.clientX, clientY: event.clientY },
-                )
-              ) {
-                state.moved = true
-              }
-            }}
-            onPointerUp={(event) => {
-              const state = drag.current
-              if (!state || state.pointerId !== event.pointerId) return
-              const moved = state.moved
-              const id = state.id
-              drag.current = null
-              setLifting(null)
-              try {
-                event.currentTarget.releasePointerCapture(event.pointerId)
-              } catch {
-                /* already released */
-              }
-              if (moved && onRestoreAt) {
-                // Dragging up onto the map files the tab out at the release point.
-                const dy = event.clientY - state.startY
-                if (dy < -TRAY_LIFT_MIN_PX) {
-                  onRestoreAt(id, event.clientX, event.clientY)
+              className={`document-tray-tab relative shrink-0 rounded-t-[3px] border border-b-0 px-3 py-1.5 font-display text-sm leading-none transition-[transform,box-shadow] duration-150 ease-out touch-none ${
+                variant === "phone" && pressed
+                  ? "z-[1] border-brass/70 bg-paper text-ink shadow-[0_-2px_8px_rgba(36,28,20,0.18)]"
+                  : "border-leather/40 bg-paper text-ink shadow-[0_-1px_4px_rgba(36,28,20,0.12)] hover:bg-paper-deep"
+              } ${lifting === item.id ? "motion-safe:-translate-y-2 motion-safe:scale-105 opacity-80" : ""}`}
+              style={{
+                backgroundImage:
+                  "linear-gradient(180deg, rgba(255,250,240,0.7) 0%, rgba(243,234,215,0.35) 100%)",
+              }}
+              onClick={() => {
+                if (drag.current?.moved) return
+                if (variant === "phone") {
+                  onRestore(item.id)
                 }
-              }
-            }}
-            onPointerCancel={() => {
-              drag.current = null
-              setLifting(null)
-            }}
-          >
-            <span className="block max-w-[9rem] truncate">{item.label}</span>
-            {variant === "desktop" ? (
-              <span aria-hidden className="mt-1 block h-0.5 w-full rounded-full bg-leather/35" />
-            ) : null}
-          </button>
+                // Desktop: click focuses the tab for keyboard; Enter takes it out.
+              }}
+              onKeyDown={(event) => {
+                if (variant === "phone") return
+                if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+                  event.preventDefault()
+                  if (!onTrayOrderChange) return
+                  const delta = event.key === "ArrowLeft" ? -1 : 1
+                  onTrayOrderChange(shiftTrayId(order, item.id, delta, openById))
+                  return
+                }
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault()
+                  onRestore(item.id)
+                }
+              }}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                if (variant === "phone") return
+                drag.current = {
+                  id: item.id,
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  moved: false,
+                }
+                setLifting(item.id)
+                setReorderInsert(null)
+                event.currentTarget.setPointerCapture(event.pointerId)
+              }}
+              onPointerMove={(event) => {
+                const state = drag.current
+                if (!state || state.pointerId !== event.pointerId) return
+                if (
+                  !state.moved &&
+                  pointerMovedEnough(
+                    { clientX: state.startX, clientY: state.startY },
+                    { clientX: event.clientX, clientY: event.clientY },
+                  )
+                ) {
+                  state.moved = true
+                }
+                if (!state.moved) return
+                const dy = event.clientY - state.startY
+                // Upward lift preview — clear sideways marker.
+                if (dy < -TRAY_LIFT_MIN_PX) {
+                  setReorderInsert(null)
+                  return
+                }
+                const slots = measureVisibleSlots(state.id)
+                setReorderInsert(
+                  insertIndexAtClientX(
+                    event.clientX,
+                    slots.map(({ left, width }) => ({ left, width })),
+                  ),
+                )
+              }}
+              onPointerUp={(event) => {
+                const state = drag.current
+                if (!state || state.pointerId !== event.pointerId) return
+                const moved = state.moved
+                const id = state.id
+                const insertAt = reorderInsert
+                drag.current = null
+                setLifting(null)
+                setReorderInsert(null)
+                try {
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                } catch {
+                  /* already released */
+                }
+                if (!moved) return
+                const dy = event.clientY - state.startY
+                if (dy < -TRAY_LIFT_MIN_PX && onRestoreAt) {
+                  onRestoreAt(id, event.clientX, event.clientY)
+                  return
+                }
+                if (insertAt != null && onTrayOrderChange) {
+                  const among = measureVisibleSlots(id).map((slot) => slot.id)
+                  // measure after lift cleared — use order of other visible items from props
+                  const amongIds = desktopItems
+                    .map((entry) => entry.id)
+                    .filter((entryId) => entryId !== id)
+                  commitPlace(id, insertAt, amongIds.length ? amongIds : among)
+                }
+              }}
+              onPointerCancel={() => {
+                drag.current = null
+                setLifting(null)
+                setReorderInsert(null)
+              }}
+            >
+              <span className="block max-w-[9rem] truncate">{item.label}</span>
+              {variant === "desktop" ? (
+                <span aria-hidden className="mt-1 block h-0.5 w-full rounded-full bg-leather/35" />
+              ) : null}
+            </button>
+          </span>
         )
       })}
+      {markerIndex != null && markerIndex >= desktopItems.length ? <InsertMarker /> : null}
     </nav>
+  )
+}
+
+function InsertMarker() {
+  return (
+    <span
+      data-testid="tray-insert-marker"
+      aria-hidden
+      className="mb-0.5 block w-1 shrink-0 self-stretch rounded-full bg-brass shadow-[0_0_0_1px_rgba(122,92,40,0.35)]"
+      style={{ minHeight: 28 }}
+    />
   )
 }
 

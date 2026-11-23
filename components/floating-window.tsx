@@ -46,10 +46,10 @@ type FloatingWindowProps = {
   onMove: (x: number, y: number) => void
   /** Persist measured/resized size so restore keeps width and last height. */
   onSize?: (size: { width: number; height: number }) => void
-  /** Drop into the tray band while dragging. */
-  onStow?: () => void
+  /** Drop into the tray band while dragging (clientX picks the tab insert slot). */
+  onStow?: (clientX?: number) => void
   /** Tray drop-target highlight while the pointer is over the tray band. */
-  onTrayHover?: (over: boolean) => void
+  onTrayHover?: (over: boolean, clientX?: number) => void
   children: ReactNode
 }
 
@@ -107,6 +107,7 @@ export function FloatingWindow({
     origY: number
     width: number
     height: number
+    lastClientX: number
     lastClientY: number
     lastRelativeY: number
     overTray: boolean
@@ -204,6 +205,7 @@ export function FloatingWindow({
     target: HTMLElement,
     pointerId: number,
     opts: {
+      clientX?: number
       clientY?: number
       relativeY?: number
       /** When true (cancel / lost capture), file if last hover was already armed. */
@@ -219,6 +221,7 @@ export function FloatingWindow({
     const stage = measureStage(node)
     const parent = node?.offsetParent as HTMLElement | null
     const parentTop = parent?.getBoundingClientRect().top ?? 0
+    const clientX = opts.clientX ?? state.lastClientX
     const clientY = opts.clientY ?? state.lastClientY
     const relativeY = opts.relativeY ?? clientY - parentTop
     const viewportHeight =
@@ -248,7 +251,7 @@ export function FloatingWindow({
     }
 
     if (shouldStow) {
-      onStow?.()
+      onStow?.(clientX)
       finishingDrag.current = false
       return
     }
@@ -313,6 +316,7 @@ export function FloatingWindow({
             origY: y,
             width,
             height,
+            lastClientX: event.clientX,
             lastClientY: event.clientY,
             lastRelativeY: event.clientY - parentTop,
             overTray: false,
@@ -347,18 +351,24 @@ export function FloatingWindow({
             clientY: event.clientY,
             viewportHeight,
           })
+          state.lastClientX = event.clientX
           state.lastClientY = event.clientY
           state.lastRelativeY = relativeY
           state.overTray = hovering
           if (hovering !== overTray) {
             setOverTray(hovering)
-            onTrayHover?.(hovering)
+          }
+          if (hovering) {
+            onTrayHover?.(true, event.clientX)
+          } else if (overTray) {
+            onTrayHover?.(false)
           }
         }}
         onPointerUp={(event) => {
           if (drag.current?.pointerId !== event.pointerId) return
           finishPaperDrag(event.currentTarget, event.pointerId, {
             clientY: event.clientY,
+            clientX: event.clientX,
           })
         }}
         onPointerCancel={(event) => {

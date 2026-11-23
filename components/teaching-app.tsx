@@ -12,8 +12,13 @@ import { TeachPanel } from "@/components/teach-panel"
 import { Button } from "@/components/ui/button"
 import {
   applyPersistedLayout,
+  defaultTrayOrder,
+  insertIndexAtClientX,
   liftPersistedWindowsAboveTray,
   loadWindowSession,
+  normalizeTrayOrder,
+  orderTrayItems,
+  placeIdInOrder,
   saveWindowSession,
   stowTopmostWindow,
   stowWindow,
@@ -61,7 +66,15 @@ export function TeachingApp() {
   const desktopShell = useDesktopShell()
   const mapStageRef = useRef<HTMLDivElement>(null)
   const [windows, setWindows] = useState<TeachWindowState[]>(() => createDefaultTeachWindows())
+  const [trayOrder, setTrayOrder] = useState<TeachWindowId[]>(() => defaultTrayOrder(TEACH_TRAY_ITEMS))
   const [trayDropActive, setTrayDropActive] = useState(false)
+  const [trayInsertIndex, setTrayInsertIndex] = useState<number | null>(null)
+  const teachTrayIds = useMemo(() => defaultTrayOrder(TEACH_TRAY_ITEMS), [])
+  const orderedTeachTrayItems = useMemo(() => orderTrayItems(TEACH_TRAY_ITEMS, trayOrder), [trayOrder])
+  const orderedTeachPhoneTrayItems = useMemo(
+    () => orderTrayItems(TEACH_PHONE_TRAY_ITEMS, trayOrder),
+    [trayOrder],
+  )
   const [lessonHeightCap, setLessonHeightCap] = useState(() => teachLessonHeightCap(820))
   const [legendHeightCap, setLegendHeightCap] = useState(() => teachLegendHeightCap(820))
   const [lessonId, setLessonId] = useState<TeachLessonId>("converging-lublin")
@@ -170,8 +183,10 @@ export function TeachingApp() {
       node?.clientHeight ||
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
     const defaults = createDefaultTeachWindows(width, height)
-    const restored = applyPersistedLayout(defaults, loadWindowSession("teach"))
+    const persisted = loadWindowSession<TeachWindowId>("teach")
+    const restored = applyPersistedLayout(defaults, persisted)
     setWindows(liftPersistedWindowsAboveTray(restored, height))
+    setTrayOrder(normalizeTrayOrder(persisted?.trayOrder, teachTrayIds))
     setLessonHeightCap(teachLessonHeightCap(height))
     setLegendHeightCap(teachLegendHeightCap(height))
   }
@@ -180,12 +195,49 @@ export function TeachingApp() {
     if (setupOpen) return
     const frame = window.requestAnimationFrame(() => resetTeachWindows())
     return () => window.cancelAnimationFrame(frame)
+    // Re-seed layout when entering the table / switching shell — not on every order change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetTeachWindows reads live stage + session
   }, [setupOpen, desktopShell])
 
   useEffect(() => {
     if (setupOpen || !desktopShell) return
-    saveWindowSession("teach", windows)
-  }, [windows, setupOpen, desktopShell])
+    saveWindowSession("teach", windows, trayOrder)
+  }, [windows, trayOrder, setupOpen, desktopShell])
+
+  function measureTraySlots(excludeId?: TeachWindowId) {
+    const among: TeachWindowId[] = []
+    const slots: { left: number; width: number }[] = []
+    const root =
+      typeof document !== "undefined" ? document.querySelector("[data-testid=document-tray]") : null
+    root?.querySelectorAll<HTMLElement>("[data-tray-id]").forEach((node) => {
+      const tabId = node.getAttribute("data-tray-id") as TeachWindowId | null
+      if (!tabId || tabId === excludeId) return
+      const rect = node.getBoundingClientRect()
+      among.push(tabId)
+      slots.push({ left: rect.left, width: rect.width })
+    })
+    return { among, slots }
+  }
+
+  function onTrayHover(over: boolean, clientX?: number) {
+    setTrayDropActive(over)
+    if (!over || clientX == null) {
+      setTrayInsertIndex(null)
+      return
+    }
+    const { slots } = measureTraySlots()
+    setTrayInsertIndex(insertIndexAtClientX(clientX, slots))
+  }
+
+  function stowPaper(id: TeachWindowId, clientX?: number) {
+    setWindows((current) => stowWindow(current, id))
+    setTrayDropActive(false)
+    setTrayInsertIndex(null)
+    if (clientX == null) return
+    const { among, slots } = measureTraySlots(id)
+    const index = insertIndexAtClientX(clientX, slots)
+    setTrayOrder((current) => placeIdInOrder(current, id, index, among))
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -624,8 +676,8 @@ export function TeachingApp() {
                 widthPx: win.width,
                 heightPx: win.height,
                 onSize: (size: { width: number; height: number }) => onWindowSize(win.id, size),
-                onStow: stow,
-                onTrayHover: setTrayDropActive,
+                onStow: (clientX?: number) => stowPaper(win.id, clientX),
+                onTrayHover,
               }
               if (win.id === "lesson") {
                 return (
@@ -722,11 +774,14 @@ export function TeachingApp() {
           {desktopShell && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[30]">
               <DocumentTray
-                items={TEACH_TRAY_ITEMS}
+                items={orderedTeachTrayItems}
                 openById={teachWindowOpen}
                 onRestore={onTrayRestore}
                 onRestoreAt={onTrayRestoreAt}
                 dropHighlight={trayDropActive}
+                insertIndex={trayInsertIndex}
+                trayOrder={trayOrder}
+                onTrayOrderChange={setTrayOrder}
               />
             </div>
           )}
@@ -756,7 +811,7 @@ export function TeachingApp() {
                 </div>
                 <DocumentTray
                   variant="phone"
-                  items={TEACH_PHONE_TRAY_ITEMS}
+                  items={orderedTeachPhoneTrayItems}
                   openById={{
                     orders: sideTab === "orders",
                     province: sideTab === "front",

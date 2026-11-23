@@ -16,8 +16,8 @@ type OhlOrdersWindowProps = {
   onClose: () => void
   onMove: (x: number, y: number) => void
   onSize?: (size: { width: number; height: number }) => void
-  onStow?: () => void
-  onTrayHover?: (over: boolean) => void
+  onStow?: (clientX?: number) => void
+  onTrayHover?: (over: boolean, clientX?: number) => void
 }
 
 /** Dismissible Orders from OHL — campaign goal line lives here on the desktop shell. */

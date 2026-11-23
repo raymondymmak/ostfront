@@ -77,10 +77,117 @@ export function pointerMovedEnough(
   return dx * dx + dy * dy >= threshold * threshold
 }
 
+/** Default tray tab order from the static item list. */
+export function defaultTrayOrder<Id extends string>(items: TrayItemSpec<Id>[]): Id[] {
+  return items.map((item) => item.id)
+}
+
+/** Keep known ids, drop unknowns, append any missing ids in default order. */
+export function normalizeTrayOrder<Id extends string>(
+  order: readonly Id[] | undefined,
+  knownIds: readonly Id[],
+): Id[] {
+  const knownSet = new Set(knownIds)
+  const next: Id[] = []
+  const seen = new Set<Id>()
+  for (const id of order ?? []) {
+    if (knownSet.has(id) && !seen.has(id)) {
+      next.push(id)
+      seen.add(id)
+    }
+  }
+  for (const id of knownIds) {
+    if (!seen.has(id)) next.push(id)
+  }
+  return next
+}
+
+/** Sort tray item specs by a persisted/user order. */
+export function orderTrayItems<Id extends string>(
+  items: TrayItemSpec<Id>[],
+  order: readonly Id[],
+): TrayItemSpec<Id>[] {
+  const byId = new Map(items.map((item) => [item.id, item]))
+  const seen = new Set<Id>()
+  const ordered: TrayItemSpec<Id>[] = []
+  for (const id of order) {
+    const item = byId.get(id)
+    if (item) {
+      ordered.push(item)
+      seen.add(id)
+    }
+  }
+  for (const item of items) {
+    if (!seen.has(item.id)) ordered.push(item)
+  }
+  return ordered
+}
+
+export type TrayTabSlot = { left: number; width: number }
+
+/**
+ * Insertion index among `slots` (left→right) for a pointer X.
+ * Index runs 0…slots.length (before first … after last).
+ */
+export function insertIndexAtClientX(clientX: number, slots: readonly TrayTabSlot[]): number {
+  if (slots.length === 0) return 0
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]!
+    if (clientX < slot.left + slot.width / 2) return i
+  }
+  return slots.length
+}
+
+/**
+ * Place `id` at `index` among `among` (a subset of order, usually visible tabs
+ * excluding `id`). Rebuilds the full order preserving non-among entries.
+ */
+export function placeIdInOrder<Id extends string>(
+  order: readonly Id[],
+  id: Id,
+  index: number,
+  among?: readonly Id[],
+): Id[] {
+  const known = order.includes(id) ? [...order] : [...order, id]
+  const without = known.filter((entry) => entry !== id)
+  const reference = (among ?? without).filter((entry) => entry !== id)
+  const clamped = Math.max(0, Math.min(index, reference.length))
+  let spliceAt: number
+  if (clamped >= reference.length) {
+    const last = reference[reference.length - 1]
+    spliceAt = last === undefined ? without.length : without.indexOf(last) + 1
+  } else {
+    const target = reference[clamped]!
+    spliceAt = without.indexOf(target)
+    if (spliceAt < 0) spliceAt = without.length
+  }
+  const next = [...without]
+  next.splice(Math.max(0, spliceAt), 0, id)
+  return next
+}
+
+/** Move a focused/stowed tab one slot left (−1) or right (+1) among visible tabs. */
+export function shiftTrayId<Id extends string>(
+  order: readonly Id[],
+  id: Id,
+  delta: -1 | 1,
+  openById: Partial<Record<Id, boolean>>,
+): Id[] {
+  const visible = order.filter((entry) => !openById[entry])
+  const idx = visible.indexOf(id)
+  if (idx < 0) return [...order]
+  const dest = Math.max(0, Math.min(visible.length - 1, idx + delta))
+  if (dest === idx) return [...order]
+  const among = visible.filter((entry) => entry !== id)
+  return placeIdInOrder(order, id, dest, among)
+}
+
 const SESSION_PREFIX = "ostfront-windows-v1:"
 
 export type PersistedWindowLayout<Id extends string> = {
   windows: Array<Pick<StackedWindow<Id>, "id" | "open" | "x" | "y" | "z" | "height" | "width">>
+  /** User tray tab order (all paper ids). */
+  trayOrder?: Id[]
 }
 
 export function sessionStorageKey(scope: "campaign" | "teach"): string {
@@ -106,6 +213,7 @@ export function loadWindowSession<Id extends string>(
 export function saveWindowSession<Id extends string>(
   scope: "campaign" | "teach",
   windows: StackedWindow<Id>[],
+  trayOrder?: readonly Id[],
 ): void {
   if (typeof sessionStorage === "undefined") return
   try {
@@ -119,6 +227,7 @@ export function saveWindowSession<Id extends string>(
         height,
         width,
       })),
+      ...(trayOrder ? { trayOrder: [...trayOrder] } : {}),
     }
     sessionStorage.setItem(sessionStorageKey(scope), JSON.stringify(payload))
   } catch {

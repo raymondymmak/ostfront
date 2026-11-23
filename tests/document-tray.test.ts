@@ -1,10 +1,20 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   applyPersistedLayout,
+  CAMPAIGN_TRAY_ITEMS,
+  defaultTrayOrder,
+  insertIndexAtClientX,
   isStowed,
   liftPersistedWindowsAboveTray,
+  normalizeTrayOrder,
+  orderTrayItems,
+  placeIdInOrder,
   pointerMovedEnough,
   restoreWindow,
+  saveWindowSession,
+  loadWindowSession,
+  sessionStorageKey,
+  shiftTrayId,
   stowTopmostWindow,
   stowWindow,
 } from "@/lib/ui/document-tray"
@@ -94,6 +104,8 @@ describe("document-tray", () => {
     expect(tray).toContain("dropHighlight")
     expect(tray).toContain("data-drop-active")
     expect(tray).toContain("onRestoreAt")
+    expect(tray).toContain("tray-insert-marker")
+    expect(tray).toContain("Alt+ArrowLeft")
     expect(tray).toMatch(/Enter/)
     expect(tray).not.toContain("onStow")
     expect(paper).not.toMatch(/>Stow</)
@@ -103,6 +115,61 @@ describe("document-tray", () => {
     expect(paper).toContain("data-over-tray")
     expect(paper).toContain("shouldFileIntoTray")
     expect(paper).toContain("liftYAboveTray")
+  })
+
+  it("inserts a filed paper at the drop position among visible tabs", () => {
+    const order = defaultTrayOrder(CAMPAIGN_TRAY_ITEMS)
+    // Visible stowed: province, log, legend, advisor (orders+ohl out)
+    const among = ["province", "log", "legend", "advisor"] as const
+    const slots = [
+      { left: 0, width: 100 },
+      { left: 110, width: 100 },
+      { left: 220, width: 100 },
+      { left: 330, width: 100 },
+    ]
+    // Drop between Log (index 1) and Legend (index 2) → insert at 2
+    expect(insertIndexAtClientX(200, slots)).toBe(2)
+    const next = placeIdInOrder(order, "orders", 2, [...among])
+    const visible = next.filter((id) => among.includes(id as (typeof among)[number]) || id === "orders")
+    expect(visible).toEqual(["province", "log", "orders", "legend", "advisor"])
+  })
+
+  it("reorders a tab sideways among visible slots", () => {
+    const order = ["orders", "province", "log", "legend", "advisor", "ohl"] as const
+    const openById = { orders: true, ohl: true }
+    // Visible: province, log, legend, advisor — move log right once
+    const shifted = shiftTrayId([...order], "log", 1, openById)
+    const visible = shifted.filter((id) => !openById[id as keyof typeof openById])
+    expect(visible).toEqual(["province", "legend", "log", "advisor"])
+  })
+
+  it("persists trayOrder in sessionStorage with window layout", () => {
+    const store = new Map<string, string>()
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value)
+      },
+      removeItem: (key: string) => {
+        store.delete(key)
+      },
+    })
+    const windows = createDefaultTableWindows(1440, 820)
+    const trayOrder = placeIdInOrder(
+      defaultTrayOrder(CAMPAIGN_TRAY_ITEMS),
+      "orders",
+      2,
+      ["province", "log", "legend", "advisor"],
+    )
+    saveWindowSession("campaign", windows, trayOrder)
+    const loaded = loadWindowSession<string>("campaign")
+    expect(loaded?.trayOrder).toEqual(trayOrder)
+    expect(normalizeTrayOrder(loaded?.trayOrder, defaultTrayOrder(CAMPAIGN_TRAY_ITEMS))).toEqual(
+      trayOrder,
+    )
+    expect(orderTrayItems(CAMPAIGN_TRAY_ITEMS, trayOrder).map((item) => item.id)).toEqual(trayOrder)
+    expect(store.get(sessionStorageKey("campaign"))).toContain("trayOrder")
+    vi.unstubAllGlobals()
   })
 
   it("lifts session positions whose header sits under the tray (OHL stuck case)", () => {

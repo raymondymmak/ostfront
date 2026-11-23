@@ -16,8 +16,13 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import {
   applyPersistedLayout,
   CAMPAIGN_TRAY_ITEMS,
+  defaultTrayOrder,
+  insertIndexAtClientX,
   liftPersistedWindowsAboveTray,
   loadWindowSession,
+  normalizeTrayOrder,
+  orderTrayItems,
+  placeIdInOrder,
   saveWindowSession,
   stowTopmostWindow,
   stowWindow,
@@ -84,8 +89,15 @@ export function GameApp() {
   const [chatEpoch, setChatEpoch] = useState(0)
   const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
   const [windows, setWindows] = useState<TableWindowState[]>(() => createDefaultTableWindows())
+  const [trayOrder, setTrayOrder] = useState<TableWindowId[]>(() => defaultTrayOrder(CAMPAIGN_TRAY_ITEMS))
   const [trayDropActive, setTrayDropActive] = useState(false)
+  const [trayInsertIndex, setTrayInsertIndex] = useState<number | null>(null)
   const [showRails, setShowRails] = useState(true)
+  const campaignTrayIds = useMemo(() => defaultTrayOrder(CAMPAIGN_TRAY_ITEMS), [])
+  const orderedCampaignTrayItems = useMemo(
+    () => orderTrayItems(CAMPAIGN_TRAY_ITEMS, trayOrder),
+    [trayOrder],
+  )
   const desktopShell = useDesktopShell()
   const mapStageRef = useRef<HTMLDivElement>(null)
   const advisorOpen = isWindowOpen(windows, "advisor")
@@ -210,23 +222,62 @@ export function GameApp() {
       node?.clientHeight ||
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
     const defaults = createDefaultTableWindows(width, height)
-    const restored = applyPersistedLayout(defaults, loadWindowSession("campaign"))
+    const persisted = loadWindowSession<TableWindowId>("campaign")
+    const restored = applyPersistedLayout(defaults, persisted)
     setWindows(liftPersistedWindowsAboveTray(restored, height))
+    setTrayOrder(normalizeTrayOrder(persisted?.trayOrder, campaignTrayIds))
   }
 
   useEffect(() => {
     if (setupOpen) return
     const frame = window.requestAnimationFrame(() => resetTableWindows())
     return () => window.cancelAnimationFrame(frame)
+    // Re-seed layout when entering the table / switching shell — not on every order change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetTableWindows reads live stage + session
   }, [setupOpen, desktopShell])
 
   useEffect(() => {
     if (setupOpen || !desktopShell) return
-    saveWindowSession("campaign", windows)
-  }, [windows, setupOpen, desktopShell])
+    saveWindowSession("campaign", windows, trayOrder)
+  }, [windows, trayOrder, setupOpen, desktopShell])
 
   function setWindowOpen(id: TableWindowId, open: boolean) {
     setWindows((current) => (open ? focusWindow(current, id) : stowWindow(current, id)))
+  }
+
+  function measureTraySlots(excludeId?: TableWindowId) {
+    const among: TableWindowId[] = []
+    const slots: { left: number; width: number }[] = []
+    const root =
+      typeof document !== "undefined" ? document.querySelector("[data-testid=document-tray]") : null
+    root?.querySelectorAll<HTMLElement>("[data-tray-id]").forEach((node) => {
+      const tabId = node.getAttribute("data-tray-id") as TableWindowId | null
+      if (!tabId || tabId === excludeId) return
+      const rect = node.getBoundingClientRect()
+      among.push(tabId)
+      slots.push({ left: rect.left, width: rect.width })
+    })
+    return { among, slots }
+  }
+
+  function onTrayHover(over: boolean, clientX?: number) {
+    setTrayDropActive(over)
+    if (!over || clientX == null) {
+      setTrayInsertIndex(null)
+      return
+    }
+    const { slots } = measureTraySlots()
+    setTrayInsertIndex(insertIndexAtClientX(clientX, slots))
+  }
+
+  function stowPaper(id: TableWindowId, clientX?: number) {
+    setWindows((current) => stowWindow(current, id))
+    setTrayDropActive(false)
+    setTrayInsertIndex(null)
+    if (clientX == null) return
+    const { among, slots } = measureTraySlots(id)
+    const index = insertIndexAtClientX(clientX, slots)
+    setTrayOrder((current) => placeIdInOrder(current, id, index, among))
   }
 
   function onTrayRestore(id: TableWindowId) {
@@ -754,6 +805,7 @@ export function GameApp() {
               if (!win.open) return null
               const focus = () => setWindows((current) => focusWindow(current, win.id))
               const stow = () => setWindowOpen(win.id, false)
+              const stowAt = (clientX?: number) => stowPaper(win.id, clientX)
               const onMove = (x: number, y: number) =>
                 setWindows((current) => moveWindow(current, win.id, x, y))
               const onSize = (size: { width: number; height: number }) => onWindowSize(win.id, size)
@@ -761,8 +813,8 @@ export function GameApp() {
                 widthPx: win.width,
                 heightPx: win.height,
                 onSize,
-                onStow: stow,
-                onTrayHover: setTrayDropActive,
+                onStow: stowAt,
+                onTrayHover,
               }
               if (win.id === "ohl") {
                 return (
@@ -779,8 +831,8 @@ export function GameApp() {
                     onClose={stow}
                     onMove={onMove}
                     onSize={onSize}
-                    onStow={stow}
-                    onTrayHover={setTrayDropActive}
+                    onStow={stowAt}
+                    onTrayHover={onTrayHover}
                   />
                 )
               }
@@ -911,11 +963,14 @@ export function GameApp() {
           {desktopShell && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[30]">
               <DocumentTray
-                items={CAMPAIGN_TRAY_ITEMS}
+                items={orderedCampaignTrayItems}
                 openById={windowOpenMap}
                 onRestore={onTrayRestore}
                 onRestoreAt={onTrayRestoreAt}
                 dropHighlight={trayDropActive}
+                insertIndex={trayInsertIndex}
+                trayOrder={trayOrder}
+                onTrayOrderChange={setTrayOrder}
               />
             </div>
           )}
@@ -943,10 +998,13 @@ export function GameApp() {
             <Tabs value={sideTab} className="flex min-h-0 flex-1 flex-col gap-0">
               <DocumentTray
                 variant="phone"
-                items={[
-                  { id: "orders", label: "Orders", testId: "tab-orders" },
-                  { id: "province", label: "Province", testId: "tab-province" },
-                ]}
+                items={orderTrayItems(
+                  [
+                    { id: "orders" as const, label: "Orders", testId: "tab-orders" },
+                    { id: "province" as const, label: "Province", testId: "tab-province" },
+                  ],
+                  trayOrder,
+                )}
                 openById={{ orders: sideTab === "orders", province: sideTab === "front" }}
                 activeId={sideTab === "front" ? "province" : "orders"}
                 onRestore={(id) => setSideTab(id === "province" ? "front" : "orders")}
