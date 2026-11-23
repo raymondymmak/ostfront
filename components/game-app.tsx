@@ -833,6 +833,7 @@ export function GameApp() {
                     y={win.y}
                     z={win.z}
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    testId="orders-window"
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
@@ -852,6 +853,7 @@ export function GameApp() {
                     y={win.y}
                     z={win.z}
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    testId="province-window"
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}

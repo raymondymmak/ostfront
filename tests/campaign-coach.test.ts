@@ -9,18 +9,23 @@ import {
 import {
   capCoachReply,
   coachCampaign,
+  extractCoachOddsRatio,
   extractPlayerPrediction,
   formatBattleForCoach,
   formatBattleReviewForPlayer,
+  keepOneOddsFigure,
   latestBattleFacts,
   playerStatedIntent,
+  putQuestionFirst,
   queuedAttackPreview,
   renderChronicle,
   sanitizeHighlights,
+  scrubCoachFiledClaims,
+  shapeCoachReply,
   splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
 import { staffMap } from "@/lib/gm/advisor"
-import { engagementOdds } from "@/lib/engine/turn"
+import { engagementOdds, resolveTurn } from "@/lib/engine/turn"
 import type { BattleFacts, TurnRecord } from "@/lib/types"
 import { playTurn } from "@/lib/gm"
 import { createInitialState } from "@/lib/data/scenario"
@@ -296,12 +301,14 @@ describe("campaign coach", () => {
     })
     expect(playerStatedIntent([{ role: "user", content: "What do you make of my queued plan?" }])).toBe(false)
     expect(result.reply).toMatch(/What do you expect Kielce/i)
-    expect(result.reply).toMatch(/odds about [\d.]+:1 as the engine resolves this fortnight/i)
-    expect(result.reply).not.toMatch(/Ordered:|unavailable offline|159 against/)
+    expect(result.reply).toMatch(/about [\d.]+:1 if the Russians don't reinforce/i)
+    expect(result.reply).not.toMatch(/before the dice|as the engine resolves this fortnight/i)
+    expect(result.reply).not.toMatch(/Ordered:|unavailable offline|159 against|Filed as noted/i)
     expect(result.reply).not.toMatch(/\.\./)
     expect(result.highlights).toEqual([{ provinceId: "kielce" }])
-    const sentences = result.reply.match(/[^.!?]+[.!?]+/g) ?? []
+    const sentences = splitCoachSentences(result.reply)
     expect(sentences.length).toBeLessThanOrEqual(3)
+    expect(sentences[0]).toMatch(/\?/)
   })
 
   it("compares a stated prediction to the chronicle result on review", async () => {
@@ -371,17 +378,17 @@ describe("campaign coach", () => {
     expect(cleaned).toMatch(/What did you expect/)
   })
 
-  it("quotes resolution-equivalent odds (staffMap), not higher pre-supply card odds", async () => {
+  it("quotes the same engagementOdds resolve uses when the enemy does not move", async () => {
     const state = createInitialState()
     const krakow = state.provinces.find((province) => province.id === "krakow")!
     const unitIds = krakow.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
-    const queued: PlayerOrder[] = [
-      { type: "attack", from: "krakow", target: "kielce", unitIds },
-    ]
+    const attack: PlayerOrder = { type: "attack", from: "krakow", target: "kielce", unitIds }
+    const queued: PlayerOrder[] = [attack]
 
     const resolvedMap = staffMap(state)
     const resolvedPreview = engagementOdds(resolvedMap, "krakow", "kielce", unitIds)
     expect(resolvedPreview).toBeTruthy()
+    expect(Number.isFinite(resolvedPreview!.ratio)).toBe(true)
 
     // Order-panel style preview that skips the resolve-time staffMap path and inflates launch supply.
     const cardState = structuredClone(state)
@@ -393,12 +400,35 @@ describe("campaign coach", () => {
     expect(cardPreview!.ratio).toBeGreaterThan(resolvedPreview!.ratio)
 
     const coachPreview = queuedAttackPreview(resolvedMap, queued)
-    expect(coachPreview?.odds).toMatch(/as the engine resolves this fortnight/)
-    const ratioMatch = coachPreview?.odds?.match(/odds about ([\d.]+):1/)
-    expect(ratioMatch).toBeTruthy()
-    const quoted = Number(ratioMatch![1])
-    expect(quoted).toBeCloseTo(Math.round(resolvedPreview!.ratio * 10) / 10, 5)
-    expect(quoted).toBeLessThan(Math.round(cardPreview!.ratio * 10) / 10)
+    expect(coachPreview?.odds).toMatch(/if the Russians don't reinforce/)
+    expect(coachPreview?.odds).not.toMatch(/before the dice|as the engine resolves/i)
+    const quotedPreview = extractCoachOddsRatio(coachPreview?.odds ?? "")
+    expect(quotedPreview).toBeCloseTo(Math.round(resolvedPreview!.ratio * 10) / 10, 5)
+    expect(quotedPreview!).toBeLessThan(Math.round(cardPreview!.ratio * 10) / 10)
+
+    // Fixed state, no enemy moves: resolveTurn attack/defense floor matches engagementOdds.
+    const { record } = resolveTurn(
+      state,
+      {
+        proposals: [
+          {
+            type: "attack",
+            from: "krakow",
+            target: "kielce",
+            units: unitIds,
+          },
+        ],
+        events: [],
+        narration: "",
+        diplomacy: [],
+      },
+      { rng: () => 0 },
+    )
+    const battleLine = record.resolutions.find((item) => item.battle)?.summary ?? ""
+    const postDice = battleLine.match(/odds\s+([\d.]+)/i)
+    expect(postDice).toBeTruthy()
+    // Chronicle prints post-dice ratio; coach must quote the pre-dice preview instead.
+    expect(Number(postDice![1])).not.toBeCloseTo(quotedPreview!, 1)
 
     const result = await coachCampaign({
       state,
@@ -406,7 +436,38 @@ describe("campaign coach", () => {
       messages: [{ role: "user", content: "What do you make of my queued plan?" }],
       queuedOrders: queued,
     })
-    expect(result.reply).toContain(`odds about ${quoted}:1 as the engine resolves this fortnight`)
+    const quotedReply = extractCoachOddsRatio(result.reply)
+    expect(quotedReply).toBeCloseTo(quotedPreview!, 5)
+    expect(result.reply).toMatch(/if the Russians don't reinforce/i)
+    expect(result.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+  })
+
+  it("puts the intent question first and keeps one odds figure in post-processing", () => {
+    const messy =
+      "The engine rates that column at about 6.0:1 if the Russians don't reinforce, and also about 8.1:1 combined. What do you expect Kielce to do for the Lemberg push?"
+    const shaped = shapeCoachReply(messy, null)
+    expect(shaped.reply.startsWith("What do you expect")).toBe(true)
+    expect(shaped.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+    expect(putQuestionFirst(messy)).toMatch(/^What do you expect/)
+    expect(keepOneOddsFigure(messy).match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+  })
+
+  it("never claims an illegal Kraków→Warsaw ask was filed", async () => {
+    const filed = scrubCoachFiledClaims(
+      "Filed as noted. Kraków does not border Warsaw, so that arrow cannot stand.",
+    )
+    expect(filed).not.toMatch(/Filed as noted/i)
+    expect(filed).toMatch(/I do not file orders/i)
+
+    const result = await coachCampaign({
+      state: createInitialState(),
+      log: [],
+      messages: [{ role: "user", content: "Attack Warsaw from Kraków this fortnight." }],
+      queuedOrders: [],
+      selectedProvinceId: "krakow",
+    })
+    expect(result.reply).not.toMatch(/filed as noted|has been filed|order (?:was |is )?noted|i(?:'ve| have) queued/i)
+    expect(result.reply).not.toMatch(/\bFiled\b/)
   })
 
   it("does not attach unrelated combat odds when the queue has no attack", () => {

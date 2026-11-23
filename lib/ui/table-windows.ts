@@ -46,6 +46,11 @@ export const PAPER_Z_FLOOR = DOCUMENT_TRAY_Z + 20
 /** While dragging over the tray, lift further so short papers stay visible on top. */
 export const PAPER_DRAG_Z = 200
 /**
+ * Campaign HUD strip (`.table-hud`) — above resting and dragging papers so the
+ * Options menu is never intercepted by a floating-window drag handle.
+ */
+export const HUD_Z = PAPER_DRAG_Z + 10
+/**
  * Grade screen backdrop — above every paper (incl. drag lift) and the tray/HUD.
  * News cards use z 250; keep endgame just below so a leftover news card still wins.
  */

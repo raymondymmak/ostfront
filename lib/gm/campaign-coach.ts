@@ -82,18 +82,19 @@ You do NOT issue orders. You never return suggestions, Accept cards, or order JS
 You know only the DISPATCH in the user message: engine map facts, the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say the map or chronicle does not show it.
 
 Socratic style (strict):
-- At most 2–3 short sentences in "reply". Never dump a full staff brief.
-- If the player has not said their intent or expectation, open with one short question about it (e.g. "What do you expect Kielce to do for the Lemberg push?"), then give exactly one engine fact as evidence.
+- At most 2–3 short sentences in "reply". The intent/prediction question MUST come first when you ask one; then exactly one engine fact as evidence.
+- If the player has not said their intent or expectation, open with one short question (e.g. "What do you expect Kielce to do for the Lemberg push?"), then one evidence sentence.
 - Return exactly one highlight that matches that evidence (one provinceId or one uiId). Never invent screen coordinates.
 - Post-battle: ask what they predicted. If they already stated a prediction in CONVERSATION, compare it to the chronicle result (odds, roll, losses, who holds the province). Do not recite ledger noise such as raw supply pairs (e.g. "159 against 56") unless that supply fact directly explains the outcome.
-- Odds in the DISPATCH are resolution-equivalent (after supply decay/capacity for this fortnight). Quote those figures; do not invent higher card-style odds.
+- Odds: quote ONLY from QUEUED_RESOLUTION_ODDS (one figure per attack). Those match engagementOdds after staffMap supply decay/capacity — the same preview resolveTurn uses when the garrison does not change. Say "about X:1 if the Russians don't reinforce". Never quote two ratios. Never say "before the dice". Never invent higher card-style odds.
+- You do not file, note, or queue orders. Never claim an order was filed, noted, or queued (e.g. never "Filed as noted").
 
-Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE. Never invent ratios.
+Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE / QUEUED_RESOLUTION_ODDS. Never invent ratios.
 
-Optional followUp is one short question or null (prefer putting the intent question in "reply" itself).
+Optional followUp is one short question or null (prefer putting the intent question first in "reply" itself).
 
 Return one JSON object and no markdown:
-{"reply":"What do you expect Kielce to do for the Lemberg push? The engine rates that column at about 4.7:1 as it resolves this fortnight.","followUp":null,"highlights":[{"provinceId":"kielce"}]}
+{"reply":"What do you expect Kielce to do for the Lemberg push? The engine rates that column at about 4.7:1 if the Russians don't reinforce.","followUp":null,"highlights":[{"provinceId":"kielce"}]}
 
 Do not include a suggestions key. Do not include order objects.`
 
@@ -113,18 +114,23 @@ export async function coachCampaign(input: {
   const ordersClosed = situation.over
 
   if (!llmConfigured() && !fixtureEnabled()) {
+    const shaped = shapeCoachReply(rules.reply, rules.followUp)
     return {
-      reply: finishAdvisorReply(capCoachReply(rules.reply)),
+      reply: finishAdvisorReply(shaped.reply),
       source: "fallback",
       unavailable: true,
-      followUp: rules.followUp,
+      followUp: shaped.followUp,
       highlights: capCoachHighlights(rules.highlights),
       ordersClosed,
     }
   }
 
+  const queuedOdds = renderQueuedResolutionOdds(map, queued)
   const prompt = [
     renderSituation(situation),
+    "",
+    "QUEUED_RESOLUTION_ODDS",
+    queuedOdds,
     "",
     "SELECTED",
     selected,
@@ -138,7 +144,7 @@ export async function coachCampaign(input: {
     "CONVERSATION",
     renderConversation(input.messages),
     "",
-    "Answer the latest question. Use the dispatch and chronicle only. Do not issue orders.",
+    "Answer the latest question. Use the dispatch, QUEUED_RESOLUTION_ODDS, and chronicle only. Do not issue or claim to file orders. Put any intent question first; quote at most one odds figure.",
   ].join("\n")
 
   let failure: "empty" | "http" | "timeout" | null = null
@@ -196,22 +202,27 @@ export async function coachCampaign(input: {
 
   if (!parsed) {
     void failure
+    const shaped = shapeCoachReply(rules.reply, rules.followUp)
     return {
-      reply: finishAdvisorReply(capCoachReply(rules.reply)),
+      reply: finishAdvisorReply(shaped.reply),
       source: "rules",
       unavailable: false,
-      followUp: rules.followUp,
+      followUp: shaped.followUp,
       highlights: capCoachHighlights(rules.highlights),
       ordersClosed,
     }
   }
 
   const reply = scrubAdvisorReply(parsed.reply, map)
+  const shaped = shapeCoachReply(
+    reply || rules.reply,
+    parsed.followUp?.trim() ? parsed.followUp.trim().slice(0, 160) : null,
+  )
   return {
-    reply: finishAdvisorReply(capCoachReply(reply || rules.reply)),
+    reply: finishAdvisorReply(shaped.reply),
     source: "llm",
     unavailable: false,
-    followUp: parsed.followUp?.trim() ? parsed.followUp.trim().slice(0, 160) : null,
+    followUp: shaped.followUp,
     highlights: capCoachHighlights(parsed.highlights ?? rules.highlights),
     ordersClosed,
   }
@@ -249,16 +260,112 @@ export function scrubCoachLedgerNoise(reply: string): string {
   return out
 }
 
-/** Enforce 2–3 short sentences (and a hard character cap) on player-facing coach prose. */
+const FILED_CLAIM_SENTENCE =
+  /\b(?:filed as noted|noted as filed)|(?:\b(?:i(?:'ve| have)|we(?:'ve| have)|order(?:s)?|it|that|this)\b[^.?!]{0,40}\b(?:filed|noted|queued)\b)|(?:\b(?:filed|noted|queued)\b[^.?!]{0,20}\b(?:order|orders)\b)/i
+
+/** Never claim an order was filed, noted, or queued — coach cannot issue orders. */
+export function scrubCoachFiledClaims(reply: string): string {
+  const sentences = splitCoachSentences(reply)
+  const out: string[] = []
+  for (const sentence of sentences) {
+    if (FILED_CLAIM_SENTENCE.test(sentence) && !/\b(?:do not|don't|cannot|can't|never)\s+file\b/i.test(sentence)) {
+      out.push("I do not file orders.")
+      continue
+    }
+    out.push(sentence)
+  }
+  return out.join(" ").replace(/(?:I do not file orders\.\s*){2,}/gi, "I do not file orders. ").trim()
+}
+
+const ODDS_FIGURE =
+  /\b(?:odds\s+(?:about\s+)?)?(?:\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+\d+(?:\.\d+)?\s*:\s*1\b/gi
+
+/** Keep the first odds ratio; strip later ratios so replies never quote two figures. */
+export function keepOneOddsFigure(reply: string): string {
+  const sentences = splitCoachSentences(reply)
+  let seen = false
+  const out: string[] = []
+  for (const sentence of sentences) {
+    ODDS_FIGURE.lastIndex = 0
+    const matches = sentence.match(ODDS_FIGURE)
+    if (!matches?.length) {
+      out.push(sentence)
+      continue
+    }
+    if (!seen) {
+      seen = true
+      let count = 0
+      const trimmed = sentence
+        .replace(ODDS_FIGURE, (match) => {
+          count += 1
+          return count === 1 ? match : ""
+        })
+        .replace(/\s{2,}/g, " ")
+        .replace(/\s+([,;:.!?])/g, "$1")
+        .trim()
+      if (trimmed) out.push(trimmed)
+      continue
+    }
+    const stripped = sentence
+      .replace(ODDS_FIGURE, "")
+      .replace(/\b(?:two-pronged|concentric),?\s*/gi, "")
+      .replace(/\bif the Russians don't reinforce\b/gi, "")
+      .replace(/\bas the engine resolves this fortnight\b/gi, "")
+      .replace(/\sbefore the dice\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+([,;:.!?])/g, "$1")
+      .trim()
+    if (stripped.length >= 12) out.push(stripped)
+  }
+  return out.join(" ").trim()
+}
+
+/** Move the first question sentence to the front when intent/prediction asks trail evidence. */
+export function putQuestionFirst(reply: string): string {
+  const sentences = splitCoachSentences(reply)
+  if (sentences.length < 2) return reply
+  const qi = sentences.findIndex((sentence) => sentence.includes("?"))
+  if (qi <= 0) return reply
+  const question = sentences[qi]!
+  return [question, ...sentences.filter((_, index) => index !== qi)].join(" ").trim()
+}
+
+/**
+ * Post-process coach prose: scrub false filing claims, one odds figure, question first,
+ * then the 2–3 sentence / character cap.
+ */
 export function capCoachReply(reply: string): string {
-  const cleaned = scrubCoachLedgerNoise(reply.replace(/\s+/g, " ").trim())
+  let cleaned = scrubCoachLedgerNoise(reply.replace(/\s+/g, " ").trim())
+  cleaned = scrubCoachFiledClaims(cleaned)
+  cleaned = keepOneOddsFigure(cleaned)
+  cleaned = putQuestionFirst(cleaned)
   if (!cleaned) return cleaned
   const kept = splitCoachSentences(cleaned).slice(0, COACH_MAX_SENTENCES)
-  let out = kept.join(" ").trim()
+  let out = putQuestionFirst(kept.join(" ").trim())
   if (out.length > COACH_REPLY_MAX_CHARS) {
     out = `${out.slice(0, COACH_REPLY_MAX_CHARS - 1).replace(/\s+\S*$/, "").trim()}…`
   }
   return out
+}
+
+/** Merge a trailing follow-up question into reply-first form; then cap. */
+export function shapeCoachReply(
+  reply: string,
+  followUp: string | null,
+): { reply: string; followUp: string | null } {
+  let text = reply.replace(/\s+/g, " ").trim()
+  let next = followUp?.trim() ? followUp.trim() : null
+  const hasQuestion = splitCoachSentences(text).some((sentence) => sentence.includes("?"))
+  if (next && /\?/.test(next)) {
+    if (!hasQuestion) {
+      text = `${next} ${text}`.trim()
+      next = null
+    } else {
+      // Reply already asks; drop duplicate follow-up questions.
+      next = null
+    }
+  }
+  return { reply: capCoachReply(text), followUp: next }
 }
 
 /** Socratic coach: keep a single map/UI pointer. */
@@ -316,22 +423,45 @@ function trimRatio(raw: string): string {
   return (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, "")
 }
 
-/** Compact odds phrase for player-facing coach copy (no trailing period). */
+/**
+ * Compact odds phrase for player-facing coach copy (no trailing period).
+ * Uses the same engagementOdds / combinedEngagementOdds preview resolveTurn feeds
+ * when the garrison is unchanged; names the inherent enemy-move gap in plain words.
+ */
 export function formatCoachOddsPhrase(preview: EngagementPreview | null): string | null {
   if (!preview) return null
-  if (preview.empty && preview.origins < 2) return "undefended before the dice"
+  if (preview.empty && preview.origins < 2) {
+    return "undefended if the Russians don't reinforce"
+  }
   const ratio =
     preview.empty || !Number.isFinite(preview.ratio) ? null : trimRatio(String(preview.ratio))
-  // "as it resolves" = staffMap path (supply decay + capacity), matching resolveTurn.
   const odds = ratio
-    ? `odds about ${ratio}:1 as the engine resolves this fortnight`
-    : "undefended as the engine resolves this fortnight"
+    ? `about ${ratio}:1 if the Russians don't reinforce`
+    : "undefended if the Russians don't reinforce"
   if (preview.origins >= 2) {
     const shape = preview.origins === 2 ? "two-pronged" : "concentric"
     const ring = preview.encircled ? ", and the defender is surrounded" : ""
     return `${shape}, ${odds}${ring}`
   }
   return odds
+}
+
+/** First odds ratio quoted in coach prose, or null. */
+export function extractCoachOddsRatio(text: string): number | null {
+  const match = text.match(/\b(?:odds\s+(?:about\s+)?)?(\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+(\d+(?:\.\d+)?)\s*:\s*1\b/i)
+  if (!match) return null
+  const raw = match[1] ?? match[2]
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Dispatch slice: one resolution-preview odds line per queued attack target. */
+export function renderQueuedResolutionOdds(map: GameState, queued: PlayerOrder[]): string {
+  const oddsByTarget = queuedAttackOddsByTarget(map, queued)
+  if (!oddsByTarget.size) return "None."
+  return [...oddsByTarget.entries()]
+    .map(([targetId, phrase]) => `${targetId} ${provinceLabel(targetId)}: ${phrase ?? "unknown"}`)
+    .join("\n")
 }
 
 function centralView(battle: BattleFacts): { ours: number; theirs: number; weWon: boolean } {

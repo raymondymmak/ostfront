@@ -83,6 +83,15 @@ describe("top bar and map chrome", () => {
     expect(demo).toContain("selectKrakowOnMap")
     expect(demo).toContain("krakowIsSelected")
     expect(demo).toContain("Expected no province selected at campaign start")
+    // MapLibre selected filter sentinel must not count as a selection.
+    expect(demo).toContain('id === "__none__"')
+  })
+
+  it("keeps the HUD above floating papers so Options restart stays clickable", () => {
+    const css = readFileSync("app/globals.css", "utf8")
+    expect(css).toMatch(/\.table-hud\s*\{[^}]*z-index:\s*210/s)
+    const windows = readFileSync("lib/ui/table-windows.ts", "utf8")
+    expect(windows).toContain("HUD_Z = PAPER_DRAG_Z + 10")
   })
 
   it("puts /teach on the same general's-table shell with lesson focus highlights", () => {

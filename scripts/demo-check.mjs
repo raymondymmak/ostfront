@@ -269,7 +269,9 @@ async function selectKrakowOnMap(page) {
     await page.waitForTimeout(400)
   }
   await restoreTrayTab(page, "tab-province")
-  const title = page.locator("aside h2").filter({ hasText: "Kraków" }).first()
+  const provinceRoot = page.locator("[data-testid=province-window], aside").first()
+  await provinceRoot.waitFor({ state: "visible", timeout: 10_000 })
+  const title = provinceRoot.locator("h2").filter({ hasText: "Kraków" }).first()
   await title.waitFor({ state: "attached", timeout: 10_000 })
   await title.scrollIntoViewIfNeeded()
   await title.waitFor({ state: "visible", timeout: 10_000 })
@@ -499,9 +501,11 @@ function buildSteps(cli, targets) {
         await page.waitForTimeout(MAP_SETTLE_MS)
         await page.locator("[data-testid=scenario-picker]").waitFor({ state: "hidden", timeout: 10_000 })
         // No province auto-selected at Begin (Kraków used to be).
+        // MapLibre selected filter uses "__none__" as a sentinel when nothing is selected.
         const selectedAtStart = await page.evaluate(() => {
           const filter = window.__ostfrontMap?.getFilter?.("selected")
-          return Array.isArray(filter) ? filter[2] : null
+          const id = Array.isArray(filter) ? filter[2] : null
+          return id === "__none__" ? null : id
         })
         if (selectedAtStart) {
           throw new Error(`Expected no province selected at campaign start, got: ${selectedAtStart}`)
@@ -814,7 +818,8 @@ function buildSteps(cli, targets) {
       name: "Queue fortify province action",
       async run({ page }) {
         await selectKrakowOnMap(page)
-        const fortify = page.locator("[data-testid=fortify]")
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        const fortify = province.locator("[data-testid=fortify]")
         await fortify.waitFor({ state: "visible", timeout: 10_000 })
         if (await fortify.isDisabled()) {
           const label = ((await fortify.textContent()) ?? "").trim()
@@ -823,7 +828,7 @@ function buildSteps(cli, targets) {
             return
           }
           const reason =
-            (await page.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
+            (await province.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
             "Fortify button disabled on Kraków province panel."
           throw new Error(reason)
         }
@@ -837,11 +842,13 @@ function buildSteps(cli, targets) {
       name: "Queue move via neighbor button",
       async run({ page }) {
         await selectKrakowOnMap(page)
-        const move = page.locator("aside button").filter({ hasText: "Katowice" }).filter({ hasText: "Move" })
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        const move = province.getByRole("button").filter({ hasText: "Katowice" }).filter({ hasText: "Move" })
         await move.first().waitFor({ state: "visible", timeout: 10_000 })
         await move.first().click()
         await restoreTrayTab(page, "tab-orders")
-        await page.locator("aside").getByText(/Move to Katowice/).first().waitFor({ state: "visible", timeout: 10_000 })
+        const orders = page.locator("[data-testid=orders-window]").or(page.locator("aside")).first()
+        await orders.getByText(/Move to Katowice/).first().waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {
@@ -864,11 +871,13 @@ function buildSteps(cli, targets) {
       name: "Queue attack via neighbor button",
       async run({ page }) {
         await selectKrakowOnMap(page)
-        const attack = page.locator("aside button").filter({ hasText: "Lemberg" }).filter({ hasText: "Attack" })
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        const attack = province.getByRole("button").filter({ hasText: "Lemberg" }).filter({ hasText: "Attack" })
         await attack.first().waitFor({ state: "visible", timeout: 10_000 })
         await attack.first().click()
         await restoreTrayTab(page, "tab-orders")
-        await page.locator("aside").getByText(/Attack Lemberg from/).first().waitFor({ state: "visible", timeout: 10_000 })
+        const orders = page.locator("[data-testid=orders-window]").or(page.locator("aside")).first()
+        await orders.getByText(/Attack Lemberg from/).first().waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {
@@ -1071,7 +1080,8 @@ function buildSteps(cli, targets) {
         await page.waitForTimeout(MAP_SETTLE_MS)
         const teachSelectedAtStart = await page.evaluate(() => {
           const filter = window.__ostfrontMap?.getFilter?.("selected")
-          return Array.isArray(filter) ? filter[2] : null
+          const id = Array.isArray(filter) ? filter[2] : null
+          return id === "__none__" ? null : id
         })
         if (teachSelectedAtStart) {
           throw new Error(`Expected no province selected at /teach start, got: ${teachSelectedAtStart}`)
