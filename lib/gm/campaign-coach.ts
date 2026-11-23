@@ -309,27 +309,32 @@ export function formatBattleReviewForPlayer(
   return `${lead}${losses}`
 }
 
-/** Natural queued-attack sentence for the rules/offline coach. */
+function describeNonAttackOrders(map: GameState, queued: PlayerOrder[]): string[] {
+  return queued
+    .map((order) => {
+      if (order.type === "fortify") return `fortify ${provinceLabel(order.provinceId)}`
+      if (order.type === "move") {
+        const name = findUnit(map, order.unitId)?.unit.name ?? order.unitId
+        return `move ${name} to ${provinceLabel(order.to)}`
+      }
+      if (order.type === "recruit") return `recruit at ${provinceLabel(order.provinceId)}`
+      return null
+    })
+    .filter((line): line is string => Boolean(line))
+}
+
+/** Natural queued-plan sentence for the rules/offline coach (all attacks + other orders). */
 export function formatQueuedPlanForPlayer(
   map: GameState,
   queued: PlayerOrder[],
-  oddsPhrase: string | null,
+  oddsByTarget: Map<string, string | null> | null,
 ): string {
   const attacks = queued.filter(
     (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
   )
+  const other = describeNonAttackOrders(map, queued)
+
   if (!attacks.length) {
-    const other = queued
-      .map((order) => {
-        if (order.type === "fortify") return `fortify ${provinceLabel(order.provinceId)}`
-        if (order.type === "move") {
-          const name = findUnit(map, order.unitId)?.unit.name ?? order.unitId
-          return `move ${name} to ${provinceLabel(order.to)}`
-        }
-        if (order.type === "recruit") return `recruit at ${provinceLabel(order.provinceId)}`
-        return null
-      })
-      .filter((line): line is string => Boolean(line))
     const listed = other.length ? joinNames(other) : "orders"
     return `Your queue shows ${listed}. I do not file orders.`
   }
@@ -340,16 +345,53 @@ export function formatQueuedPlanForPlayer(
     group.push(order)
     byTarget.set(order.target, group)
   }
-  const [targetId, prongs] = [...byTarget.entries()][0]!
-  const target = provinceLabel(targetId)
-  const names = prongs.flatMap((order) =>
-    order.unitIds.map((id) => findUnit(map, id)?.unit.name ?? id),
+
+  const attackClauses: string[] = []
+  for (const [targetId, prongs] of byTarget) {
+    const target = provinceLabel(targetId)
+    const names = prongs.flatMap((order) =>
+      order.unitIds.map((id) => findUnit(map, id)?.unit.name ?? id),
+    )
+    const fromPlaces = [...new Set(prongs.map((order) => provinceLabel(order.from)))]
+    const units = joinNames(names)
+    const from = joinNames(fromPlaces)
+    const odds = oddsByTarget?.get(targetId)
+    const oddsClause = odds ? `, ${odds}` : ""
+    attackClauses.push(`${units} from ${from} into ${target}${oddsClause}`)
+  }
+
+  const parts = [`You have ${joinNames(attackClauses)} queued`]
+  if (other.length) parts.push(`plus ${joinNames(other)}`)
+  return `${parts.join(", ")}. I do not file orders — change the arrows yourself if you disagree.`
+}
+
+/** Odds phrases for every distinct queued attack target (committed unitIds). */
+export function queuedAttackOddsByTarget(
+  map: GameState,
+  queued: PlayerOrder[],
+): Map<string, string | null> {
+  const out = new Map<string, string | null>()
+  const attacks = queued.filter(
+    (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
   )
-  const fromPlaces = [...new Set(prongs.map((order) => provinceLabel(order.from)))]
-  const units = joinNames(names)
-  const from = joinNames(fromPlaces)
-  const odds = oddsPhrase ? `, ${oddsPhrase}` : ""
-  return `You have ${units} queued from ${from} into ${target}${odds}. I do not file orders — change the arrows yourself if you disagree.`
+  const byTarget = new Map<string, Extract<PlayerOrder, { type: "attack" }>[]>()
+  for (const order of attacks) {
+    const group = byTarget.get(order.target) ?? []
+    group.push(order)
+    byTarget.set(order.target, group)
+  }
+  for (const [targetId, prongs] of byTarget) {
+    const preview =
+      prongs.length >= 2
+        ? combinedEngagementOdds(
+            map,
+            targetId,
+            prongs.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
+          )
+        : engagementOdds(map, prongs[0]!.from, targetId, prongs[0]!.unitIds)
+    out.set(targetId, formatCoachOddsPhrase(preview))
+  }
+  return out
 }
 
 /** Latest fortnight that recorded at least one battle, newest resolution last. */
@@ -484,11 +526,13 @@ function rulesCoach(
   }
 
   if (situation.queue.length) {
-    const preview = queuedAttackPreview(map, queued)
-    if (preview) {
-      highlights.push({ provinceId: preview.targetId, uiId: "queued-orders" })
+    const oddsByTarget = queuedAttackOddsByTarget(map, queued)
+    if (oddsByTarget.size) {
+      for (const targetId of oddsByTarget.keys()) {
+        highlights.push({ provinceId: targetId, uiId: "queued-orders" })
+      }
       return {
-        reply: formatQueuedPlanForPlayer(map, queued, preview.odds),
+        reply: formatQueuedPlanForPlayer(map, queued, oddsByTarget),
         followUp: wantsPlan ? "Do you want the same blow from one column only?" : null,
         highlights,
       }

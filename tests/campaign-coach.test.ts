@@ -289,12 +289,36 @@ describe("campaign coach", () => {
       queuedOrders: queued,
       selectedProvinceId: "krakow",
     })
-    expect(result.reply).toMatch(/queued from Kraków into Kielce/i)
+    expect(result.reply).toMatch(/from Kraków into Kielce/i)
     expect(result.reply).toMatch(/odds about [\d.]+:1 before the dice/i)
     expect(result.reply).not.toMatch(/Ordered:/)
     expect(result.reply).not.toMatch(/unavailable offline|not from the wire/i)
     expect(result.reply).not.toMatch(/\.\./)
     expect(result.reply).not.toMatch(/\b\w+=\w+/)
+  })
+
+  it("names every queued attack target and non-attack orders in the fallback plan reply", async () => {
+    const state = createInitialState()
+    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    const units = krakow.units.filter((unit) => unit.faction === "central")
+    expect(units.length).toBeGreaterThan(1)
+    const queued: PlayerOrder[] = [
+      { type: "attack", from: "krakow", target: "kielce", unitIds: [units[0]!.id] },
+      { type: "attack", from: "krakow", target: "lublin", unitIds: [units[1]!.id] },
+      { type: "fortify", provinceId: "krakow" },
+    ]
+    const result = await coachCampaign({
+      state,
+      log: [],
+      messages: [{ role: "user", content: "What do you make of my queued plan?" }],
+      queuedOrders: queued,
+      selectedProvinceId: "krakow",
+    })
+    expect(result.reply).toMatch(/Kielce/i)
+    expect(result.reply).toMatch(/Lublin/i)
+    expect(result.reply).toMatch(/fortify Kraków/i)
+    expect(result.highlights.some((item) => item.provinceId === "kielce")).toBe(true)
+    expect(result.highlights.some((item) => item.provinceId === "lublin")).toBe(true)
   })
 
   it("does not attach unrelated combat odds when the queue has no attack", () => {
