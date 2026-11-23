@@ -26,8 +26,13 @@ describe("top bar and map chrome", () => {
     expect(hud).toContain("statusLabel")
     expect(hud).toContain("teachMode")
     expect(hud).toContain("tableShell")
-    // Desktop window toggles live in the document tray, not the HUD.
-    expect(hud).toMatch(/data-testid="advisor-toggle"/)
+    // Window toggles (incl. Chief of Staff) live in the document tray, not the HUD.
+    expect(hud).not.toMatch(/data-testid="advisor-toggle"/)
+    expect(hud).not.toContain("Chief of Staff")
+    expect(hud).not.toContain("onAdvisor")
+    expect(hud).toContain("HudOptionsMenu")
+    expect(hud).toContain('data-testid="table-hud"')
+    expect(hud).not.toMatch(/>Restart</)
   })
 
   it("puts map mode on the map and the rails toggle inside the open legend", () => {
@@ -50,6 +55,11 @@ describe("top bar and map chrome", () => {
     expect(app).toContain("tableShell={desktopShell}")
     expect(app).toContain("DocumentTray")
     expect(app).toContain("CAMPAIGN_TRAY_ITEMS")
+    expect(app).toContain("CAMPAIGN_PHONE_TRAY_ITEMS")
+    expect(app).toContain('sideTab === "advisor"')
+    const trayLib = readFileSync("lib/ui/document-tray.ts", "utf8")
+    expect(trayLib).toContain("CAMPAIGN_PHONE_TRAY_ITEMS")
+    expect(trayLib).toContain("advisor-toggle")
     expect(hud).not.toContain("onToggleWindow")
     expect(hud).not.toContain("WindowToggle")
     const drawer = readFileSync("components/chronicle-drawer.tsx", "utf8")

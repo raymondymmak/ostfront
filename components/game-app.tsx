@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import {
   applyPersistedLayout,
+  CAMPAIGN_PHONE_TRAY_ITEMS,
   CAMPAIGN_TRAY_ITEMS,
   defaultTrayOrder,
   insertIndexAtClientX,
@@ -96,6 +97,10 @@ export function GameApp() {
   const campaignTrayIds = useMemo(() => defaultTrayOrder(CAMPAIGN_TRAY_ITEMS), [])
   const orderedCampaignTrayItems = useMemo(
     () => orderTrayItems(CAMPAIGN_TRAY_ITEMS, trayOrder),
+    [trayOrder],
+  )
+  const orderedCampaignPhoneTrayItems = useMemo(
+    () => orderTrayItems(CAMPAIGN_PHONE_TRAY_ITEMS, trayOrder),
     [trayOrder],
   )
   const desktopShell = useDesktopShell()
@@ -326,11 +331,6 @@ export function GameApp() {
       if (item?.width === size.width && item?.height === size.height) return current
       return resizeWindow(current, id, { width: size.width, height: size.height })
     })
-  }
-
-  function onToggleTableWindow(id: TableWindowId) {
-    // Tray tabs / Escape restore or file papers — not show/hide toggles.
-    setWindows((current) => focusWindow(current, id))
   }
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
@@ -657,8 +657,6 @@ export function GameApp() {
         state={game.state}
         armReset={armReset}
         onReset={reset}
-        advisorOpen={advisorOpen}
-        onAdvisor={() => onToggleTableWindow("advisor")}
         tableShell={desktopShell}
       />
       {!desktopShell && ohlOpen && (
@@ -779,17 +777,6 @@ export function GameApp() {
             onDraw={addArrow}
             onOverlay={setOverlay}
           />
-          {!desktopShell && (
-            <AdvisorPanel
-              open={advisorOpen}
-              state={game.state}
-              queue={queue}
-              closed={finished}
-              epoch={chatEpoch}
-              onClose={() => setWindowOpen("advisor", false)}
-              onAccept={acceptAdvisorOrders}
-            />
-          )}
           <ChronicleDrawer
             open={logOpen}
             onOpen={(open) => setWindowOpen("log", open)}
@@ -998,16 +985,28 @@ export function GameApp() {
             <Tabs value={sideTab} className="flex min-h-0 flex-1 flex-col gap-0">
               <DocumentTray
                 variant="phone"
-                items={orderTrayItems(
-                  [
-                    { id: "orders" as const, label: "Orders", testId: "tab-orders" },
-                    { id: "province" as const, label: "Province", testId: "tab-province" },
-                  ],
-                  trayOrder,
-                )}
-                openById={{ orders: sideTab === "orders", province: sideTab === "front" }}
-                activeId={sideTab === "front" ? "province" : "orders"}
-                onRestore={(id) => setSideTab(id === "province" ? "front" : "orders")}
+                items={orderedCampaignPhoneTrayItems}
+                openById={{
+                  orders: sideTab === "orders",
+                  province: sideTab === "front",
+                  advisor: sideTab === "advisor",
+                }}
+                activeId={
+                  sideTab === "front" ? "province" : sideTab === "advisor" ? "advisor" : "orders"
+                }
+                trayOrder={trayOrder}
+                onRestore={(id) => {
+                  if (id === "province") {
+                    setSideTab("front")
+                    setWindowOpen("advisor", false)
+                  } else if (id === "advisor") {
+                    setSideTab("advisor")
+                    setWindowOpen("advisor", true)
+                  } else {
+                    setSideTab("orders")
+                    setWindowOpen("advisor", false)
+                  }
+                }}
                 className="order-last shrink-0 lg:order-none"
               />
               <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto">
@@ -1015,6 +1014,21 @@ export function GameApp() {
               </TabsContent>
               <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto">
                 {provincePanel}
+              </TabsContent>
+              <TabsContent value="advisor" className="min-h-0 flex-1 overflow-hidden">
+                <AdvisorPanel
+                  open={sideTab === "advisor"}
+                  embedded
+                  state={game.state}
+                  queue={queue}
+                  closed={finished}
+                  epoch={chatEpoch}
+                  onClose={() => {
+                    setSideTab("orders")
+                    setWindowOpen("advisor", false)
+                  }}
+                  onAccept={acceptAdvisorOrders}
+                />
               </TabsContent>
             </Tabs>
           </aside>

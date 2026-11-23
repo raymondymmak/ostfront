@@ -611,8 +611,6 @@ export function TeachingApp() {
         state={state}
         armReset={false}
         onReset={() => void loadSession(lessonId, variant, priorAttemptId)}
-        advisorOpen={false}
-        onAdvisor={() => {}}
         teachMode
         teachGoal={session.meta.title}
         tableShell={desktopShell}

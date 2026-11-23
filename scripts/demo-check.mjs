@@ -1191,8 +1191,13 @@ function buildSteps(cli, targets) {
       name: "Restart campaign (confirm)",
       async run({ page }) {
         await dismissNewsCardsIfOpen(page)
-        await page.getByRole("button", { name: "Restart" }).click()
-        await page.getByRole("button", { name: "Confirm restart" }).click()
+        await page.locator("[data-testid=hud-options]").click()
+        await page.locator("[data-testid=hud-options-restart]").click()
+        await page.locator("[data-testid=hud-options-restart]").getByText("Confirm restart").waitFor({
+          state: "visible",
+          timeout: 5_000,
+        })
+        await page.locator("[data-testid=hud-options-restart]").click()
         await page.locator("[data-testid=scenario-picker]").waitFor({ state: "visible", timeout: 15_000 })
       },
     },

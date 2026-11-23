@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   applyPersistedLayout,
+  CAMPAIGN_PHONE_TRAY_ITEMS,
   CAMPAIGN_TRAY_ITEMS,
   defaultTrayOrder,
   insertIndexAtClientX,
@@ -283,6 +284,30 @@ describe("document-tray", () => {
     expect(orderTrayItems(CAMPAIGN_TRAY_ITEMS, trayOrder).map((item) => item.id)).toEqual(trayOrder)
     expect(store.get(sessionStorageKey("campaign"))).toContain("trayOrder")
     vi.unstubAllGlobals()
+  })
+
+  it("keeps Chief of Staff on the phone strip in trayOrder and appends it to older saves", () => {
+    expect(CAMPAIGN_PHONE_TRAY_ITEMS.map((item) => item.id)).toEqual([
+      "orders",
+      "province",
+      "advisor",
+    ])
+    expect(CAMPAIGN_PHONE_TRAY_ITEMS.some((item) => item.testId === "advisor-toggle")).toBe(true)
+    // Legacy session without advisor still gets it appended when normalizing.
+    const legacy = ["orders", "province", "log", "legend", "ohl"] as const
+    const known = defaultTrayOrder(CAMPAIGN_TRAY_ITEMS)
+    const normalized = normalizeTrayOrder([...legacy], known)
+    expect(normalized).toContain("advisor")
+    expect(normalized.filter((id) => id === "advisor")).toHaveLength(1)
+    const phoneOrdered = orderTrayItems(CAMPAIGN_PHONE_TRAY_ITEMS, normalized).map((item) => item.id)
+    expect(phoneOrdered).toEqual(["orders", "province", "advisor"])
+    // Custom order that parked advisor before province is honoured on the phone strip.
+    const custom = ["orders", "advisor", "province", "log", "legend", "ohl"] as const
+    expect(orderTrayItems(CAMPAIGN_PHONE_TRAY_ITEMS, [...custom]).map((item) => item.id)).toEqual([
+      "orders",
+      "advisor",
+      "province",
+    ])
   })
 
   it("lifts session positions whose header sits under the tray (OHL stuck case)", () => {
