@@ -50,6 +50,11 @@ type FloatingWindowProps = {
   onStow?: (clientX?: number) => void
   /** Tray drop-target highlight while the pointer is over the tray band. */
   onTrayHover?: (over: boolean, clientX?: number) => void
+  /**
+   * When true, children stay mounted while `open` is false (hidden). Used so
+   * Chief of Staff keeps drafts/suggestions after filing into the tray.
+   */
+  keepMounted?: boolean
   children: ReactNode
 }
 
@@ -95,6 +100,7 @@ export function FloatingWindow({
   onSize,
   onStow,
   onTrayHover,
+  keepMounted = false,
   children,
 }: FloatingWindowProps) {
   void onClose
@@ -260,7 +266,7 @@ export function FloatingWindow({
     finishingDrag.current = false
   }
 
-  if (!open) return null
+  if (!open && !keepMounted) return null
 
   const trayHover = overTray
   const tuck = dragging && trayHover
@@ -269,14 +275,19 @@ export function FloatingWindow({
     : dragging
       ? "motion-safe:scale-[1.02] motion-safe:rotate-[1deg] shadow-[0_20px_40px_rgba(20,14,8,0.58)] motion-reduce:shadow-[0_14px_28px_rgba(20,14,8,0.5)] motion-reduce:scale-100 motion-reduce:rotate-0"
       : "shadow-[0_10px_22px_rgba(20,14,8,0.38)]"
+  // Same tree when keepMounted+closed so AdvisorPanel (and similar) do not remount.
+  const hiddenClosed = !open && keepMounted
 
   return (
     <div
       ref={rootRef}
+      data-floating-window-kept={hiddenClosed ? "true" : undefined}
+      aria-hidden={hiddenClosed || undefined}
       className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-[2px] border border-leather/65 bg-paper text-ink transition-[box-shadow,transform,opacity] duration-150 ease-out motion-reduce:transition-none ${widthClassName} ${maxHeightClassName} ${lift}`}
       style={{
         left: x,
         top: y,
+        ...(hiddenClosed ? { display: "none" } : null),
         // Never paint behind the document tray, even with stale session z.
         zIndex: dragging ? PAPER_DRAG_Z : Math.max(ensurePaperZ(z), DOCUMENT_TRAY_Z + 1),
         width: widthPx,
