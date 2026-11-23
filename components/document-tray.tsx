@@ -55,13 +55,14 @@ export function DocumentTray<Id extends string>({
       data-testid="document-tray"
       aria-label="Document tray"
       data-drop-active={dropHighlight ? "true" : undefined}
-      className={`pointer-events-auto flex items-end gap-1.5 overflow-x-auto border-t px-2 py-1.5 transition-[box-shadow,background-color,border-color] duration-150 ${className} ${
+      className={`pointer-events-auto flex w-full items-end gap-1.5 overflow-x-auto border-t px-2 py-1.5 transition-[box-shadow,background-color,border-color] duration-150 ${className} ${
         dropHighlight
           ? "border-brass bg-brass/25 shadow-[0_-6px_20px_rgba(122,92,40,0.35)]"
           : "border-leather/45 bg-paper-deep"
       }`}
       style={{
         minHeight: DOCUMENT_TRAY_HEIGHT,
+        width: "100%",
         backgroundImage: dropHighlight
           ? "linear-gradient(180deg, rgba(198,161,90,0.35) 0%, rgba(246,241,228,0.85) 55%)"
           : "linear-gradient(180deg, rgba(255,252,245,0.4) 0%, transparent 55%), linear-gradient(0deg, rgba(74,63,51,0.14), transparent 50%)",

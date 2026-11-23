@@ -746,6 +746,57 @@ function buildSteps(cli, targets) {
       },
     },
     {
+      id: "07a0-ohl-tray-file",
+      name: "Orders from OHL files into tray (no stuck-under-tray)",
+      async run({ page }) {
+        await page.locator("[data-testid=document-tray]").waitFor({ state: "visible", timeout: 5_000 })
+        const ohl = page.locator("[data-testid=ohl-orders-window]")
+        if (!(await ohl.isVisible().catch(() => false))) {
+          await restoreTrayTab(page, "ohl-toggle")
+        }
+        await ohl.waitFor({ state: "visible", timeout: 5_000 })
+        const tray = page.locator("[data-testid=document-tray]")
+        const trayBox = await tray.boundingBox()
+        const before = await ohl.boundingBox()
+        if (!trayBox || !before) throw new Error("OHL or tray missing")
+        const hx = before.x + Math.min(80, before.width / 2)
+        const hy = before.y + 12
+        await page.mouse.move(hx, hy)
+        await page.mouse.down()
+        // Drop at the tray edge (top of the bar) — must file, never stick under.
+        await page.mouse.move(hx, trayBox.y + 2, { steps: 14 })
+        await page.waitForTimeout(80)
+        const over = await ohl.getAttribute("data-over-tray")
+        const drop = await tray.getAttribute("data-drop-active")
+        if (over !== "true" && drop !== "true") {
+          throw new Error("Expected tray highlight while dragging OHL over the tray edge")
+        }
+        // Mid-drag: paper must paint above the tray (z-order), not behind it.
+        const zOk = await page.evaluate(() => {
+          const paper = document.querySelector('[data-testid=ohl-orders-window]')
+          const bar = document.querySelector('[data-testid=document-tray]')
+          if (!(paper instanceof HTMLElement) || !(bar instanceof HTMLElement)) return false
+          const pz = Number(getComputedStyle(paper).zIndex) || 0
+          const tz = Number(getComputedStyle(bar).zIndex) || 0
+          // Tray wrapper may be z-40; paper style.zIndex should be higher than 40.
+          return pz > 40 || pz > tz
+        })
+        if (!zOk) throw new Error("OHL z-index is not above the document tray while dragging")
+        await page.mouse.up()
+        await page.waitForTimeout(200)
+        await ohl.waitFor({ state: "hidden", timeout: 5_000 })
+        const tab = page.locator("[data-testid=ohl-toggle]")
+        await expectAttr(tab, "data-stowed", "true")
+        await restoreTrayTab(page, "ohl-toggle")
+        await ohl.waitFor({ state: "visible", timeout: 5_000 })
+        const after = await ohl.evaluate((el) => el.offsetTop)
+        const trayTop = await tray.evaluate((el) => el.offsetTop)
+        if (after + 36 > trayTop) {
+          throw new Error(`OHL header still overlaps tray after restore: y=${after} trayTop=${trayTop}`)
+        }
+      },
+    },
+    {
       id: "07a-document-tray",
       name: "Document tray drag-to-file / Enter restore on campaign",
       async run({ page }) {

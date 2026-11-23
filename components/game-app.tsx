@@ -16,6 +16,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import {
   applyPersistedLayout,
   CAMPAIGN_TRAY_ITEMS,
+  liftPersistedWindowsAboveTray,
   loadWindowSession,
   saveWindowSession,
   stowTopmostWindow,
@@ -209,7 +210,8 @@ export function GameApp() {
       node?.clientHeight ||
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
     const defaults = createDefaultTableWindows(width, height)
-    setWindows(applyPersistedLayout(defaults, loadWindowSession("campaign")))
+    const restored = applyPersistedLayout(defaults, loadWindowSession("campaign"))
+    setWindows(liftPersistedWindowsAboveTray(restored, height))
   }
 
   useEffect(() => {

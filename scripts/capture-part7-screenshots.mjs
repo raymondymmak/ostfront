@@ -1,4 +1,4 @@
-/** Capture Part 7 tray UX screenshots for / and /teach (drag-first tray). */
+/** Capture Part 7 tray UX screenshots — OHL under-tray fix + drag-first tray. */
 import { chromium } from "playwright"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
@@ -14,8 +14,6 @@ function withPath(base, path) {
 }
 
 async function beginCampaign(page) {
-  // Visit share URL first so protection cookies stick, then clear game storage
-  // without dropping the share query (reload alone can lose Vercel share auth).
   await page.goto(withPath(BASE, "/"), { waitUntil: "domcontentloaded", timeout: 60_000 })
   await page.evaluate(() => {
     localStorage.removeItem("ostfront-1915-v1")
@@ -44,7 +42,7 @@ async function shot(page, file) {
   console.log("wrote", path)
 }
 
-async function dragTowardTray(page, dialog, { release = true } = {}) {
+async function dragPaperTowardTray(page, dialog, { release = true, edge = false } = {}) {
   const handle = dialog.locator("[data-testid=floating-window-drag-handle]")
   const tray = page.locator("[data-testid=document-tray]")
   const box = await handle.boundingBox()
@@ -53,7 +51,7 @@ async function dragTowardTray(page, dialog, { release = true } = {}) {
   const sx = box.x + Math.min(60, box.width / 2)
   const sy = box.y + 10
   const ex = trayBox.x + trayBox.width / 2
-  const ey = trayBox.y + trayBox.height / 2
+  const ey = edge ? trayBox.y + 2 : trayBox.y + trayBox.height / 2
   await page.mouse.move(sx, sy)
   await page.mouse.down()
   await page.mouse.move(ex, ey, { steps: 14 })
@@ -64,39 +62,47 @@ async function dragTowardTray(page, dialog, { release = true } = {}) {
   }
 }
 
-async function fileAllViaEscape(page) {
-  for (let i = 0; i < 8; i++) {
-    const visible = await page
-      .locator('[role="dialog"]')
-      .evaluateAll((els) => els.filter((el) => el.getClientRects().length > 0).length)
-    if (visible === 0) break
-    await page.keyboard.press("Escape")
-    await page.waitForTimeout(100)
-  }
-}
-
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage()
 
 try {
   await page.setViewportSize({ width: 1440, height: 900 })
   await beginCampaign(page)
-  await shot(page, "part7-feedback-papers-out-1440x900.png")
 
-  // Mid-drag over highlighted tray (Orders).
-  const orders = page.locator('[role="dialog"][aria-label="Orders"]')
-  await orders.waitFor({ state: "visible", timeout: 10_000 })
-  await dragTowardTray(page, orders, { release: false })
-  await shot(page, "part7-feedback-drag-over-tray-1440x900.png")
+  const ohl = page.locator("[data-testid=ohl-orders-window]")
+  await ohl.waitFor({ state: "visible", timeout: 10_000 })
+  await dragPaperTowardTray(page, ohl, { release: false })
+  await shot(page, "part7-ohl-mid-drag-tray-1440x900.png")
   await page.mouse.up()
   await page.waitForTimeout(250)
+  await shot(page, "part7-ohl-filed-1440x900.png")
 
-  await fileAllViaEscape(page)
-  await shot(page, "part7-feedback-all-filed-1440x900.png")
+  // Take Orders out and drop at the tray edge.
+  const ordersTab = page.locator("[data-testid=tab-orders]")
+  if (await ordersTab.isVisible().catch(() => false)) {
+    await ordersTab.focus()
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(200)
+  }
+  const orders = page.locator('[role="dialog"][aria-label="Orders"]')
+  await orders.waitFor({ state: "visible", timeout: 10_000 })
+  await dragPaperTowardTray(page, orders, { release: true, edge: true })
+  await shot(page, "part7-orders-tray-edge-filed-1440x900.png")
+
+  // Viewport sweep: papers open at each size (campaign + teach phone).
+  for (const vp of [
+    { w: 1440, h: 900 },
+    { w: 1280, h: 800 },
+    { w: 1024, h: 768 },
+  ]) {
+    await page.setViewportSize({ width: vp.w, height: vp.h })
+    await beginCampaign(page)
+    await shot(page, `part7-campaign-papers-${vp.w}x${vp.h}.png`)
+  }
 
   await page.setViewportSize({ width: 390, height: 844 })
   await beginTeach(page)
-  await shot(page, "part7-feedback-teach-390x844.png")
+  await shot(page, "part7-teach-390x844.png")
 } finally {
   await browser.close()
 }

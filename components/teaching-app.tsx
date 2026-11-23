@@ -12,6 +12,7 @@ import { TeachPanel } from "@/components/teach-panel"
 import { Button } from "@/components/ui/button"
 import {
   applyPersistedLayout,
+  liftPersistedWindowsAboveTray,
   loadWindowSession,
   saveWindowSession,
   stowTopmostWindow,
@@ -169,7 +170,8 @@ export function TeachingApp() {
       node?.clientHeight ||
       Math.max(400, (typeof window !== "undefined" ? window.innerHeight : 900) - 120)
     const defaults = createDefaultTeachWindows(width, height)
-    setWindows(applyPersistedLayout(defaults, loadWindowSession("teach")))
+    const restored = applyPersistedLayout(defaults, loadWindowSession("teach"))
+    setWindows(liftPersistedWindowsAboveTray(restored, height))
     setLessonHeightCap(teachLessonHeightCap(height))
     setLegendHeightCap(teachLegendHeightCap(height))
   }

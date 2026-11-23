@@ -36,7 +36,12 @@ export function stageHeightForWindows(
   return Math.max(160, stageHeight - trayHeight)
 }
 
-const BASE_Z = 20
+/**
+ * Papers paint above the document tray (`DOCUMENT_TRAY_Z` / CSS `z-[40]`).
+ * A paper must never render behind the tray bar.
+ */
+export const DOCUMENT_TRAY_Z = 40
+const BASE_Z = DOCUMENT_TRAY_Z + 10
 
 export type ClampWindowOptions = {
   /**

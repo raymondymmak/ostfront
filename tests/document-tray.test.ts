@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest"
 import {
   applyPersistedLayout,
   isStowed,
+  liftPersistedWindowsAboveTray,
   pointerMovedEnough,
   restoreWindow,
   stowTopmostWindow,
   stowWindow,
 } from "@/lib/ui/document-tray"
+import { trayTopY } from "@/lib/ui/window-drag"
+import { WINDOW_HEADER_HEIGHT } from "@/lib/ui/table-windows"
 import {
   createDefaultTableWindows,
   focusWindow,
@@ -98,5 +101,20 @@ describe("document-tray", () => {
     expect(paper).not.toMatch(/getByRole\([^\)]*Stow/)
     expect(paper).toContain("onTrayHover")
     expect(paper).toContain("data-over-tray")
+    expect(paper).toContain("shouldFileIntoTray")
+    expect(paper).toContain("liftYAboveTray")
+  })
+
+  it("lifts session positions whose header sits under the tray (OHL stuck case)", () => {
+    const stageH = 820
+    const stuckY = trayTopY(stageH) - WINDOW_HEADER_HEIGHT + 12
+    let windows = createDefaultTableWindows(1440, stageH)
+    windows = windows.map((item) =>
+      item.id === "ohl" ? { ...item, open: true, y: stuckY } : item,
+    )
+    const lifted = liftPersistedWindowsAboveTray(windows, stageH)
+    const ohl = lifted.find((item) => item.id === "ohl")
+    expect(ohl).toBeTruthy()
+    expect(ohl!.y + WINDOW_HEADER_HEIGHT).toBeLessThanOrEqual(trayTopY(stageH))
   })
 })

@@ -2,16 +2,18 @@
 
 import {
   clampWindowPosition,
+  DOCUMENT_TRAY_Z,
+  stageHeightForWindows,
   TABLE_WINDOW_MARGIN,
   type StackedWindow,
 } from "@/lib/ui/table-windows"
-import { stageHeightForWindows } from "@/lib/ui/table-windows"
 
 export type TeachWindowId = "orders" | "province" | "legend" | "lesson"
 
 export type TeachWindowState = StackedWindow<TeachWindowId>
 
-const BASE_Z = 20
+/** Papers paint above the document tray (`z-[40]`). */
+const BASE_Z = DOCUMENT_TRAY_Z + 10
 const GAP = 12
 
 export const TEACH_WINDOW_SIZE_HINTS: Record<TeachWindowId, { w: number; h: number }> = {

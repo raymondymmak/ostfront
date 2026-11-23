@@ -4,9 +4,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import { TABLE_WINDOW_MARGIN, WINDOW_HEADER_HEIGHT } from "@/lib/ui/table-windows"
 import {
   DOCUMENT_TRAY_HEIGHT,
-  pointerInTrayZone,
+  liftYAboveTray,
   positionAfterPointerDrag,
   resolveWindowHeight,
+  shouldFileIntoTray,
   stageHeightForWindows,
 } from "@/lib/ui/window-drag"
 
@@ -143,11 +144,10 @@ export function FloatingWindow({
         setLocalHeight((current) => (current === applied ? current : applied))
       }
       const ww = widthPx ?? (node.offsetWidth || 320)
-      // Header-only Y: body may sit over the tray; grip stays on-screen.
-      const maxY = Math.max(
-        TABLE_WINDOW_MARGIN,
-        stage.height - WINDOW_HEADER_HEIGHT - TABLE_WINDOW_MARGIN,
-      )
+      // While dragging, header may enter the tray band; at rest it must stay fully above.
+      const maxY = dragging
+        ? Math.max(TABLE_WINDOW_MARGIN, stage.height - WINDOW_HEADER_HEIGHT - TABLE_WINDOW_MARGIN)
+        : liftYAboveTray(Number.POSITIVE_INFINITY, stage.height)
       const maxX = Math.max(TABLE_WINDOW_MARGIN, stage.width - ww - TABLE_WINDOW_MARGIN)
       const clampedX = Math.min(Math.max(TABLE_WINDOW_MARGIN, x), maxX)
       const clampedY = Math.min(Math.max(TABLE_WINDOW_MARGIN, y), maxY)
@@ -260,7 +260,12 @@ export function FloatingWindow({
           const parent = node?.offsetParent as HTMLElement | null
           const parentTop = parent?.getBoundingClientRect().top ?? 0
           const relativeY = event.clientY - parentTop
-          const hovering = pointerInTrayZone(relativeY, stage.height, DOCUMENT_TRAY_HEIGHT)
+          const hovering = shouldFileIntoTray({
+            pointerY: relativeY,
+            windowY: next.y,
+            stageHeight: stage.height,
+            trayHeight: DOCUMENT_TRAY_HEIGHT,
+          })
           if (hovering !== overTray) {
             setOverTray(hovering)
             onTrayHover?.(hovering)
@@ -273,8 +278,15 @@ export function FloatingWindow({
           const parent = node?.offsetParent as HTMLElement | null
           const parentTop = parent?.getBoundingClientRect().top ?? 0
           const relativeY = event.clientY - parentTop
-          const shouldStow =
-            onStow && pointerInTrayZone(relativeY, stage.height, DOCUMENT_TRAY_HEIGHT)
+          const shouldStow = Boolean(
+            onStow &&
+              shouldFileIntoTray({
+                pointerY: relativeY,
+                windowY: y,
+                stageHeight: stage.height,
+                trayHeight: DOCUMENT_TRAY_HEIGHT,
+              }),
+          )
           drag.current = null
           setDragging(false)
           setOverTray(false)
@@ -284,13 +296,23 @@ export function FloatingWindow({
           } catch {
             /* already released */
           }
-          if (shouldStow) onStow()
+          if (shouldStow) {
+            onStow?.()
+            return
+          }
+          // Missed the tray: never leave the grip hidden behind the bar.
+          const lifted = liftYAboveTray(y, stage.height)
+          if (lifted !== y) onMove(x, lifted)
         }}
         onPointerCancel={() => {
+          const node = rootRef.current
+          const stage = measureStage(node)
           drag.current = null
           setDragging(false)
           setOverTray(false)
           onTrayHover?.(false)
+          const lifted = liftYAboveTray(y, stage.height)
+          if (lifted !== y) onMove(x, lifted)
         }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2">

@@ -1,7 +1,12 @@
 /** Document-tray model: stowed papers as tabs, restored as floating windows. */
 
 import { DOCUMENT_TRAY_HEIGHT, type StackedWindow } from "@/lib/ui/table-windows"
-import { TRAY_DRAG_THRESHOLD_PX, type Point } from "@/lib/ui/window-drag"
+import {
+  headerOverlapsTray,
+  liftYAboveTray,
+  TRAY_DRAG_THRESHOLD_PX,
+  type Point,
+} from "@/lib/ui/window-drag"
 
 export { DOCUMENT_TRAY_HEIGHT, TRAY_DRAG_THRESHOLD_PX }
 
@@ -134,6 +139,20 @@ export function applyPersistedLayout<Id extends string>(
       ...(saved.height !== undefined ? { height: saved.height } : {}),
       ...(saved.width !== undefined ? { width: saved.width } : {}),
     }
+  })
+}
+
+/**
+ * Lift any paper whose saved Y puts the header under/behind the tray.
+ * Call after applyPersistedLayout with the live map-stage height.
+ */
+export function liftPersistedWindowsAboveTray<Id extends string>(
+  windows: StackedWindow<Id>[],
+  stageHeight: number,
+): StackedWindow<Id>[] {
+  return windows.map((item) => {
+    if (!headerOverlapsTray(item.y, stageHeight)) return item
+    return { ...item, y: liftYAboveTray(item.y, stageHeight) }
   })
 }
 
