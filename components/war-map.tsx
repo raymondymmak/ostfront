@@ -107,6 +107,8 @@ export function WarMap({
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<string | null>(null)
+  /** While drawing an order arrow: valid neighbor vs non-adjacent hover. */
+  const [arrowDrag, setArrowDrag] = useState<"valid" | "invalid" | null>(null)
   const [showRailsLocal, setShowRailsLocal] = useState(true)
   const showRails = showRailsProp ?? showRailsLocal
   const setShowRails = (next: boolean | ((value: boolean) => boolean)) => {
@@ -204,8 +206,12 @@ export function WarMap({
       map.addSource("province-counters", { type: "geojson", data: emptyCollection() })
       installWarMapLayers(map, BACKDROP_OWNER_COLOR)
       let hovered: string | number | null = null
+      let startId: string | null = null
       map.on("mousemove", "provinces", (event: maplibregl.MapLayerMouseEvent) => {
-        map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : "pointer"
+        // While dragging an arrow, paintPreview owns the cursor (valid / not-allowed).
+        if (!startId) {
+          map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : "pointer"
+        }
         const feature = event.features?.[0]
         const id = feature?.id
         if (feature?.properties) {
@@ -232,7 +238,7 @@ export function WarMap({
         }
       })
       map.on("mouseleave", "provinces", () => {
-        map.getCanvas().style.cursor = ""
+        if (!startId) map.getCanvas().style.cursor = ""
         setHoverTip(null)
         if (hovered !== null) {
           map.setFeatureState({ source: "provinces", id: hovered }, { hover: false })
@@ -240,62 +246,120 @@ export function WarMap({
         }
       })
 
-      let startId: string | null = null
       const preview = () => map.getSource("preview") as maplibregl.GeoJSONSource
-      const clearPreview = () => preview()?.setData(emptyCollection())
+      const clearPreview = () => {
+        preview()?.setData(emptyCollection())
+        setArrowDrag(null)
+      }
       const idAt = (point: maplibregl.PointLike) => {
         const feature = map.queryRenderedFeatures(point, { layers: ["provinces"] })[0]
         const id = feature?.properties?.id
         return typeof id === "string" ? id : null
       }
-
-      map.on("mousedown", "provinces", (event: maplibregl.MapLayerMouseEvent) => {
-        if (!propsRef.current.orderMode) return
-        const id = idAt(event.point)
-        if (!id) return
-        event.preventDefault()
-        startId = id
-      })
-      map.on("mousemove", (event: maplibregl.MapMouseEvent) => {
-        if (!startId) return
-        const from = propsRef.current.provinces.find((province) => province.id === startId)
+      const neighborDrop = (fromId: string, toId: string | null) => {
+        if (!toId || toId === fromId) return false
+        const from = propsRef.current.provinces.find((province) => province.id === fromId)
+        return Boolean(from?.neighbors.includes(toId))
+      }
+      const paintPreview = (
+        fromId: string,
+        lngLat: { lng: number; lat: number },
+        hoverId: string | null,
+      ) => {
+        const from = propsRef.current.provinces.find((province) => province.id === fromId)
         if (!from) return
+        const valid = neighborDrop(fromId, hoverId)
+        setArrowDrag(valid ? "valid" : "invalid")
+        map.getCanvas().style.cursor = valid ? "crosshair" : "not-allowed"
         preview()?.setData({
           type: "FeatureCollection",
           features: [
             {
               type: "Feature",
-              properties: {},
+              properties: { valid: valid ? 1 : 0 },
               geometry: {
                 type: "LineString",
-                coordinates: [from.centroid, [event.lngLat.lng, event.lngLat.lat]],
+                // Follow the pointer — never snap to a non-neighbor centroid.
+                coordinates: [from.centroid, [lngLat.lng, lngLat.lat]],
               },
             },
           ],
         })
+      }
+
+      const beginDrag = (point: maplibregl.PointLike) => {
+        if (!propsRef.current.orderMode) return false
+        const id = idAt(point)
+        if (!id) return false
+        startId = id
+        setArrowDrag("invalid")
+        return true
+      }
+
+      map.on("mousedown", "provinces", (event: maplibregl.MapLayerMouseEvent) => {
+        if (!beginDrag(event.point)) return
+        event.preventDefault()
+      })
+      map.on("touchstart", "provinces", (event: maplibregl.MapLayerTouchEvent) => {
+        if (event.points.length !== 1) return
+        if (!beginDrag(event.point)) return
+        event.preventDefault()
+      })
+      map.on("mousemove", (event: maplibregl.MapMouseEvent) => {
+        if (!startId) return
+        paintPreview(startId, event.lngLat, idAt(event.point))
+      })
+      map.on("touchmove", (event: maplibregl.MapTouchEvent) => {
+        if (!startId || event.points.length !== 1) return
+        paintPreview(startId, event.lngLat, idAt(event.point))
       })
       const finish = (point?: maplibregl.PointLike, commitAll = false) => {
         if (!startId) return
         const origin = startId
         startId = null
         clearPreview()
+        map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : ""
         if (!point) return
         const target = idAt(point)
-        if (target && target !== origin) propsRef.current.onDraw(origin, target, commitAll)
-        else if (target) propsRef.current.onSelect(target)
+        if (target && target !== origin) {
+          // Always hand off — addArrow cancels non-neighbors (hint, no queue).
+          propsRef.current.onDraw(origin, target, commitAll)
+        } else if (target) propsRef.current.onSelect(target)
       }
       map.on("mouseup", (event: maplibregl.MapMouseEvent) =>
         finish(event.point, event.originalEvent.shiftKey),
       )
-      const onWindowUp = (event: MouseEvent) => {
+      map.on("touchend", (event: maplibregl.MapTouchEvent) => {
         if (!startId) return
-        const canvas = map.getCanvas()
-        if (event.target === canvas) return
+        finish(event.point)
+      })
+      const cancelDrag = () => {
+        if (!startId) return
         startId = null
         clearPreview()
+        map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : ""
       }
+      // System gestures / app switches send touchcancel, not touchend — clear
+      // without committing so a later background touch cannot reuse startId.
+      map.on("touchcancel", () => cancelDrag())
+      const canvas = map.getCanvas()
+      const onCanvasPointerCancel = () => cancelDrag()
+      canvas.addEventListener("pointercancel", onCanvasPointerCancel)
+      const onWindowUp = (event: MouseEvent | TouchEvent) => {
+        if (!startId) return
+        if (event.target === canvas) return
+        cancelDrag()
+      }
+      const onWindowCancel = () => cancelDrag()
       window.addEventListener("mouseup", onWindowUp)
-      map.once("remove", () => window.removeEventListener("mouseup", onWindowUp))
+      window.addEventListener("touchend", onWindowUp)
+      window.addEventListener("touchcancel", onWindowCancel)
+      map.once("remove", () => {
+        window.removeEventListener("mouseup", onWindowUp)
+        window.removeEventListener("touchend", onWindowUp)
+        window.removeEventListener("touchcancel", onWindowCancel)
+        canvas.removeEventListener("pointercancel", onCanvasPointerCancel)
+      })
 
       map.on("click", "provinces", (event: maplibregl.MapLayerMouseEvent) => {
         if (propsRef.current.orderMode) return
@@ -447,6 +511,7 @@ export function WarMap({
           ? `move:${targetIds.move.join(",")};attack:${targetIds.attack.join(",")};order:${targetIds.canOrder}`
           : undefined
       }
+      data-arrow-drag={arrowDrag ?? undefined}
     >
       {failed ? (
         <SvgMap

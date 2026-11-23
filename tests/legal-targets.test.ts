@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { freshGame } from "@/lib/storage"
-import { legalTargets } from "@/lib/ui/legal-targets"
+import {
+  isNeighborOrderTarget,
+  legalTargets,
+  neighborTargetIds,
+  nonAdjacentArrowHint,
+} from "@/lib/ui/legal-targets"
 
 describe("legalTargets", () => {
   it("lists friendly neighbors as move and hostile as attack from Kraków", () => {
@@ -13,6 +18,21 @@ describe("legalTargets", () => {
     expect(targets.reach.move).toContain("katowice")
     expect(targets.reach.attack).toContain("kielce")
     expect(targets.blocked).toEqual([])
+  })
+
+  it("exposes neighbor drop ids matching legalTargets (rejects non-adjacent)", () => {
+    const { state } = freshGame()
+    const targets = legalTargets(state, "krakow", [])
+    const neighbors = neighborTargetIds(targets)
+    expect(neighbors).toContain("katowice")
+    expect(neighbors).toContain("kielce")
+    expect(isNeighborOrderTarget(targets, "katowice")).toBe(true)
+    expect(isNeighborOrderTarget(targets, "kielce")).toBe(true)
+    // Lemberg borders Kraków; Warsaw does not.
+    expect(isNeighborOrderTarget(targets, "lwow")).toBe(true)
+    expect(isNeighborOrderTarget(targets, "warszawa")).toBe(false)
+    expect(neighbors).not.toContain("warszawa")
+    expect(nonAdjacentArrowHint("Kraków", "Warsaw")).toMatch(/do not share a border/)
   })
 
   it("blocks every neighbor when supply is under 30", () => {
