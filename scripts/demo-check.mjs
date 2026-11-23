@@ -1042,6 +1042,24 @@ function buildSteps(cli, targets) {
         if (!targetFilter.includes("lublin")) {
           throw new Error(`Expected target outline filter for lublin, got: ${targetFilter}`)
         }
+
+        // Phone stacked shell: Resolve must stay in the viewport without page scroll.
+        await page.setViewportSize(MOBILE_VIEWPORT)
+        await page.waitForTimeout(400)
+        const phoneShell = await app.getAttribute("data-teach-shell")
+        if (phoneShell !== "stacked") {
+          throw new Error(`Expected stacked teach shell at 390×844, got: ${phoneShell ?? "(none)"}`)
+        }
+        await page.locator("[data-testid=teach-lesson-stack]").waitFor({ state: "visible", timeout: 5_000 })
+        const phoneResolve = await page.locator("[data-testid=teach-resolve]").boundingBox()
+        if (!phoneResolve) throw new Error("teach-resolve missing at 390×844")
+        if (phoneResolve.y < 0 || phoneResolve.y + phoneResolve.height > MOBILE_VIEWPORT.height + 1) {
+          throw new Error(
+            `Resolve below the fold at 390×844: box=${JSON.stringify(phoneResolve)} viewport=${MOBILE_VIEWPORT.height}`,
+          )
+        }
+        await page.setViewportSize(DESKTOP_VIEWPORT)
+        await page.waitForTimeout(300)
       },
     },
     {

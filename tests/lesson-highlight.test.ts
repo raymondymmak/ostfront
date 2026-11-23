@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { readFileSync } from "node:fs"
 import {
   LESSON_FOCUS_FILL_LAYER,
+  LESSON_HIGHLIGHT_BRASS_DEEP,
   LESSON_SOURCE_DASH,
   LESSON_SOURCE_FILL_OPACITY,
   LESSON_SOURCE_LINE_WIDTH,
@@ -24,6 +25,10 @@ describe("lesson highlight", () => {
       lessonFocusAttribute({ targets: ["kielce"], sources: ["katowice", "krakow"] }),
     ).toBe("target:kielce;source:katowice,krakow")
     expect(lessonFocusAttribute({ targets: [], sources: [] })).toBeUndefined()
+  })
+
+  it("uses the WCAG-darkened brass-deep token for source outlines", () => {
+    expect(LESSON_HIGHLIGHT_BRASS_DEEP).toBe("#7a5c28")
   })
 
   it("keeps source outlines thinner/dashed and distinct from the solid target ring", () => {

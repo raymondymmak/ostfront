@@ -17,8 +17,8 @@ export const TEACH_WINDOW_SIZE_HINTS: Record<TeachWindowId, { w: number; h: numb
   lesson: { w: 340, h: 460 },
   orders: { w: 360, h: 480 },
   province: { w: 360, h: 480 },
-  /** Compact so it fits under Lesson in the left column without covering targets. */
-  legend: { w: 280, h: 220 },
+  /** Compact under Lesson; tall enough that Depot / VP / Rails stay readable. */
+  legend: { w: 280, h: 248 },
 }
 
 export type TeachWindowRect = {
@@ -57,12 +57,12 @@ export function teachWindowHeights(mapWidth: number, mapHeight: number): Record<
   const columnBudget = Math.max(280, mapHeight - belowMapMode - m - safety)
   const stackBudget = Math.max(260, columnBudget - GAP)
 
-  // Prefer a tall Lesson (Resolve stays reachable) and a compact Legend underneath.
-  let legendH = Math.min(TEACH_WINDOW_SIZE_HINTS.legend.h, Math.max(160, Math.floor(stackBudget * 0.3)))
+  // Prefer a tall Lesson (Resolve + prediction reachable) and a Legend that still shows Depot/Rails.
+  let legendH = Math.min(TEACH_WINDOW_SIZE_HINTS.legend.h, Math.max(200, Math.floor(stackBudget * 0.36)))
   let lessonH = Math.min(TEACH_WINDOW_SIZE_HINTS.lesson.h, stackBudget - legendH)
   if (lessonH < 220) {
-    lessonH = Math.min(TEACH_WINDOW_SIZE_HINTS.lesson.h, Math.max(200, Math.floor(stackBudget * 0.62)))
-    legendH = Math.min(TEACH_WINDOW_SIZE_HINTS.legend.h, Math.max(150, stackBudget - lessonH))
+    lessonH = Math.min(TEACH_WINDOW_SIZE_HINTS.lesson.h, Math.max(200, Math.floor(stackBudget * 0.58)))
+    legendH = Math.min(TEACH_WINDOW_SIZE_HINTS.legend.h, Math.max(180, stackBudget - lessonH))
   }
 
   // Final guard: Lesson + gap + Legend must fit under the map-mode strip.

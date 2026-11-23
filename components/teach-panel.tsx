@@ -148,21 +148,6 @@ export function TeachPanel({
         )}
         <label
           className="mt-4 block text-xs font-medium text-muted-foreground"
-          htmlFor="teach-reasoning"
-        >
-          Your reasoning
-        </label>
-        <textarea
-          id="teach-reasoning"
-          data-testid="teach-reasoning"
-          className="mt-1 min-h-[3.5rem] w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-          value={reasoning}
-          onChange={(event) => onReasoning(event.target.value)}
-          placeholder="Why this plan…"
-          disabled={Boolean(feedback) || busy}
-        />
-        <label
-          className="mt-3 block text-xs font-medium text-muted-foreground"
           htmlFor="teach-prediction"
         >
           Prediction (required)
@@ -170,10 +155,29 @@ export function TeachPanel({
         <textarea
           id="teach-prediction"
           data-testid="teach-prediction"
-          className="mt-1 min-h-[3.5rem] w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          className={`mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm ${
+            embedded ? "min-h-[2.25rem]" : "min-h-[3.5rem]"
+          }`}
           value={prediction}
           onChange={(event) => onPrediction(event.target.value)}
           placeholder="What happens on resolve, and why?"
+          disabled={Boolean(feedback) || busy}
+        />
+        <label
+          className="mt-3 block text-xs font-medium text-muted-foreground"
+          htmlFor="teach-reasoning"
+        >
+          Your reasoning
+        </label>
+        <textarea
+          id="teach-reasoning"
+          data-testid="teach-reasoning"
+          className={`mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm ${
+            embedded ? "min-h-[2.25rem]" : "min-h-[3.5rem]"
+          }`}
+          value={reasoning}
+          onChange={(event) => onReasoning(event.target.value)}
+          placeholder="Why this plan…"
           disabled={Boolean(feedback) || busy}
         />
         {variant === "guided" && !feedback && (
@@ -207,7 +211,10 @@ export function TeachPanel({
         )}
         {feedback && <TeachFeedbackBlock feedback={feedback} />}
       </div>
-      <div className={`border-t border-border ${embedded ? "p-2.5" : "p-3"}`}>
+      <div
+        className={`shrink-0 border-t border-border ${embedded ? "p-2.5" : "p-3"}`}
+        data-testid="teach-resolve-bar"
+      >
         {!feedback ? (
           <Button
             type="button"

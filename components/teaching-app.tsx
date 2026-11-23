@@ -490,7 +490,7 @@ export function TeachingApp() {
 
   return (
     <div
-      className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden"
+      className="flex h-dvh flex-col overflow-hidden bg-background"
       data-testid="teach-app"
       data-teach-shell={desktopShell ? "desktop" : "stacked"}
     >
@@ -524,11 +524,19 @@ export function TeachingApp() {
         </div>
       )}
       <div
-        className={`grid min-h-0 flex-1 ${desktopShell ? "" : "lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(16rem,20rem)]"}`}
+        className={`min-h-0 flex-1 overflow-hidden ${
+          desktopShell
+            ? "grid"
+            : "flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(16rem,20rem)]"
+        }`}
       >
         <div
           ref={mapStageRef}
-          className="relative min-h-[45vh] min-h-0 flex-1 overflow-hidden lg:min-h-0"
+          className={
+            desktopShell
+              ? "relative min-h-0 flex-1 overflow-hidden"
+              : "relative max-h-[min(36vh,15rem)] min-h-[9rem] shrink-0 overflow-hidden lg:max-h-none lg:min-h-0 lg:flex-1"
+          }
         >
           <WarMap
             provinces={provinces}
@@ -623,7 +631,7 @@ export function TeachingApp() {
                     y={win.y}
                     z={win.z}
                     widthClassName="w-[min(17.5rem,calc(100%-1.5rem))]"
-                    maxHeightClassName="max-h-[min(32dvh,14.5rem)]"
+                    maxHeightClassName="max-h-[min(36dvh,16.5rem)]"
                     heightCap={legendHeightCap}
                     testId="legend-window"
                     onFocus={focus}
@@ -644,10 +652,16 @@ export function TeachingApp() {
         </div>
         {!desktopShell && (
           <>
-            <div className="border-t border-leather/35 bg-paper">{teachPanel}</div>
-            <aside className="flex min-h-0 flex-col border-t border-border">
-              <Tabs value={sideTab} onValueChange={setSideTab} className="flex min-h-0 flex-1 flex-col">
-                <TabsList className="mx-3 mt-3 w-[calc(100%-1.5rem)]">
+            {/* Bounded Lesson so Resolve stays in the viewport; body scrolls inside. */}
+            <div
+              className="flex min-h-[11rem] flex-1 flex-col overflow-hidden border-t border-leather/35 bg-paper"
+              data-testid="teach-lesson-stack"
+            >
+              {teachPanel}
+            </div>
+            <aside className="flex max-h-[min(28vh,11rem)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-border lg:max-h-none">
+              <Tabs value={sideTab} onValueChange={setSideTab} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <TabsList className="mx-3 mt-2 w-[calc(100%-1.5rem)] shrink-0">
                   <TabsTrigger value="orders" data-testid="tab-orders">
                     Orders
                   </TabsTrigger>
@@ -655,10 +669,10 @@ export function TeachingApp() {
                     Province
                   </TabsTrigger>
                 </TabsList>
-                <TabsContent value="orders" className="min-h-0 flex-1">
+                <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto">
                   {orderPanel}
                 </TabsContent>
-                <TabsContent value="front" className="min-h-0 flex-1">
+                <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto">
                   {provincePanel}
                 </TabsContent>
               </Tabs>
@@ -666,7 +680,7 @@ export function TeachingApp() {
           </>
         )}
       </div>
-      <div className="border-t border-leather/35 bg-paper px-4 py-2 text-center text-xs text-muted-foreground">
+      <div className="shrink-0 border-t border-leather/35 bg-paper px-4 py-2 text-center text-xs text-muted-foreground">
         <Link href="/" className="underline" data-testid="teach-exit-campaign">
           Return to full campaign
         </Link>

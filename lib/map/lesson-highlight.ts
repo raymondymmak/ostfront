@@ -9,7 +9,8 @@ export const LESSON_FOCUS_FILL_LAYER = "lesson-focus-fill"
 
 /** Brass that reads on faction fills without replacing them. */
 export const LESSON_HIGHLIGHT_BRASS = "#c6a15a"
-export const LESSON_HIGHLIGHT_BRASS_DEEP = "#8a6a32"
+/** Matches `--brass-deep` / `--primary` after the WCAG AA darkening. */
+export const LESSON_HIGHLIGHT_BRASS_DEEP = "#7a5c28"
 
 export const LESSON_TARGET_LINE_WIDTH = 3.6
 /** Thinner than the solid target ring; paired with a dasharray on the source layer. */
