@@ -12,7 +12,7 @@ import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@
 import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
 import { lossesLine } from "@/lib/news/battle"
 import { routineLog } from "@/lib/news/routine-copy"
-import type { GameState, PlayerOrder, TurnRecord } from "@/lib/types"
+import type { BattleFacts, GameState, PlayerOrder, TurnRecord } from "@/lib/types"
 import { z } from "zod"
 
 const COACH_TIMEOUT_MS = 20_000
@@ -98,7 +98,7 @@ export async function coachCampaign(input: {
   const situation = buildSituation(map, queued)
   const chronicle = renderChronicle(input.log)
   const selected = renderSelected(map, input.selectedProvinceId)
-  const rules = rulesCoach(situation, selected, chronicle, input.messages)
+  const rules = rulesCoach(situation, selected, input.log, input.messages, queued)
   const ordersClosed = situation.over
 
   if (!llmConfigured() && !fixtureEnabled()) {
@@ -209,6 +209,36 @@ export async function coachCampaign(input: {
   }
 }
 
+/** Central Powers–relative battle line for the coach dispatch. */
+export function formatBattleForCoach(battle: BattleFacts): string {
+  const ours = battle.attacker === "central" ? battle.attackerLoss : battle.defenderLoss
+  const theirs = battle.attacker === "central" ? battle.defenderLoss : battle.attackerLoss
+  const weWon = battle.attacker === "central" ? battle.attackerWon : !battle.attackerWon
+  return `Battle ${battle.targetId}: attacker=${battle.attacker} defender=${battle.defender} kind=${battle.kind} weWon=${weWon} encircled=${battle.encircled} oursLost=${ours} theirsLost=${theirs} (${lossesLine(battle)})`
+}
+
+/** Latest fortnight that recorded at least one battle, newest resolution last. */
+export function latestBattleFacts(log: TurnRecord[]): Array<{
+  turn: number
+  date: string
+  battle: BattleFacts
+  summary: string
+}> {
+  for (let i = log.length - 1; i >= 0; i -= 1) {
+    const record = log[i]!
+    const rows = record.resolutions
+      .filter((item) => item.battle)
+      .map((item) => ({
+        turn: record.turn,
+        date: record.date,
+        battle: item.battle!,
+        summary: item.summary,
+      }))
+    if (rows.length) return rows
+  }
+  return []
+}
+
 /** Build the chronicle slice the coach may quote (engine records only). */
 export function renderChronicle(log: TurnRecord[]): string {
   if (!log.length) return "No fortnights closed yet."
@@ -217,11 +247,7 @@ export function renderChronicle(log: TurnRecord[]): string {
     .map((record) => {
       const battles = record.resolutions
         .filter((item) => item.battle)
-        .map((item) => {
-          const battle = item.battle!
-          const losses = lossesLine(battle)
-          return `Battle ${battle.targetId}: kind=${battle.kind} attackerWon=${battle.attackerWon} encircled=${battle.encircled} oursLost=${battle.attackerLoss} theirsLost=${battle.defenderLoss}${losses ? ` (${losses})` : ""}`
-        })
+        .map((item) => formatBattleForCoach(item.battle!))
       const routine = routineLog(record)
       return [
         `Fortnight ${record.turn + 1} · ${record.date}`,
@@ -261,11 +287,37 @@ function renderSelected(state: GameState, selectedProvinceId?: string | null): s
   return `${province.id} ${province.name} controller=${province.controller} supply=${province.supply} fort=${province.fort} centralStrength=${strength}`
 }
 
+/** Engine preview for the player's actual queued attacks (not an unrelated contact). */
+export function queuedAttackPreview(
+  situation: Situation,
+  queued: PlayerOrder[],
+): { targetId: string; odds: string | null } | null {
+  const attacks = queued.filter((order) => order.type === "attack")
+  if (!attacks.length) return null
+  for (const battle of situation.combined) {
+    const hits = attacks.some((order) => order.type === "attack" && order.target === battle.targetId)
+    if (!hits) continue
+    if (battle.queuedOdds || battle.prongs.some((prong) => prong.queued)) {
+      return { targetId: battle.targetId, odds: battle.queuedOdds ?? battle.odds }
+    }
+  }
+  for (const order of attacks) {
+    if (order.type !== "attack") continue
+    const contact = situation.contacts.find(
+      (item) => item.fromId === order.from && item.targetId === order.target,
+    )
+    if (contact) return { targetId: contact.targetId, odds: contact.odds }
+  }
+  const first = attacks[0]
+  return first && first.type === "attack" ? { targetId: first.target, odds: null } : null
+}
+
 function rulesCoach(
   situation: Situation,
   selected: string,
-  chronicle: string,
+  log: TurnRecord[],
   messages: AdvisorChatMessage[],
+  queued: PlayerOrder[],
 ): { reply: string; followUp: string | null; highlights: CoachHighlight[] } {
   const latest = [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
   const lower = latest.toLowerCase()
@@ -273,32 +325,33 @@ function rulesCoach(
   const wantsPlan = /plan|queue|arrow|attack|compare|should i|what about|this fortnight/.test(lower)
   const highlights: CoachHighlight[] = []
 
-  if (wantsReview && chronicle !== "No fortnights closed yet.") {
-    const battleMatch = chronicle.match(/Battle ([a-z0-9_]+):/)
-    if (battleMatch?.[1]) highlights.push({ provinceId: battleMatch[1], uiId: "chronicle-log-toggle" })
-    return {
-      reply: `From the chronicle: ${chronicle.split("\n").slice(0, 4).join(" ")} Ask if you want a province named.`,
-      followUp: "Which battle do you want to walk through?",
-      highlights,
+  if (wantsReview) {
+    const battles = latestBattleFacts(log)
+    if (battles.length) {
+      const last = battles[battles.length - 1]!
+      highlights.push({ provinceId: last.battle.targetId, uiId: "chronicle-log-toggle" })
+      return {
+        reply: `From the chronicle, the last battle of fortnight ${last.turn + 1} (${last.date}): ${formatBattleForCoach(last.battle)}. ${last.summary} Ask if you want another province named.`,
+        followUp: "Which battle do you want to walk through?",
+        highlights,
+      }
     }
   }
 
   if (situation.queue.length) {
-    const contact = situation.combined[0] ?? situation.contacts[0]
-    if (contact) {
-      const targetId = "targetId" in contact ? contact.targetId : (contact as { targetId: string }).targetId
-      highlights.push({ provinceId: targetId, uiId: "queued-orders" })
-      const odds =
-        "queuedOdds" in contact && contact.queuedOdds
-          ? contact.queuedOdds
-          : "odds" in contact
-            ? contact.odds
-            : null
+    const preview = queuedAttackPreview(situation, queued)
+    if (preview) {
+      highlights.push({ provinceId: preview.targetId, uiId: "queued-orders" })
       return {
-        reply: `Your queue shows ${situation.queue.slice(0, 2).join("; ")}. Engine preview on that axis: ${odds ?? "see COMBINED in the dispatch"}. I do not file orders — change the arrows yourself if you disagree.`,
+        reply: `Your queue shows ${situation.queue.slice(0, 2).join("; ")}. Engine preview for that queued attack: ${preview.odds ?? "see COMBINED in the dispatch for the committed columns"}. I do not file orders — change the arrows yourself if you disagree.`,
         followUp: wantsPlan ? "Do you want the same blow from one column only?" : null,
         highlights,
       }
+    }
+    return {
+      reply: `Your queue shows ${situation.queue.slice(0, 2).join("; ")}. No attack column is queued, so I am not attaching combat odds. I do not file orders.`,
+      followUp: wantsPlan ? "Queue an attack if you want engine odds on an axis." : null,
+      highlights: [{ uiId: "queued-orders" }],
     }
   }
 

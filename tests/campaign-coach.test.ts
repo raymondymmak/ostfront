@@ -6,7 +6,16 @@ import {
   resetCampaignStoreForTests,
   withServerSeed,
 } from "@/lib/campaign/store"
-import { coachCampaign, renderChronicle, sanitizeHighlights } from "@/lib/gm/campaign-coach"
+import {
+  coachCampaign,
+  formatBattleForCoach,
+  latestBattleFacts,
+  queuedAttackPreview,
+  renderChronicle,
+  sanitizeHighlights,
+} from "@/lib/gm/campaign-coach"
+import { buildSituation } from "@/lib/gm/advisor"
+import type { BattleFacts, TurnRecord } from "@/lib/types"
 import { playTurn } from "@/lib/gm"
 import { createInitialState } from "@/lib/data/scenario"
 import type { PlayerOrder } from "@/lib/types"
@@ -142,6 +151,102 @@ describe("campaign coach", () => {
     expect(result.highlights.some((item) => item.provinceId === "kielce" || item.uiId === "queued-orders")).toBe(
       true,
     )
+  })
+
+  it("labels ours/theirs from the Central Powers view when Russia attacked", () => {
+    const battle: BattleFacts = {
+      targetId: "krakow",
+      attacker: "russia",
+      defender: "central",
+      kind: "assault",
+      prongs: 1,
+      origins: ["kielce"],
+      attackerLoss: 12,
+      defenderLoss: 40,
+      encircled: false,
+      attackerWon: true,
+    }
+    const line = formatBattleForCoach(battle)
+    expect(line).toContain("attacker=russia")
+    expect(line).toContain("oursLost=40")
+    expect(line).toContain("theirsLost=12")
+    expect(line).toContain("weWon=false")
+    expect(line).toContain("Ours −40 · Theirs −12")
+  })
+
+  it("reviews the latest battle from structured records, not the oldest fortnight text", async () => {
+    const early: TurnRecord = {
+      turn: 0,
+      date: "2 May 1915",
+      narration: "",
+      diplomacy: [],
+      resolutions: [
+        {
+          proposal: { type: "attack", from: "krakow", target: "kielce", units: ["g-kra-11"] },
+          status: "applied",
+          summary: "Early fight at Kielce.",
+          battle: {
+            targetId: "kielce",
+            attacker: "central",
+            defender: "russia",
+            kind: "assault",
+            prongs: 1,
+            origins: ["krakow"],
+            attackerLoss: 1,
+            defenderLoss: 2,
+            encircled: false,
+            attackerWon: true,
+          },
+        },
+      ],
+      events: [],
+      controlChanges: [],
+      logistics: ["Central Powers collect 1 manpower."],
+      notes: [],
+      gmSource: "mock",
+    }
+    const late: TurnRecord = {
+      ...early,
+      turn: 2,
+      date: "13 June 1915",
+      resolutions: [
+        {
+          proposal: { type: "attack", from: "krakow", target: "lublin", units: ["g-kra-11"] },
+          status: "applied",
+          summary: "Later fight at Lublin.",
+          battle: {
+            targetId: "lublin",
+            attacker: "central",
+            defender: "russia",
+            kind: "assault",
+            prongs: 1,
+            origins: ["krakow"],
+            attackerLoss: 3,
+            defenderLoss: 5,
+            encircled: false,
+            attackerWon: false,
+          },
+        },
+      ],
+      logistics: ["Central Powers collect 2 manpower."],
+    }
+    expect(latestBattleFacts([early, late]).at(-1)?.battle.targetId).toBe("lublin")
+    const result = await coachCampaign({
+      state: createInitialState(),
+      log: [early, late],
+      messages: [{ role: "user", content: "Review the last battle from the chronicle." }],
+      queuedOrders: [],
+    })
+    expect(result.reply).toContain("lublin")
+    expect(result.reply).toContain("Later fight at Lublin")
+    expect(result.reply).not.toContain("Early fight at Kielce")
+    expect(result.highlights.some((item) => item.provinceId === "lublin")).toBe(true)
+  })
+
+  it("does not attach unrelated combat odds when the queue has no attack", () => {
+    const state = createInitialState()
+    const situation = buildSituation(state, [{ type: "fortify", provinceId: "krakow" }])
+    expect(queuedAttackPreview(situation, [{ type: "fortify", provinceId: "krakow" }])).toBeNull()
   })
 })
 
