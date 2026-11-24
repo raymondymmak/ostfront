@@ -5,7 +5,6 @@ import {
   CENTRAL_INDUSTRY_MULTIPLIER,
   INCOME_FORMULA,
   REFIT_FORMULA,
-  describeIncomeTotals,
   describeProvinceIncome,
   explainIncome,
   explainRefit,
@@ -146,25 +145,16 @@ export function EconomyReadout({
           <p className="font-semibold text-[#3d342b]">
             {focus === "manpower" ? "Manpower" : "Industry"}
           </p>
-          <p className="mt-1">
-            Treasury already holds {purse.mp} manpower and {purse.ip} industry. That stock is what earlier
-            fortnights left.
-          </p>
-          <p className="mt-1">
-            This fortnight, before refit: <span className="font-semibold">+{income.mp}</span> manpower and{" "}
-            <span className="font-semibold">+{income.ip}</span> industry.
-          </p>
           <p className="mt-1" data-testid="economy-formula">
             {INCOME_FORMULA}
           </p>
-          <p className="mt-1">
-            Central Powers industry is then ×{CENTRAL_INDUSTRY_MULTIPLIER}. Manpower has no extra multiplier. The
-            totals are rounded once.
-          </p>
-          <p className="mt-1">{describeIncomeTotals(explanation)}</p>
-          <p className="mt-1" data-testid="economy-refit">
-            {REFIT_FORMULA} This fortnight that bill is {refit.mp} manpower
-            {refitSkipIds.length > 0 ? " (queued attacks are left out)" : ""}. Industry is not spent on refit.
+          {focus === "industry" ? (
+            <p className="mt-1" data-testid="economy-industry-multiplier">
+              Central Powers industry is ×{CENTRAL_INDUSTRY_MULTIPLIER}.
+            </p>
+          ) : null}
+          <p className="mt-1" data-testid="economy-reinforcements">
+            {REFIT_FORMULA}
           </p>
           <ul className="mt-1.5 space-y-1 border-t border-leather/25 pt-1.5 text-[10px] text-[#3d342b]">
             {provinces.map((province) => (

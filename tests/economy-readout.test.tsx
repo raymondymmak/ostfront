@@ -4,7 +4,13 @@ import { act } from "react"
 import { createRoot } from "react-dom/client"
 import { EconomyReadout } from "@/components/economy-readout"
 import { createInitialState } from "@/lib/data/scenario"
-import { CENTRAL_INDUSTRY_MULTIPLIER, explainIncome, explainRefit, projectIncome } from "@/lib/engine/economy"
+import {
+  CENTRAL_INDUSTRY_MULTIPLIER,
+  describeProvinceIncome,
+  explainIncome,
+  explainRefit,
+  projectIncome,
+} from "@/lib/engine/economy"
 
 describe("economy readout", () => {
   it("opens on click and shows the engine figures for manpower and industry", async () => {
@@ -38,17 +44,34 @@ describe("economy readout", () => {
     expect(panel.textContent).toContain("unrest/100")
     expect(panel.textContent).toContain("halved if occupied")
     expect(panel.textContent).toContain("under 30")
-    expect(panel.textContent).toContain("1.3")
-    expect(panel.textContent).toContain("per 4 strength")
-    expect(panel.textContent).toContain(`+${income.mp}`)
-    expect(panel.textContent).toContain(`+${explained.income.ip}`)
-    expect(panel.textContent).toContain("queued attacks are left out")
+    expect(panel.textContent).toContain("Reinforcing damaged armies costs 1 manpower per 4 strength.")
+    expect(panel.textContent).not.toMatch(/×\s*1\.3/)
+    expect(panel.textContent).not.toMatch(/multiplier/i)
+    expect(panel.textContent).not.toMatch(/this fortnight/i)
+    expect(panel.textContent).not.toMatch(/treasury already/i)
+    expect(panel.textContent).not.toMatch(/round/i)
+    expect(panel.textContent).not.toMatch(/refit/i)
+    expect(panel.textContent).toContain("Austrian Silesia: 1 MP, 1 IND")
+    const ruthenia = explainIncome(state, "central").provinces.find((province) => province.id === "podkarpatska_rus")
+    if (ruthenia) expect(panel.textContent).toContain(describeProvinceIncome(ruthenia))
+    for (const province of explained.provinces) {
+      expect(panel.textContent).toContain(describeProvinceIncome(province))
+    }
 
     const industry = host.querySelector('[data-testid="economy-industry"]') as HTMLButtonElement
     await act(async () => {
       industry.click()
     })
     expect(panel.getAttribute("data-economy-focus")).toBe("industry")
+    expect(panel.textContent).toContain("Central Powers industry is ×1.3.")
+    expect(panel.textContent).toContain("unrest/100")
+    expect(panel.textContent).toContain("Reinforcing damaged armies costs 1 manpower per 4 strength.")
+    expect(panel.textContent).toContain("Austrian Silesia: 1 MP, 1 IND")
+    expect(panel.textContent).not.toMatch(/this fortnight/i)
+    expect(panel.textContent).not.toMatch(/treasury already/i)
+    expect(panel.textContent).not.toMatch(/round/i)
+    expect(panel.textContent).not.toMatch(/refit/i)
+    expect(panel.textContent).not.toMatch(/multiplier/i)
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))

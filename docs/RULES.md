@@ -34,7 +34,7 @@ The orders panel and Falkenhayn quote odds against the garrison as it stands. Th
 
 ## Economy, recruiting, and reinforcement
 
-Each province yields manpower and industry at the end of the fortnight when its supply is at least 30. Unrest reduces the yield, and a province held by someone other than its 1914 owner yields half. Central Powers industry is then multiplied by 1.3. Russian manpower is multiplied by 1.12 and Russian industry by 0.55, and Russian income is scaled again by difficulty: 0.62 on Easy, 0.82 on Normal, and 1.18 on Hard. Hover or click manpower or industry in the top bar to see that arithmetic for the provinces you hold, including the refit bill of 1 manpower per 4 strength. The Resources map lens shades each province by the same local yield, before the national multipliers.
+Each province yields manpower and industry at the end of the fortnight when its supply is at least 30. Unrest reduces the yield, and a province held by someone other than its 1914 owner yields half. Central Powers industry is then multiplied by 1.3. Russian manpower is multiplied by 1.12 and Russian industry by 0.55, and Russian income is scaled again by difficulty: 0.62 on Easy, 0.82 on Normal, and 1.18 on Hard. Hover or click manpower or industry in the top bar to see that yield for each province you hold. Industry also shows the Central Powers ×1.3. Reinforcing damaged armies costs 1 manpower per 4 strength. The Resources map lens shades each province by the same local yield, before the national multipliers.
 
 Recruiting spends that purse. A yard is a province you control, with supply of at least 60, that is either your depot or one of your own urban cities.
 

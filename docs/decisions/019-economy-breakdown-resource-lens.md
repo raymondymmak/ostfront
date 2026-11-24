@@ -9,7 +9,7 @@ Manpower and industry in the top bar were two stock figures plus a fortnightly i
 
 ## Decision
 
-Keep `projectIncome` as the rounded purse. Add `explainIncome`, `provinceIncomeDetail`, and `explainRefit` beside it so the HUD (`components/economy-readout.tsx`) prints the same factors: base yield × (1 − unrest/100), halved when occupied, zero under supply 30, Central Powers industry ×1.3, and refit at 1 manpower per 4 strength. Queued attacks are omitted from that bill, matching `spendable`.
+Keep `projectIncome` as the purse. Add `explainIncome` and `provinceIncomeDetail` beside it. The HUD (`components/economy-readout.tsx`) prints the yield rule — base yield × (1 − unrest/100), halved when occupied, zero under supply 30 — then one terse line per held province (`Austrian Silesia: 1 MP, 1 IND`, or `0 (supply 27 < 30)` when supply is under the floor). Industry also shows Central Powers industry ×1.3. Manpower does not. Both add one sentence: reinforcing damaged armies costs 1 manpower per 4 strength. The panel does not repeat the treasury, this fortnight’s income, or rounding.
 
 Add a Resources overlay in `lib/map/province-paint.ts`. It shades `provinceResourceYield` (local manpower + industry only). National multipliers stay off the colour so a province reads the same whoever holds it, aside from occupation and supply.
 

@@ -30,8 +30,7 @@ const MORALE_TARGET = 80
 export const INCOME_FORMULA =
   "Base yield × (1 − unrest/100), halved if occupied, and 0 if supply is under 30."
 
-export const REFIT_FORMULA =
-  "Refit costs 1 manpower per 4 strength, up to 8 points, for a formation in supply of at least 50 that is not attacking."
+export const REFIT_FORMULA = "Reinforcing damaged armies costs 1 manpower per 4 strength."
 
 /** Scales Russian income only. Easy is short of shells and men; Hard is not. */
 export const DIFFICULTY_INCOME: Record<Difficulty, number> = {
@@ -171,13 +170,12 @@ export function formatEconomyNumber(value: number): string {
   return String(rounded)
 }
 
+/** Terse HUD line. The yield rule itself is `INCOME_FORMULA`, not repeated on each province. */
 export function describeProvinceIncome(detail: ProvinceIncomeDetail): string {
-  const base = `base ${formatEconomyNumber(detail.baseMp)} manpower and ${formatEconomyNumber(detail.baseIp)} industry`
   if (detail.starved) {
-    return `${detail.name}: supply ${formatEconomyNumber(detail.supply)} is under ${INCOME_SUPPLY_FLOOR}, so the yield is 0 (${base}).`
+    return `${detail.name}: 0 (supply ${formatEconomyNumber(detail.supply)} < ${INCOME_SUPPLY_FLOOR})`
   }
-  const half = detail.occupied ? ", halved because it is occupied" : ""
-  return `${detail.name}: ${base} × (1 − ${formatEconomyNumber(detail.unrest)}/100)${half} = ${formatEconomyNumber(detail.mp)} manpower and ${formatEconomyNumber(detail.ip)} industry.`
+  return `${detail.name}: ${formatEconomyNumber(detail.mp)} MP, ${formatEconomyNumber(detail.ip)} IND`
 }
 
 export function describeIncomeTotals(explanation: FactionIncomeExplanation): string {
@@ -315,7 +313,7 @@ export function reinforceFaction(
   }
   if (healed.length) {
     notes.push(
-      `${healed.length} ${faction === "central" ? "Central Powers" : "Russian"} formation${healed.length === 1 ? "" : "s"} refit in supply.`,
+      `${healed.length} ${faction === "central" ? "Central Powers" : "Russian"} formation${healed.length === 1 ? "" : "s"} receive reinforcements in supply.`,
     )
   }
   return notes

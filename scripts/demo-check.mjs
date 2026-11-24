@@ -161,6 +161,25 @@ async function openApplication(page, targets) {
   }
 }
 
+function assertEconomyBreakdown(text, { industryMultiplier }) {
+  if (!text.includes("unrest/100")) throw new Error(`Breakdown missing unrest formula: ${text.slice(0, 280)}`)
+  if (!/halved if occupied/i.test(text)) throw new Error("Breakdown missing occupied-yield rule")
+  if (!/under 30/i.test(text)) throw new Error("Breakdown missing supply floor")
+  if (!/Reinforcing damaged armies costs 1 manpower per 4 strength/i.test(text)) {
+    throw new Error("Breakdown missing reinforcements cost")
+  }
+  if (!text.includes("Austrian Silesia: 1 MP, 1 IND")) {
+    throw new Error(`Breakdown missing a terse province line: ${text.slice(0, 360)}`)
+  }
+  if (/this fortnight/i.test(text)) throw new Error("Breakdown still shows this fortnight's income")
+  if (/treasury already/i.test(text)) throw new Error("Breakdown still shows the treasury stock")
+  if (/round/i.test(text)) throw new Error("Breakdown still mentions rounding")
+  if (/refit/i.test(text)) throw new Error("Breakdown still says refit")
+  const showsMultiplier = /×\s*1\.3/.test(text)
+  if (industryMultiplier && !showsMultiplier) throw new Error("Industry breakdown missing Central Powers ×1.3")
+  if (!industryMultiplier && showsMultiplier) throw new Error("Manpower breakdown must not mention ×1.3")
+}
+
 async function projectOnMap(page, lon, lat) {
   return page.evaluate(
     ([longitude, latitude]) => {
@@ -604,20 +623,20 @@ function buildSteps(cli, targets) {
         await manpower.click()
         const panel = page.locator("[data-testid=economy-breakdown]")
         await panel.waitFor({ state: "visible", timeout: 5_000 })
-        const text = ((await panel.innerText()) ?? "").replace(/\s+/g, " ")
-        if (!text.includes("unrest/100")) throw new Error(`Breakdown missing unrest formula: ${text.slice(0, 280)}`)
-        if (!text.includes("1.3")) throw new Error("Breakdown missing Central Powers industry ×1.3")
-        if (!/per 4 strength/i.test(text)) throw new Error("Breakdown missing refit cost of 1 manpower per 4 strength")
+        const manpowerText = ((await panel.innerText()) ?? "").replace(/\s+/g, " ")
+        assertEconomyBreakdown(manpowerText, { industryMultiplier: false })
         const incomeMp = await panel.getAttribute("data-income-mp")
         const incomeIp = await panel.getAttribute("data-income-ip")
         const refitMp = await panel.getAttribute("data-refit-mp")
         if (incomeMp == null || incomeIp == null || refitMp == null) {
-          throw new Error("Breakdown is missing engine income or refit attributes")
+          throw new Error("Breakdown is missing engine income or reinforcement attributes")
         }
         await page.locator("[data-testid=economy-industry]").click()
         await panel.waitFor({ state: "visible" })
         const focused = await panel.getAttribute("data-economy-focus")
         if (focused !== "industry") throw new Error(`Expected industry focus, got ${focused}`)
+        const industryText = ((await panel.innerText()) ?? "").replace(/\s+/g, " ")
+        assertEconomyBreakdown(industryText, { industryMultiplier: true })
         await page.keyboard.press("Escape")
         await panel.waitFor({ state: "hidden", timeout: 5_000 })
       },

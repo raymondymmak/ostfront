@@ -58,7 +58,13 @@ describe("economy", () => {
     expect(home.mp).toBeCloseTo(home.baseMp * home.factor)
     expect(home.ip).toBeCloseTo(home.baseIp * home.factor)
     expect(provinceIncome(silesia)).toEqual({ mp: home.mp, ip: home.ip })
-    expect(describeProvinceIncome(home)).toContain("× (1 −")
+    expect(describeProvinceIncome(home)).toBe("Upper Silesia: 2 MP, 4 IND")
+
+    const austrian = state.provinces.find((province) => province.id === "czeske_slezsko")!
+    expect(describeProvinceIncome(provinceIncomeDetail(austrian))).toBe("Austrian Silesia: 1 MP, 1 IND")
+    const ruthenia = state.provinces.find((province) => province.id === "podkarpatska_rus")!
+    ruthenia.supply = 27
+    expect(describeProvinceIncome(provinceIncomeDetail(ruthenia))).toBe("Carpathian Ruthenia: 0 (supply 27 < 30)")
 
     silesia.supply = INCOME_SUPPLY_FLOOR - 1
     const starved = provinceIncomeDetail(silesia)
@@ -66,7 +72,7 @@ describe("economy", () => {
     expect(starved.ip).toBe(0)
     expect(starved.factor).toBe(0)
     expect(provinceResourceYield(silesia)).toBe(0)
-    expect(describeProvinceIncome(starved)).toContain(`under ${INCOME_SUPPLY_FLOOR}`)
+    expect(describeProvinceIncome(starved)).toBe(`Upper Silesia: 0 (supply ${INCOME_SUPPLY_FLOOR - 1} < ${INCOME_SUPPLY_FLOOR})`)
 
     silesia.supply = 80
     silesia.unrest = 0
@@ -76,7 +82,7 @@ describe("economy", () => {
     expect(occupied.factor).toBeCloseTo(0.5)
     expect(occupied.mp).toBeCloseTo(occupied.baseMp * 0.5)
     expect(occupied.ip).toBeCloseTo(occupied.baseIp * 0.5)
-    expect(describeProvinceIncome(occupied)).toContain("halved because it is occupied")
+    expect(describeProvinceIncome(occupied)).toBe("Upper Silesia: 1 MP, 2 IND")
 
     silesia.unrest = 50
     const uneasyOccupied = provinceIncomeDetail(silesia)

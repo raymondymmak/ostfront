@@ -117,7 +117,7 @@ export function ProvincePanel({
           <div data-testid="recruit-panel" className="flex flex-col gap-2">
             <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Raise troops</h3>
             <p className="text-sm text-muted-foreground">
-              Paid when the fortnight closes, after formations in supply refit. You have {budget.mp} manpower and {budget.ip} industry to spend.
+              Paid when the fortnight closes, after reinforcing damaged armies. You have {budget.mp} manpower and {budget.ip} industry to spend.
             </p>
             {(Object.keys(RECRUIT) as UnitKind[]).map((kind) => {
               const cost = RECRUIT[kind]

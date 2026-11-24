@@ -248,9 +248,9 @@ Numbers below are from source, not paraphrase.
 
 ### Economy highlights (`lib/engine/economy.ts`)
 
-- Province yield: base × (1 − unrest/100), ×0.5 when `controller !== owner`, and **0** when supply is under **30** (`INCOME_SUPPLY_FLOOR`). `provinceIncomeDetail` is what the HUD breakdown prints.
+- Province yield: base × (1 − unrest/100), ×0.5 when `controller !== owner`, and **0** when supply is under **30** (`INCOME_SUPPLY_FLOOR`). The HUD breakdown prints that rule once, then a terse line per held province (`1 MP, 1 IND`, or `0 (supply 27 < 30)`).
 - Central Powers industry × **1.3** (`CENTRAL_INDUSTRY_MULTIPLIER`), then one round (`projectIncome` / `explainIncome`). Russian manpower ×1.12, industry ×0.55, then `DIFFICULTY_INCOME` (easy 0.62, normal 0.82, hard 1.18).
-- Refit: up to **8** strength at **1 manpower per 4** (`POINTS_PER_MP`) for formations in supply ≥ **50** that are not attacking (`explainRefit`). The HUD passes queued attack unit ids as the skip set.
+- Reinforcements: up to **8** strength at **1 manpower per 4** (`POINTS_PER_MP`) for formations in supply ≥ **50** that are not attacking (`explainRefit`). The HUD states that cost in one sentence and does not print the bill. Industry’s breakdown also shows ×1.3; manpower’s does not.
 - Resources map lens (`PaintOverlayMode` `"resources"`, `[data-testid=map-mode-resources]`) shades that local yield. It does not apply the national multipliers.
 - Recruit costs and arrivals in `RECRUIT` table (infantry 6 mp / 3 ip, etc.).
 - Yards: controller match, supply ≥ **60**, depot or own urban city (`recruitmentYard`).
