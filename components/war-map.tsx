@@ -41,6 +41,7 @@ import {
   targetsActive,
 } from "@/lib/map/target-highlight"
 import { installWarMapLayers } from "@/lib/map/war-map-layers"
+import { cursorTipPosition, hoverBeyondBase } from "@/lib/ui/map-hover"
 import { railFeatureCollection, type RailEnd } from "@/lib/map/rail-lines"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
@@ -104,9 +105,10 @@ export function WarMap({
   onShowRails,
 }: WarMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
-  const [hoverTip, setHoverTip] = useState<string | null>(null)
+  const [hoverTip, setHoverTip] = useState<{ text: string; x: number; y: number } | null>(null)
   /** While drawing an order arrow: valid neighbor vs non-adjacent hover. */
   const [arrowDrag, setArrowDrag] = useState<"valid" | "invalid" | null>(null)
   const [showRailsLocal, setShowRailsLocal] = useState(true)
@@ -227,7 +229,14 @@ export function WarMap({
           const idStr = String(feature.properties?.id ?? "")
           const base = lines.join("\n")
           const note = propsRef.current.targetHoverNote?.(idStr, base) ?? base
-          setHoverTip(note)
+          const extra = hoverBeyondBase(note, base)
+          const frame = frameRef.current
+          if (extra && frame) {
+            const pos = cursorTipPosition(event.point.x, event.point.y, frame.clientWidth, frame.clientHeight)
+            setHoverTip({ text: extra, x: pos.x, y: pos.y })
+          } else {
+            setHoverTip(null)
+          }
         }
         if (hovered !== null && hovered !== id) {
           map.setFeatureState({ source: "provinces", id: hovered }, { hover: false })
@@ -501,6 +510,7 @@ export function WarMap({
 
   return (
     <div
+      ref={frameRef}
       className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
@@ -534,10 +544,12 @@ export function WarMap({
       )}
       {hoverTip && !failed && (
         <div
-          className={`pointer-events-none absolute left-2 z-20 max-w-[min(14rem,calc(100%-8.5rem))] rounded-sm border border-leather/40 bg-paper/95 px-2.5 py-2 text-xs whitespace-pre-line text-ink shadow-[0_6px_14px_rgba(36,28,20,0.18)] ${orderMode ? "top-12" : "top-2"}`}
+          className="pointer-events-none absolute z-20 max-w-[11rem] rounded-sm border border-leather/40 bg-paper/95 px-1.5 py-1 text-[11px] leading-snug text-ink shadow-[0_4px_10px_rgba(36,28,20,0.16)]"
+          style={{ left: hoverTip.x, top: hoverTip.y }}
           role="tooltip"
+          data-testid="map-hover-tip"
         >
-          {hoverTip}
+          {hoverTip.text}
         </div>
       )}
       <MapMode overlay={overlay} onOverlay={onOverlay} className={failed ? "right-2.5" : "right-12"} />

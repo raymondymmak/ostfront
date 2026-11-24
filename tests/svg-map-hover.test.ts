@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { freshGame } from "@/lib/storage"
 import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
-import { provinceHoverBase, provinceHoverNote } from "@/lib/ui/map-hover"
+import { cursorHoverText, cursorTipPosition, provinceHoverBase, provinceHoverNote } from "@/lib/ui/map-hover"
 
 function mapTargetHoverNote(targets: ReturnType<typeof legalTargets>) {
   return (id: string, base: string) => {
@@ -23,6 +23,10 @@ describe("svg map province hover", () => {
     const tip = provinceHoverNote(kielce, hoverNote)
     expect(tip).toContain(provinceHoverBase(kielce))
     expect(tip).toContain("supply 30")
+    const cursor = cursorHoverText(kielce, hoverNote)
+    expect(cursor).toMatch(/supply 30/)
+    expect(cursor).not.toContain(kielce.name)
+    expect(cursor).not.toContain("Total unit strength")
     expect(legalTargetHoverNote(targets, "kielce")).toMatch(/supply 30/)
   })
 
@@ -48,5 +52,23 @@ describe("svg map province hover", () => {
     if (!kielce) throw new Error("kielce missing")
     const tip = provinceHoverNote(kielce, hoverNote)
     expect(tip).toMatch(/no unassigned formation/)
+    const cursor = cursorHoverText(kielce, hoverNote)
+    expect(cursor).toMatch(/no unassigned formation/)
+    expect(cursor).not.toContain("Total unit strength")
+  })
+
+  it("places the cursor tip inside the map frame", () => {
+    expect(cursorTipPosition(20, 30, 800, 600)).toEqual({ x: 34, y: 46 })
+    const edge = cursorTipPosition(790, 580, 800, 600)
+    expect(edge.x).toBeLessThanOrEqual(800 - 176 - 8)
+    expect(edge.y).toBeLessThanOrEqual(600 - 52 - 8)
+    expect(cursorHoverText(kielceQuiet(), undefined)).toBeNull()
   })
 })
+
+function kielceQuiet() {
+  const game = freshGame()
+  const kielce = game.state.provinces.find((item) => item.id === "kielce")
+  if (!kielce) throw new Error("kielce missing")
+  return kielce
+}
