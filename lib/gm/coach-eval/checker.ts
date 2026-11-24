@@ -189,22 +189,6 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
     })
   }
 
-  const quotedOdds = reply.match(/\d+(?:\.\d+)?\s*:\s*1\b/gi) ?? []
-  if (quotedOdds.length) {
-    const missingReinforce = quotedOdds.some((_, index, all) => {
-      const start = reply.toLowerCase().indexOf(all[index]!.toLowerCase())
-      const tail = reply.slice(start, start + 80).toLowerCase()
-      return !tail.includes("if the russians don't reinforce")
-    })
-    results.push({
-      id: "odds_reinforce_framing",
-      pass: !missingReinforce,
-      detail: missingReinforce
-        ? "Odds figure missing \"if the Russians don't reinforce\""
-        : "Odds figures include reinforcement framing",
-    })
-  }
-
   if (facts.battleFortnight != null) {
     const needle = `fortnight ${facts.battleFortnight}`
     const hasFortnight = reply.toLowerCase().includes(needle)

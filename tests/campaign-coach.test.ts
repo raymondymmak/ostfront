@@ -20,7 +20,9 @@ import {
   hasMissingQuestionMark,
   hasVerblessTrailingSubordinate,
   coachAttackOrderCheck,
-  enforceOddsReinforceClause,
+  conversationStatedReinforceCaveat,
+  reinforcementsPlausiblyMatter,
+  shouldQuoteReinforceCaveat,
   keepOneOddsFigure,
   latestChronicleEvidence,
   renderChronicle,
@@ -878,15 +880,38 @@ describe("campaign coach guards", () => {
     expect(allowed.status).toBe(200)
   })
 
-  it("adds reinforcement framing to bare odds figures", () => {
-    expect(enforceOddsReinforceClause("About 4.7:1 if the Russians don't reinforce")).toBe(
-      "About 4.7:1 if the Russians don't reinforce",
+  it("requires the reinforcement caveat only until the player has seen it once", async () => {
+    const state = createInitialState()
+    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    const unitIds = krakow.units.filter((unit) => unit.faction === "central").map((unit) => unit.id)
+    const queued: PlayerOrder[] = [{ type: "attack", from: "krakow", target: "kielce", unitIds }]
+    const first = await coachCampaign({
+      state,
+      log: [],
+      messages: [{ role: "user", content: "What do you make of my queued plan?" }],
+      queuedOrders: queued,
+    })
+    expect(first.reply).toMatch(/if the Russians don't reinforce/i)
+    const prior = [
+      { role: "user" as const, content: "What do you make of my queued plan?" },
+      { role: "advisor" as const, content: first.reply },
+      { role: "user" as const, content: "Yes, deal with Warsaw first." },
+    ]
+    expect(conversationStatedReinforceCaveat(prior)).toBe(true)
+    expect(shouldQuoteReinforceCaveat(prior, staffMap(state), "kielce")).toBe(
+      reinforcementsPlausiblyMatter(staffMap(state), "kielce"),
     )
-    expect(enforceOddsReinforceClause("That column stands at about 2.2:1.")).toBe(
-      "That column stands at about 2.2:1 if the Russians don't reinforce.",
-    )
-    expect(capCoachReply("What do you expect at Kielce? That column is about 3.1:1.")).toMatch(
-      /3\.1:1 if the Russians don't reinforce/,
+    const followUp = await coachCampaign({
+      state,
+      log: [],
+      messages: prior,
+      queuedOrders: queued,
+    })
+    if (!reinforcementsPlausiblyMatter(staffMap(state), "kielce")) {
+      expect(followUp.reply).not.toMatch(/if the Russians don't reinforce/i)
+    }
+    expect(capCoachReply("What next? That column stands at about 2.2:1.")).toBe(
+      "What next? That column stands at about 2.2:1.",
     )
   })
 

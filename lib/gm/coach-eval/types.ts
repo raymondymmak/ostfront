@@ -50,7 +50,6 @@ export type HardRuleId =
   | "battle_fortnight"
   | "must_contain"
   | "must_not_contain"
-  | "odds_reinforce_framing"
 
 export type HardRuleResult = {
   id: HardRuleId

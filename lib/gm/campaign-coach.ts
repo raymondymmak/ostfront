@@ -99,7 +99,7 @@ Socratic content:
 - If QUEUE_CONFLICTS is non-empty, diagnose that conflict first.
 - Return exactly one highlight matching that evidence (one provinceId or one uiId).
 - Post-battle: ask what outcome they expected; compare to the chronicle if they already predicted. Never say "the dice".
-- Odds: quote exactly ONE ratio from QUEUED_RESOLUTION_ODDS (if attacks are queued) or one DISPATCH contact. Round to one decimal (or a whole number): "about 2.2:1 if the Russians don't reinforce". Never quote two ratios. Never write comparison sentences that need a second figure ("when Kielce offers…", "while X stands at…"). If you would need two figures, omit the comparison and keep one fact.
+- Odds: quote exactly ONE ratio from QUEUED_RESOLUTION_ODDS (if attacks are queued) or one DISPATCH contact. Round to one decimal (or a whole number). Name "if the Russians don't reinforce" the first time you quote odds in the conversation, or when Russian reserves adjacent to the target could respond; after the player has seen that caveat once, you may quote bare "about X:1". Never quote two ratios. Never write comparison sentences that need a second figure ("when Kielce offers…", "while X stands at…"). If you would need two figures, omit the comparison and keep one fact.
 - Never say "before the dice", "combined-odds board", or other internal UI names.
 - Pushback: stay Socratic and cite ONE concrete overlooked fact (supply, forts, empty neighbor, reinforcement risk).
 - Never claim an order was filed, noted, or queued.
@@ -141,7 +141,7 @@ export async function coachCampaign(input: {
     }
   }
 
-  const queuedOdds = renderQueuedResolutionOdds(map, queued)
+  const queuedOdds = renderQueuedResolutionOdds(map, queued, input.messages)
   const queueConflicts = detectQueuedOrderConflicts(map, queued)
   const legalSlice = renderCoachLegalTargets(map, queued, input.selectedProvinceId)
   // DISPATCH contacts still use advisor formatOdds ("before the dice"); scrub so the model cannot copy it.
@@ -173,7 +173,7 @@ export async function coachCampaign(input: {
     "CONVERSATION",
     renderConversation(input.messages),
     "",
-    "Answer the latest question. Use the dispatch, LEGAL_TARGETS, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. LEGAL_TARGETS matches the map arrow legality (orderable attack/move vs reach-only neighbors). If QUEUED_RESOLUTION_ODDS shows REJECTED, cite that reason instead of odds. Never quote attack odds for provinces you already hold. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders. Vary your challenge phrasing; put any intent question first; quote at most one odds figure (one decimal), each with \"if the Russians don't reinforce\"; never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
+    "Answer the latest question. Use the dispatch, LEGAL_TARGETS, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. LEGAL_TARGETS matches the map arrow legality (orderable attack/move vs reach-only neighbors). If QUEUED_RESOLUTION_ODDS shows REJECTED, cite that reason instead of odds. Never quote attack odds for provinces you already hold. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders. Vary your challenge phrasing; put any intent question first; quote at most one odds figure (one decimal); use the Russian-reinforcement caveat on first odds in the thread or when adjacent reserves matter; never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
   ].join("\n")
 
   let failure: "empty" | "http" | "timeout" | null = null
@@ -530,13 +530,35 @@ export function scrubCoachFiledClaims(reply: string): string {
 const ODDS_FIGURE =
   /\b(?:odds\s+(?:about\s+)?)?(?:\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+\d+(?:\.\d+)?\s*:\s*1\b/gi
 
-/** Every quoted X:1 must name the reinforcement gap (staff voice contract). */
-export function enforceOddsReinforceClause(reply: string): string {
-  return reply.replace(
-    /\b(about\s+)?(\d+(?:\.\d+)?)\s*:\s*1\b(?!\s+if the Russians don't reinforce)/gi,
-    (_, about: string | undefined, raw: string) =>
-      `${about ?? ""}${trimRatio(raw)}:1 if the Russians don't reinforce`,
+/** True when an earlier coach turn already named the Russian-reinforcement caveat. */
+export function conversationStatedReinforceCaveat(messages: AdvisorChatMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      message.role === "advisor" && /if the russians don't reinforce/i.test(message.content),
   )
+}
+
+/** Neighboring Russian provinces still hold formations that could march to reinforce. */
+export function reinforcementsPlausiblyMatter(map: GameState, targetId: string): boolean {
+  const target = findProvince(map, targetId)
+  if (!target) return false
+  for (const neighborId of target.neighbors) {
+    const neighbor = findProvince(map, neighborId)
+    if (!neighbor || neighbor.controller !== "russia") continue
+    if (neighbor.units.some((unit) => unit.faction === "russia")) return true
+  }
+  return false
+}
+
+/** Staff voice: caveat on first odds quote in a thread, or when reserves can still respond. */
+export function shouldQuoteReinforceCaveat(
+  messages: AdvisorChatMessage[],
+  map: GameState,
+  targetId?: string | null,
+): boolean {
+  if (!conversationStatedReinforceCaveat(messages)) return true
+  if (targetId && reinforcementsPlausiblyMatter(map, targetId)) return true
+  return false
 }
 
 /**
@@ -677,7 +699,6 @@ export function capCoachReply(reply: string): string {
   cleaned = scrubCoachJargon(cleaned)
   cleaned = scrubCoachFiledClaims(cleaned)
   cleaned = keepOneOddsFigure(cleaned)
-  cleaned = enforceOddsReinforceClause(cleaned)
   cleaned = scrubDanglingOddsClauses(cleaned)
   cleaned = scrubVerblessSubordinates(cleaned)
   cleaned = scrubCoachOddsLanguage(cleaned)
@@ -771,16 +792,22 @@ function trimRatio(raw: string): string {
  * Uses the same engagementOdds / combinedEngagementOdds preview resolveTurn feeds
  * when the garrison is unchanged; names the inherent enemy-move gap in plain words.
  */
-export function formatCoachOddsPhrase(preview: EngagementPreview | null): string | null {
+export function formatCoachOddsPhrase(
+  preview: EngagementPreview | null,
+  includeReinforceCaveat = true,
+): string | null {
   if (!preview) return null
+  const reinforce = includeReinforceCaveat ? " if the Russians don't reinforce" : ""
   if (preview.empty && preview.origins < 2) {
-    return "undefended if the Russians don't reinforce"
+    return includeReinforceCaveat ? "undefended if the Russians don't reinforce" : "undefended"
   }
   const ratio =
     preview.empty || !Number.isFinite(preview.ratio) ? null : trimRatio(String(preview.ratio))
   const odds = ratio
-    ? `about ${ratio}:1 if the Russians don't reinforce`
-    : "undefended if the Russians don't reinforce"
+    ? `about ${ratio}:1${reinforce}`
+    : includeReinforceCaveat
+      ? "undefended if the Russians don't reinforce"
+      : "undefended"
   if (preview.origins >= 2) {
     const shape = preview.origins === 2 ? "two-pronged" : "concentric"
     const ring = preview.encircled ? ", and the defender is surrounded" : ""
@@ -908,8 +935,12 @@ export function renderCoachLegalTargets(
 }
 
 /** Dispatch slice: one resolution-preview odds line per queued attack target (or REJECTED reason). */
-export function renderQueuedResolutionOdds(map: GameState, queued: PlayerOrder[]): string {
-  const oddsByTarget = queuedAttackOddsByTarget(map, queued)
+export function renderQueuedResolutionOdds(
+  map: GameState,
+  queued: PlayerOrder[],
+  messages: AdvisorChatMessage[] = [],
+): string {
+  const oddsByTarget = queuedAttackOddsByTarget(map, queued, messages)
   if (!oddsByTarget.size) return "None."
   return [...oddsByTarget.entries()]
     .map(([targetId, phrase]) => `${targetId} ${provinceLabel(targetId)}: ${phrase ?? "unknown"}`)
@@ -1032,6 +1063,7 @@ export function formatQueuedPlanForPlayer(
 export function queuedAttackOddsByTarget(
   map: GameState,
   queued: PlayerOrder[],
+  messages: AdvisorChatMessage[] = [],
 ): Map<string, string | null> {
   const out = new Map<string, string | null>()
   const attacks = queued.filter(
@@ -1072,9 +1104,24 @@ export function queuedAttackOddsByTarget(
       )
       continue
     }
-    out.set(targetId, formatCoachOddsPhrase(preview))
+    const includeReinforce = shouldQuoteReinforceCaveat(messages, map, targetId)
+    out.set(targetId, formatCoachOddsPhrase(preview, includeReinforce))
   }
   return out
+}
+
+function contactOddsSuffix(
+  messages: AdvisorChatMessage[],
+  map: GameState,
+  targetId: string,
+  empty: boolean,
+  finiteRatio: boolean,
+): string {
+  const include = shouldQuoteReinforceCaveat(messages, map, targetId)
+  if (!finiteRatio && empty) {
+    return include ? ", undefended if the Russians don't reinforce" : ", undefended"
+  }
+  return include ? " if the Russians don't reinforce" : ""
 }
 
 export type LatestChronicleEvidence =
@@ -1431,11 +1478,12 @@ function rulesCoach(
   if (wantsFiling) {
     const weak = strongestDispatchContact(situation, map)
     if (weak) {
+      const suffix = contactOddsSuffix(messages, map, weak.targetId, weak.empty, Number.isFinite(weak.ratio))
       const oddsBit = Number.isFinite(weak.ratio)
-        ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
+        ? ` at about ${trimRatio(String(weak.ratio))}:1${suffix}`
         : weak.empty
-          ? ", undefended if the Russians don't reinforce"
-          : " if the Russians don't reinforce"
+          ? suffix.replace(/^ /, ", ")
+          : suffix
       return {
         reply: `I do not file orders. ${intentQuestionForTarget(weak.targetName)} ${weak.fromName} into ${weak.targetName} is the strongest contact${oddsBit}.`,
         followUp: null,
@@ -1451,7 +1499,7 @@ function rulesCoach(
 
   const queuedAttacks = queued.filter((order) => order.type === "attack")
   if (situation.queue.length || queuedAttacks.length) {
-    const oddsByTarget = queuedAttackOddsByTarget(map, queued)
+    const oddsByTarget = queuedAttackOddsByTarget(map, queued, messages)
     if (oddsByTarget.size) {
       const [targetId, oddsPhrase] = [...oddsByTarget.entries()][0]!
       const target = provinceLabel(targetId)
@@ -1514,11 +1562,12 @@ function rulesCoach(
 
   const weak = strongestDispatchContact(situation, map)
   if (weak) {
+    const suffix = contactOddsSuffix(messages, map, weak.targetId, weak.empty, Number.isFinite(weak.ratio))
     const oddsBit = Number.isFinite(weak.ratio)
-      ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
+      ? ` at about ${trimRatio(String(weak.ratio))}:1${suffix}`
       : weak.empty
-        ? ", undefended if the Russians don't reinforce"
-        : " if the Russians don't reinforce"
+        ? suffix.replace(/^ /, ", ")
+        : suffix
     return {
       reply: `What axis are you weighing this fortnight? ${weak.fromName} into ${weak.targetName} is the strongest contact${oddsBit}.`,
       followUp: null,
