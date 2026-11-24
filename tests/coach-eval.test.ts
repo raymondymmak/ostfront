@@ -14,8 +14,8 @@ import { legalTargets } from "@/lib/ui/legal-targets"
 import { createInitialState } from "@/lib/data/scenario"
 
 describe("coach eval harness", () => {
-  it("ships 12 engine-grounded scenarios", () => {
-    expect(COACH_EVAL_SCENARIOS).toHaveLength(12)
+  it("ships 14 engine-grounded scenarios", () => {
+    expect(COACH_EVAL_SCENARIOS).toHaveLength(14)
     const ids = COACH_EVAL_SCENARIOS.map((scenario) => scenario.id)
     expect(ids).toEqual([
       "under-supply-trap",
@@ -30,12 +30,14 @@ describe("coach eval harness", () => {
       "captured-province-odds",
       "supply-rejected-queue",
       "rejected-chronicle",
+      "odds-open-question",
+      "clerk-cancel-order",
     ])
   })
 
   it("builds fixtures that match live engine facts", () => {
     const built = buildAllCoachEvalFixtures()
-    expect(built).toHaveLength(12)
+    expect(built).toHaveLength(14)
 
     const under = built.find((item) => item.id === "under-supply-trap")!.fixture
     const underMap = staffMap(under.state)
@@ -177,7 +179,7 @@ describe("coach eval harness", () => {
     delete process.env.OSTFRONT_ADVISOR_FIXTURE
     const report = await runCoachEval({ offline: true, gradePedagogy: false })
     expect(report.mode).toBe("offline")
-    expect(report.scenarios).toHaveLength(12)
+    expect(report.scenarios).toHaveLength(14)
     expect(report.pedagogyPassCount).toBeNull()
     for (const scenario of report.scenarios) {
       expect(scenario.reply.length).toBeGreaterThan(10)

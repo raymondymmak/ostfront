@@ -87,7 +87,7 @@ You do NOT issue orders. You never return suggestions, Accept cards, or order JS
 You know only the DISPATCH in the user message: engine map facts, QUEUE_CONFLICTS (if any), the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say calmly you do not see it on the dispatch — never scold, and never say "staff figures".
 
 Voice and wording:
-- At most 2–3 short sentences. Question first when you ask one; then one operational fact. No em-dash parentheticals. No "The map shows…" prefix — state the fact directly ("Lemberg is still held by three Russian formations…").
+- At most 2–3 short sentences. Every reply that quotes odds opens with a question — never with the ratio ("About 2.8:1…"). Then one operational fact. No em-dash parentheticals. No "The map shows…" prefix — state the fact directly ("Lemberg is still held by three Russian formations…").
 - Vary challenge phrasing every turn. Never reuse the same skeleton back-to-back (especially avoid repeating "Do you accept…?"). Prefer natural staff questions such as "If Kraków ties up on Lublin, who takes Lemberg before 13 June?" or "How do you crack Lublin's two forts and still swing south in time?".
 - When the player sticks to their plan across turns (e.g. "yes" / "we'll deal with Warsaw first"), acknowledge briefly and probe the next concrete risk in THEIR chosen plan — do not restate the same objection.
 - Objectives come from OHL ("OHL's 13 June objective" / "our 13 June objective") — never "the objective the map sets".
@@ -99,7 +99,8 @@ Socratic content:
 - If QUEUE_CONFLICTS is non-empty, diagnose that conflict first.
 - Return exactly one highlight matching that evidence (one provinceId or one uiId).
 - Post-battle: ask what outcome they expected; compare to the chronicle if they already predicted. Never say "the dice".
-- Odds: quote exactly ONE ratio from QUEUED_RESOLUTION_ODDS (if attacks are queued) or one DISPATCH contact. Round to one decimal (or a whole number). Name "if the Russians don't reinforce" the first time you quote odds in the conversation, or when Russian reserves adjacent to the target could respond; after the player has seen that caveat once, you may quote bare "about X:1". Never quote two ratios. Never write comparison sentences that need a second figure ("when Kielce offers…", "while X stands at…"). If you would need two figures, omit the comparison and keep one fact.
+- Odds: quote exactly ONE ratio from QUEUED_RESOLUTION_ODDS (if attacks are queued) or one DISPATCH contact. Round to one decimal (or a whole number). Name the assumption in the same sentence: "on this queued column" for one prong, or "two-pronged/concentric on the queued plan" when several prongs are combined. Name "if the Russians don't reinforce" the first time you quote odds in the conversation, or when Russian reserves adjacent to the target could respond; after the player has seen that caveat once, you may omit it. Never quote two ratios. Never write comparison sentences that need a second figure ("when Kielce offers…", "while X stands at…"). If you would need two figures, omit the comparison and keep one fact.
+- Clerk refusal: if asked to file, cancel, or pick an order, say you do not file orders and ask about the tradeoff. Never prescribe a concrete order ("cancel the fortify", "attack Kielce", "move the corps").
 - Never say "before the dice", "combined-odds board", or other internal UI names.
 - Pushback: stay Socratic and cite ONE concrete overlooked fact (supply, forts, empty neighbor, reinforcement risk).
 - Never claim an order was filed, noted, or queued.
@@ -173,7 +174,7 @@ export async function coachCampaign(input: {
     "CONVERSATION",
     renderConversation(input.messages),
     "",
-    "Answer the latest question. Use the dispatch, LEGAL_TARGETS, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. LEGAL_TARGETS matches the map arrow legality (orderable attack/move vs reach-only neighbors). If QUEUED_RESOLUTION_ODDS shows REJECTED, cite that reason instead of odds. Never quote attack odds for provinces you already hold. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders. Vary your challenge phrasing; put any intent question first; quote at most one odds figure (one decimal); use the Russian-reinforcement caveat on first odds in the thread or when adjacent reserves matter; never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
+    "Answer the latest question. Use the dispatch, LEGAL_TARGETS, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. LEGAL_TARGETS matches the map arrow legality (orderable attack/move vs reach-only neighbors). If QUEUED_RESOLUTION_ODDS shows REJECTED, cite that reason instead of odds. Never quote attack odds for provinces you already hold. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders, and do not command a concrete cancel/attack/fortify — ask the tradeoff instead. Vary your challenge phrasing; odds replies must open with a question, never the ratio; quote at most one odds figure (one decimal) and name whether it is this queued column or the combined queued plan; use the Russian-reinforcement caveat on first odds in the thread or when adjacent reserves matter; never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
   ].join("\n")
 
   let failure: "empty" | "http" | "timeout" | null = null
@@ -527,6 +528,96 @@ export function scrubCoachFiledClaims(reply: string): string {
   return out.join(" ").replace(/(?:I do not file orders\.\s*){2,}/gi, "I do not file orders. ").trim()
 }
 
+/** True when a sentence leads with the ratio instead of a question. */
+export function replyOpensWithOdds(sentence: string): boolean {
+  return /^\s*(?:about\s+)?(?:odds\s+(?:about\s+)?)?\d+(?:\.\d+)?\s*:\s*1\b/i.test(sentence.trim())
+}
+
+/**
+ * Imperative order language ("cancel the fortify", "attack Kielce") — a refusal
+ * must ask about the tradeoff instead of prescribing the arrow.
+ */
+export function prescribesConcreteOrder(sentence: string): boolean {
+  const trimmed = sentence.trim()
+  if (
+    /\?\s*$/.test(trimmed) &&
+    !/^(?:please\s+)?(?:just\s+)?(?:cancel|scrap|drop|abort|attack|fortify|move|recruit)\b/i.test(trimmed)
+  ) {
+    return false
+  }
+  if (
+    /\b(?:do not|don't|cannot|can't|never|will not|won't)\s+(?:file|issue|order)\b/i.test(trimmed) &&
+    !/\b(?:cancel|scrap|drop)\s+(?:the|that|your|this)\b/i.test(trimmed)
+  ) {
+    return false
+  }
+  if (/\b(?:cancel|scrap|drop|abort)\s+(?:the|that|your|this)\s+(?:fortify|attack|move|order|garrison|arrow)/i.test(trimmed)) {
+    return true
+  }
+  if (/\byou (?:should|must|need to)\s+(?:cancel|scrap|drop|attack|fortify|move|recruit|march)\b/i.test(trimmed)) {
+    return true
+  }
+  if (/^(?:please\s+)?(?:just\s+)?(?:cancel|scrap|drop|abort)\b/i.test(trimmed)) return true
+  if (
+    /^(?:please\s+)?(?:just\s+)?(?:attack|fortify|move|recruit)\b/i.test(trimmed) &&
+    !/\b(?:is|are|stands|looks|rates|cannot|can't|does not|doesn't)\b/i.test(trimmed)
+  ) {
+    return true
+  }
+  return false
+}
+
+/** Drop commanded orders; keep a tradeoff question and a plain refusal. */
+export function scrubPrescribedOrders(reply: string): string {
+  const sentences = splitCoachSentences(reply)
+  const out: string[] = []
+  let sawPrescription = false
+  for (const sentence of sentences) {
+    const normalized = sentence.replace(/\bi file no orders\b/gi, "I do not file orders")
+    if (prescribesConcreteOrder(normalized)) {
+      sawPrescription = true
+      continue
+    }
+    out.push(normalized)
+  }
+  if (sawPrescription && !out.some((sentence) => sentence.includes("?"))) {
+    out.unshift("What is the tradeoff if you keep that order?")
+  }
+  if (sawPrescription && !out.some((sentence) => /I do not file orders/i.test(sentence))) {
+    const questionAt = out.findIndex((sentence) => sentence.includes("?"))
+    if (questionAt >= 0) out.splice(questionAt + 1, 0, "I do not file orders.")
+    else out.unshift("I do not file orders.")
+  }
+  return out.join(" ").replace(/(?:I do not file orders\.\s*){2,}/gi, "I do not file orders. ").trim()
+}
+
+function annotateOddsAssumption(sentence: string): string {
+  if (/\b(?:queued|column|prong|combined|concentric|contact|plan)\b/i.test(sentence)) return sentence
+  ODDS_FIGURE.lastIndex = 0
+  if (!ODDS_FIGURE.test(sentence)) return sentence
+  ODDS_FIGURE.lastIndex = 0
+  return sentence.replace(ODDS_FIGURE, (match) => `${match} on the queued plan`)
+}
+
+/**
+ * Odds replies open with a question, and the figure names the plan it assumes.
+ * A later question is moved forward; a bare ratio gets a short lead-in.
+ */
+export function ensureOddsQuestionFirst(reply: string): string {
+  const sentences = splitCoachSentences(reply).map(annotateOddsAssumption)
+  if (!sentences.length) return reply
+  ODDS_FIGURE.lastIndex = 0
+  if (!ODDS_FIGURE.test(sentences.join(" "))) return sentences.join(" ").trim()
+  const first = sentences[0]!
+  if (first.includes("?") && !replyOpensWithOdds(first)) return sentences.join(" ").trim()
+  const questionAt = sentences.findIndex((sentence) => sentence.includes("?") && !replyOpensWithOdds(sentence))
+  if (questionAt > 0) {
+    const question = sentences[questionAt]!
+    return [question, ...sentences.filter((_, index) => index !== questionAt)].join(" ").trim()
+  }
+  return [`What does that ratio change in your plan?`, ...sentences].join(" ").trim()
+}
+
 const ODDS_FIGURE =
   /\b(?:odds\s+(?:about\s+)?)?(?:\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+\d+(?:\.\d+)?\s*:\s*1\b/gi
 
@@ -698,6 +789,7 @@ export function capCoachReply(reply: string): string {
   cleaned = scrubCoachOddsDecimals(cleaned)
   cleaned = scrubCoachJargon(cleaned)
   cleaned = scrubCoachFiledClaims(cleaned)
+  cleaned = scrubPrescribedOrders(cleaned)
   cleaned = keepOneOddsFigure(cleaned)
   cleaned = scrubDanglingOddsClauses(cleaned)
   cleaned = scrubVerblessSubordinates(cleaned)
@@ -706,9 +798,10 @@ export function capCoachReply(reply: string): string {
   cleaned = scrubCoachOddsDecimals(cleaned)
   cleaned = scrubCoachJargon(cleaned)
   cleaned = putQuestionFirst(cleaned)
+  cleaned = ensureOddsQuestionFirst(cleaned)
   if (!cleaned) return cleaned
   const kept = splitCoachSentences(cleaned).slice(0, COACH_MAX_SENTENCES)
-  const ordered = putQuestionFirst(kept.join(" ").trim())
+  const ordered = ensureOddsQuestionFirst(putQuestionFirst(kept.join(" ").trim()))
   return fitCoachReplyLength(ordered)
 }
 
@@ -799,7 +892,9 @@ export function formatCoachOddsPhrase(
   if (!preview) return null
   const reinforce = includeReinforceCaveat ? " if the Russians don't reinforce" : ""
   if (preview.empty && preview.origins < 2) {
-    return includeReinforceCaveat ? "undefended if the Russians don't reinforce" : "undefended"
+    return includeReinforceCaveat
+      ? "undefended on this queued column if the Russians don't reinforce"
+      : "undefended on this queued column"
   }
   const ratio =
     preview.empty || !Number.isFinite(preview.ratio) ? null : trimRatio(String(preview.ratio))
@@ -811,9 +906,12 @@ export function formatCoachOddsPhrase(
   if (preview.origins >= 2) {
     const shape = preview.origins === 2 ? "two-pronged" : "concentric"
     const ring = preview.encircled ? ", and the defender is surrounded" : ""
-    return `${shape}, ${odds}${ring}`
+    return `${shape} on the queued plan, ${odds}${ring}`
   }
-  return odds
+  if (ratio) return `about ${ratio}:1 on this queued column${reinforce}`
+  return includeReinforceCaveat
+    ? "undefended on this queued column if the Russians don't reinforce"
+    : "undefended on this queued column"
 }
 
 /** First odds ratio quoted in coach prose, or null. */
@@ -1689,7 +1787,7 @@ function rulesCoach(
       const evidence = oddsPhrase?.startsWith("REJECTED")
         ? `The engine would reject that march: ${oddsPhrase.replace(/^REJECTED —\s*/, "")}`
         : oddsPhrase
-          ? `That column stands at ${oddsPhrase}.${rejectedNote}`
+          ? `${oddsPhrase.charAt(0).toUpperCase()}${oddsPhrase.slice(1)}.${rejectedNote}`
           : `You have a column queued into ${target}.`
       const affirmsPlan = /^(?:yes|yep|yeah|ok|okay|sure|agreed|we(?:'ll| will| can)|deal with)\b/i.test(
         lower.trim(),

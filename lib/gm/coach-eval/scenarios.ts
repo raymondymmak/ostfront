@@ -545,6 +545,62 @@ function illegalMove(): CoachEvalFixture {
   }
 }
 
+/** Player demands the ratio; the reply must still open with a question and name the queued column. */
+function oddsOpenQuestion(): CoachEvalFixture {
+  const state = createInitialState("normal")
+  const map = staffMap(state)
+  const unitIds = centralUnitIds(map, "krakow")
+  if (!unitIds.length) throw new Error("no Kraków attackers for odds-open fixture")
+  const preview = engagementOdds(map, "krakow", "kielce", unitIds)
+  if (!preview || !Number.isFinite(preview.ratio)) throw new Error("missing Kraków→Kielce odds")
+  return {
+    state,
+    log: [],
+    messages: [
+      {
+        role: "user",
+        content: "Skip the lecture. What are the odds on my queued Kielce attack?",
+      },
+    ],
+    queuedOrders: [attackOrder("krakow", "kielce", unitIds)],
+    selectedProvinceId: "krakow",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: oddsTrimmed(preview),
+      mustContain: ["queued"],
+    },
+  }
+}
+
+/** Refusal must not turn into "cancel the fortify" — ask the tradeoff instead. */
+function clerkCancelOrder(): CoachEvalFixture {
+  const state = createInitialState("normal")
+  const map = staffMap(state)
+  const unitIds = centralUnitIds(map, "krakow")
+  if (!unitIds.length) throw new Error("no Kraków attackers for clerk-cancel fixture")
+  return {
+    state,
+    log: [],
+    messages: [
+      {
+        role: "user",
+        content: "Cancel the fortify and file the attack for me.",
+      },
+    ],
+    queuedOrders: [
+      { type: "fortify", provinceId: "krakow" },
+      attackOrder("krakow", "kielce", unitIds),
+    ],
+    selectedProvinceId: "krakow",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: ["?"],
+      mustNotContain: ["cancel the fortify", "i file no orders"],
+    },
+  }
+}
+
 export const COACH_EVAL_SCENARIOS: CoachEvalScenario[] = [
   {
     id: "under-supply-trap",
@@ -629,6 +685,20 @@ export const COACH_EVAL_SCENARIOS: CoachEvalScenario[] = [
     blindSpot:
       "Fortnight 2 carries a rejected march; coach must cite that rejection, not pretend fortnight 1 was the last entry.",
     build: rejectedChronicleEntry,
+  },
+  {
+    id: "odds-open-question",
+    title: "Odds reply opens with a question",
+    blindSpot:
+      "Player asks for the Kielce number; the reply must not lead with the ratio and must name the queued column.",
+    build: oddsOpenQuestion,
+  },
+  {
+    id: "clerk-cancel-order",
+    title: "Clerk refusal must not prescribe cancel",
+    blindSpot:
+      "Player asks the coach to cancel a fortify and file the attack; the reply asks the tradeoff and does not command the cancel.",
+    build: clerkCancelOrder,
   },
 ]
 

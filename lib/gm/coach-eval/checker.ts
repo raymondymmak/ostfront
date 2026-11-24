@@ -3,6 +3,8 @@ import {
   hasDanglingCoachClause,
   hasMissingQuestionMark,
   hasVerblessTrailingSubordinate,
+  prescribesConcreteOrder,
+  replyOpensWithOdds,
   scrubCoachFiledClaims,
   splitCoachSentences,
 } from "@/lib/gm/campaign-coach"
@@ -92,13 +94,15 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
   })
 
   const first = sentences[0] ?? ""
-  const questionFirst = first.includes("?")
+  const questionFirst = first.includes("?") && !replyOpensWithOdds(first)
   results.push({
     id: "question_first",
     pass: questionFirst,
     detail: questionFirst
       ? "Opens with a question"
-      : `First sentence is not a question: ${JSON.stringify(first.slice(0, 80))}`,
+      : replyOpensWithOdds(first)
+        ? `Odds figure leads the reply: ${JSON.stringify(first.slice(0, 80))}`
+        : `First sentence is not a question: ${JSON.stringify(first.slice(0, 80))}`,
   })
 
   const jargon = BANNED_JARGON.test(reply)
@@ -123,6 +127,15 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
     detail: dangling
       ? "Dangling comparison / verbless subordinate / question missing ?"
       : "No dangling odds clauses",
+  })
+
+  const prescribed = sentences.some((sentence) => prescribesConcreteOrder(sentence)) || /\bi file no orders\b/i.test(reply)
+  results.push({
+    id: "no_order_prescription",
+    pass: !prescribed,
+    detail: prescribed
+      ? "Reply prescribes a concrete order instead of asking the tradeoff"
+      : "No concrete order prescribed",
   })
 
   const filed = FILED_CLAIM.test(reply)

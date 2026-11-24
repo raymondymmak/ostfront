@@ -36,6 +36,7 @@ import {
   queuedAttackPreview,
   sanitizeHighlights,
   scrubCoachFiledClaims,
+  scrubPrescribedOrders,
   scrubCoachFortLabels,
   scrubCoachJargon,
   scrubCoachOddsDecimals,
@@ -404,7 +405,7 @@ describe("campaign coach", () => {
     expect(result.reply).toMatch(
       /What do you (?:expect taking Kielce|need Kielce)|How do you take Kielce/i,
     )
-    expect(result.reply).toMatch(/about [\d.]+:1 if the Russians don't reinforce/i)
+    expect(result.reply).toMatch(/about [\d.]+:1 on this queued column if the Russians don't reinforce/i)
     expect(result.reply).not.toMatch(/before the dice|as the engine resolves this fortnight/i)
     expect(result.reply).not.toMatch(/Ordered:|unavailable offline|159 against|Filed as noted/i)
     expect(result.reply).not.toMatch(/\.\./)
@@ -545,6 +546,28 @@ describe("campaign coach", () => {
     expect(quotedReply).toBeCloseTo(quotedPreview!, 5)
     expect(result.reply).toMatch(/if the Russians don't reinforce/i)
     expect(result.reply.match(/\d+(?:\.\d+)?\s*:\s*1/g)?.length ?? 0).toBe(1)
+  })
+
+  it("opens odds-only replies with a question and names the plan", () => {
+    const shaped = shapeCoachReply("About 2.8:1 if the Russians don't reinforce.", null)
+    const sentences = splitCoachSentences(shaped.reply)
+    expect(sentences[0]).toMatch(/\?$/)
+    expect(sentences[0]).not.toMatch(/^\s*about\s+\d/i)
+    expect(shaped.reply).toMatch(/2\.8:1/)
+    expect(shaped.reply).toMatch(/queued plan/i)
+    expect(sentences.length).toBeLessThanOrEqual(3)
+  })
+
+  it("turns a clerk command into a tradeoff question", () => {
+    const raw = "I file no orders. Cancel the fortify at Kraków before you march."
+    const scrubbed = scrubPrescribedOrders(raw)
+    expect(scrubbed).not.toMatch(/cancel the fortify/i)
+    expect(scrubbed).not.toMatch(/i file no orders/i)
+    expect(scrubbed).toMatch(/tradeoff/i)
+    expect(scrubbed).toMatch(/I do not file orders/i)
+    const shaped = shapeCoachReply(raw, null)
+    expect(splitCoachSentences(shaped.reply)[0]).toMatch(/\?/)
+    expect(shaped.reply).not.toMatch(/cancel the fortify/i)
   })
 
   it("puts the intent question first and keeps one odds figure in post-processing", () => {

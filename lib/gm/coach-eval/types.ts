@@ -45,6 +45,7 @@ export type HardRuleId =
   | "no_banned_jargon"
   | "no_dangling_clause"
   | "no_filed_claims"
+  | "no_order_prescription"
   | "grounded_odds"
   | "grounded_provinces"
   | "battle_fortnight"
