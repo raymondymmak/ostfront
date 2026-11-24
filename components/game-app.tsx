@@ -228,7 +228,7 @@ export function GameApp() {
 
   const selectProvince = useCallback((id: string) => {
     setSelectedId((current) => toggleSelection(current, id))
-  }, [])
+  }, [setSelectedId])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -609,7 +609,7 @@ export function GameApp() {
         new Set(highlights.map((item) => item.provinceId).filter((id): id is string => Boolean(id))),
       ),
     )
-  }, [])
+  }, [setCoachHighlightIds])
 
   const latest = game.log.at(-1)
   const fallback = !error && latest?.warning ? latest : null
