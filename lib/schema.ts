@@ -122,6 +122,12 @@ export const BattleFactsSchema = z.object({
   defenderLoss: z.number().min(0),
   encircled: z.boolean(),
   attackerWon: z.boolean(),
+  attack: z.number().min(0),
+  defense: z.number().min(0),
+  ratio: z.number(),
+  roll: z.number().int().min(1).max(6),
+  launchSupply: z.record(z.string().min(1), z.number()),
+  pooledSupply: z.number().nullable(),
 })
 
 export const ResolutionSchema = z.object({

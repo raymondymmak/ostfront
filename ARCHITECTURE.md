@@ -322,7 +322,8 @@ Engine is **ground truth** for adjudication. AI proposes; `resolveTurn` decides.
 | **Lua CAS** | Atomic turn commit script in `lib/campaign/redis-scripts.ts` |
 | **Proposal** | Typed order (move, attack, fortify, …) before resolution |
 | **Chronicle** | `TurnRecord` in non-modal Log drawer (`chronicle-drawer.tsx` + `timeline-panel.tsx`); routine via `routineLog` (battle rows show compact loss lines from `Resolution.battle`), full summaries behind **Details** |
-| **BattleFacts** | Optional `Resolution.battle` set in `resolveManeuvers` for assaults and meeting engagements that already log losses; includes sorted `origins` for news map arrows |
+| **BattleFacts** | Optional `Resolution.battle` set in `resolveManeuvers` for assaults and meeting engagements that already log losses; includes sorted `origins` for news map arrows, plus structured pre-roll `attack`/`defense`/`ratio`/`roll`, launch-supply per origin, and converging `pooledSupply` when applicable. `/teach` grading (`lib/teach/feedback.ts`, `supply-feedback.ts`) reads these fields via `lib/teach/battle-from-record.ts` — not summary regex. |
+| **applyAttack** | Thin wrapper over `resolveManeuvers` for advisor legality dry-runs and tests; live fortnights always resolve combat through `resolveManeuvers`. |
 | **News card** | Client headline overlay after a fortnight (`components/news-card.tsx`, `lib/news/select.ts`); priority objective → encirclement → city → depot; wins over Log for Escape |
 | **General's table** | Desktop (`lg+`) parchment floating windows for Orders / Province / Log / Legend / Advisor / OHL (clamped + scrollable); mobile keeps stacked aside (ADR 010) |
 

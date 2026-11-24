@@ -650,7 +650,9 @@ function buildSteps(cli, targets) {
         // No province auto-selected at Begin (Kraków used to be).
         const selectedAtStart = await page.evaluate(() => {
           const filter = window.__ostfrontMap?.getFilter?.("selected")
-          return Array.isArray(filter) ? filter[2] : null
+          if (!Array.isArray(filter) || filter.length < 3) return null
+          const id = filter[2]
+          return id === "__none__" ? null : id
         })
         if (selectedAtStart) {
           throw new Error(`Expected no province selected at campaign start, got: ${selectedAtStart}`)
@@ -1199,8 +1201,9 @@ function buildSteps(cli, targets) {
       name: "Restart campaign (confirm)",
       async run({ page }) {
         await dismissNewsCardsIfOpen(page)
+        await stowPapersForMapClick(page)
         await page.locator("[data-testid=hud-options]").click()
-        await page.locator("[data-testid=hud-options-restart]").click()
+        await page.locator("[data-testid=hud-options-restart]").click({ force: true })
         await page.locator("[data-testid=hud-options-restart]").getByText("Confirm restart").waitFor({
           state: "visible",
           timeout: 5_000,
@@ -1223,7 +1226,9 @@ function buildSteps(cli, targets) {
         await page.waitForTimeout(MAP_SETTLE_MS)
         const teachSelectedAtStart = await page.evaluate(() => {
           const filter = window.__ostfrontMap?.getFilter?.("selected")
-          return Array.isArray(filter) ? filter[2] : null
+          if (!Array.isArray(filter) || filter.length < 3) return null
+          const id = filter[2]
+          return id === "__none__" ? null : id
         })
         if (teachSelectedAtStart) {
           throw new Error(`Expected no province selected at /teach start, got: ${teachSelectedAtStart}`)

@@ -12,3 +12,13 @@ export function makeRng(seed: number): () => number {
 export function rollD6(rng: () => number): number {
   return 1 + Math.floor(rng() * 6)
 }
+
+/** Forces the first `rollD6` draw; further draws use mid-band values. */
+export function fixedRollRng(roll: number): () => number {
+  let calls = 0
+  return () => {
+    calls += 1
+    if (calls === 1) return (roll - 0.5) / 6
+    return 0.5
+  }
+}

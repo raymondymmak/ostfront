@@ -171,6 +171,17 @@ export type BattleFacts = {
   defenderLoss: number
   encircled: boolean
   attackerWon: boolean
+  /** Pre-roll attack and defence totals fed to the combat resolver. */
+  attack: number
+  defense: number
+  /** Pre-roll odds ratio (attack÷defence); Infinity when undefended. */
+  ratio: number
+  /** d6 result used for this battle. */
+  roll: number
+  /** Launch-province supply stockpile at fortnight open (per origin). */
+  launchSupply: Record<string, number>
+  /** Pooled converging supply when a starved convergence forfeits the flank bonus. */
+  pooledSupply: number | null
 }
 
 export type Resolution = {
