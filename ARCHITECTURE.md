@@ -29,7 +29,7 @@ Browser updates map, optional Log drawer chronicle, clears order queue
 | --- | --- | --- |
 | `app/` | Pages and HTTP routes | `app/api/*/route.ts` |
 | `components/` | Map, HUD, panels | `game-app.tsx` (branches to `campaign-start.tsx` pre-Begin), `war-map.tsx`, `hud.tsx`, `hud-options-menu.tsx`, `floating-window.tsx`, `document-tray.tsx`, `ohl-orders-window.tsx`, `odds-bar.tsx` |
-| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `table-windows.ts`, `teach-windows.ts`, `document-tray.ts`, `window-drag.ts`, `use-desktop-shell.ts`, `map-hover.ts`, `map-target-style.ts`, `types.ts` |
+| `lib/ui/` | Client-only UX helpers (not engine truth) | `legal-targets.ts`, `odds-band.ts`, `goal-copy.ts`, `campaign-shell.ts`, `table-windows.ts`, `teach-windows.ts`, `document-tray.ts`, `window-drag.ts`, `use-desktop-shell.ts`, `map-hover.ts`, `map-target-style.ts`, `types.ts` |
 | `lib/engine/` | Rules of war (ground truth) | `turn.ts`, `simultaneous.ts`, `combat.ts` |
 | `lib/gm/` | Orders → proposals, LLM cascade, advisor | `index.ts`, `interpret.ts`, `cascade.ts`, `advisor.ts` |
 | `lib/ai/` | Rule-based Stavka | `stavka.ts` |
@@ -63,6 +63,8 @@ Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints d
 
 ### Campaign shell (general's table)
 
+**Client lifecycle** (`lib/ui/campaign-shell.ts`, `components/game-app.tsx`): a discriminated-union reducer replaces the former `setupOpen` / `busy` / `beginBusy` / `staleCampaign` / `resultOpen` boolean lattice. States are **setup** (`begin` idle or pending) or **table** (requires `gameId`, `turn` idle or pending, optional `stale`, session `resultOpen` for the grade modal). Boot uses `peekSave()` so a local snapshot **without** `gameId` stays on setup — never the live table. `loadGame()` remains strict (server id required) for hydration and auto-save.
+
 | Viewport | Layout |
 | --- | --- |
 | Desktop (`lg+`, ≥1024px) | Full-width map; no fixed 23rem right dock. Parchment floating windows (`lib/ui/table-windows.ts`, `components/floating-window.tsx`): Orders, Province, Log, Legend, Chief of Staff, Orders from OHL. Slim HUD (`components/hud.tsx`, `[data-testid=table-hud]`) keeps title / strength+stats / date — **not** window toggles and **not** Chief of Staff; **Options** gear (`components/hud-options-menu.tsx`) sits beside the date (Restart + disabled Settings). Stowed papers sit in the bottom **document tray** (`components/document-tray.tsx`, `lib/ui/document-tray.ts`, `z-[40]`); drag a tab up (or Enter) restores at the drop / soft point with width and last height retained; drag onto the whole tray bar (highlight + insert marker) files at the drop slot, or Escape files — sideways tab drag / Alt+←/→ reorders (`trayOrder` in sessionStorage); no Stow buttons or click-to-toggle. Papers use z above the tray so they never paint behind it; drag and resting Y (and session restore) keep the header grip fully above the tray (map stage is below the HUD, so saved positions never sit under the top bar). Header press–drag–release with pointer capture (`lib/ui/window-drag.ts`; `pointercancel` / `lostpointercapture` still finish); file on tray / below / viewport-bottom release; height locked while dragging (optional resize handle). Default-open after Begin: Orders, Legend, OHL. Escape: news → file topmost → deselect. SessionStorage remembers open/xy/z/width/height for the tab. |
@@ -85,9 +87,9 @@ In `components/game-app.tsx`, `endTurn`:
 2. Requires `game.gameId` (from `POST /api/new-game`); otherwise shows an error.
 3. `fetch("/api/turn", { method: "POST", body: { gameId, expectedTurn: game.state.turn, orders } })`.
 4. On success: merges `payload.state` and `payload.record` into React state, clears queue, flashes control changes, and runs `selectNewsEvents(prev, next, record)` to queue HOI4-style news cards (`NewsCardQueue`).
-5. On failure: leaves map and queue unchanged; sets `staleCampaign` for `stale_turn` / `unknown_game`.
+5. On failure: leaves map and queue unchanged; sets shell `stale` for `stale_turn` / `unknown_game` / missing `gameId`.
 
-Local persistence: `lib/storage.ts` writes `gameId` + seed-stripped state to `localStorage` (`ostfront-1915-v1`) after play. On load, a one-shot `GET /api/game?gameId=…` refreshes from the server.
+Local persistence: `lib/storage.ts` writes `gameId` + seed-stripped state to `localStorage` (`ostfront-1915-v1`) after play. `loadGame()` requires `gameId`; `peekSave()` reads the slot for boot. On load, a one-shot `GET /api/game?gameId=…` refreshes from the server.
 
 ### Server: `app/api/turn/route.ts`
 
