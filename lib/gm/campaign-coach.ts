@@ -130,8 +130,10 @@ export async function coachCampaign(input: {
   const rules = rulesCoach(map, situation, selected, input.log, input.messages, queued)
   const ordersClosed = situation.over
 
+  const queuedAttacks = queued.some((order) => order.type === "attack")
+
   if (!llmConfigured() && !fixtureEnabled()) {
-    const shaped = shapeCoachReply(rules.reply, rules.followUp)
+    const shaped = shapeCoachReply(rules.reply, rules.followUp, { queuedAttacks })
     return {
       reply: finishAdvisorReply(shaped.reply),
       source: "fallback",
@@ -232,7 +234,7 @@ export async function coachCampaign(input: {
 
   if (!parsed) {
     void failure
-    const shaped = shapeCoachReply(rules.reply, rules.followUp)
+    const shaped = shapeCoachReply(rules.reply, rules.followUp, { queuedAttacks })
     return {
       reply: finishAdvisorReply(shaped.reply),
       source: "rules",
@@ -247,10 +249,11 @@ export async function coachCampaign(input: {
   let shaped = shapeCoachReply(
     reply || rules.reply,
     parsed.followUp?.trim() ? parsed.followUp.trim().slice(0, 160) : null,
+    { queuedAttacks },
   )
   // If scrubbing gutted every sentence, fall back to the rules path rather than an empty LLM reply.
   if (!shaped.reply.trim()) {
-    shaped = shapeCoachReply(rules.reply, rules.followUp)
+    shaped = shapeCoachReply(rules.reply, rules.followUp, { queuedAttacks })
     return {
       reply: finishAdvisorReply(shaped.reply),
       source: "rules",
@@ -591,7 +594,13 @@ export function scrubPrescribedOrders(reply: string): string {
   return out.join(" ").replace(/(?:I do not file orders\.\s*){2,}/gi, "I do not file orders. ").trim()
 }
 
-function annotateOddsAssumption(sentence: string): string {
+/** Resolved battle lines (roll, fortnight, losses) are not a queued-plan assumption. */
+function isChronicleOddsSentence(sentence: string): boolean {
+  return /\(\s*roll\s+\d|\bchronicle\b|\bfortnight\s+\d|\bwe lost\b|\bthey lost\b/i.test(sentence)
+}
+
+function annotateOddsAssumption(sentence: string, queuedAttacks: boolean): string {
+  if (!queuedAttacks || isChronicleOddsSentence(sentence)) return sentence
   if (/\b(?:queued|column|prong|combined|concentric|contact|plan)\b/i.test(sentence)) return sentence
   ODDS_FIGURE.lastIndex = 0
   if (!ODDS_FIGURE.test(sentence)) return sentence
@@ -600,21 +609,24 @@ function annotateOddsAssumption(sentence: string): string {
 }
 
 /**
- * Odds replies open with a question, and the figure names the plan it assumes.
- * A later question is moved forward; a bare ratio gets a short lead-in.
+ * Odds replies open with a question. "On the queued plan" and the plan lead-in
+ * apply only when the player has a queued attack — never to chronicle battle odds.
  */
-export function ensureOddsQuestionFirst(reply: string): string {
-  const sentences = splitCoachSentences(reply).map(annotateOddsAssumption)
+export function ensureOddsQuestionFirst(reply: string, queuedAttacks = false): string {
+  const sentences = splitCoachSentences(reply).map((sentence) => annotateOddsAssumption(sentence, queuedAttacks))
   if (!sentences.length) return reply
+  const joined = sentences.join(" ").trim()
   ODDS_FIGURE.lastIndex = 0
-  if (!ODDS_FIGURE.test(sentences.join(" "))) return sentences.join(" ").trim()
+  if (!ODDS_FIGURE.test(joined)) return joined
   const first = sentences[0]!
-  if (first.includes("?") && !replyOpensWithOdds(first)) return sentences.join(" ").trim()
+  if (first.includes("?") && !replyOpensWithOdds(first)) return joined
   const questionAt = sentences.findIndex((sentence) => sentence.includes("?") && !replyOpensWithOdds(sentence))
   if (questionAt > 0) {
     const question = sentences[questionAt]!
     return [question, ...sentences.filter((_, index) => index !== questionAt)].join(" ").trim()
   }
+  const chronicle = sentences.some(isChronicleOddsSentence)
+  if (!queuedAttacks || chronicle) return joined
   return [`What does that ratio change in your plan?`, ...sentences].join(" ").trim()
 }
 
@@ -782,7 +794,7 @@ export function fitCoachReplyLength(reply: string, maxChars = COACH_REPLY_MAX_CH
  * Post-process coach prose on every path: scrub dice/filing noise, one odds figure,
  * question first, 2–3 sentence cap, then whole-sentence character fit.
  */
-export function capCoachReply(reply: string): string {
+export function capCoachReply(reply: string, options?: { queuedAttacks?: boolean }): string {
   let cleaned = scrubCoachLedgerNoise(reply.replace(/\s+/g, " ").trim())
   cleaned = scrubCoachOddsLanguage(cleaned)
   cleaned = scrubCoachFortLabels(cleaned)
@@ -798,10 +810,11 @@ export function capCoachReply(reply: string): string {
   cleaned = scrubCoachOddsDecimals(cleaned)
   cleaned = scrubCoachJargon(cleaned)
   cleaned = putQuestionFirst(cleaned)
-  cleaned = ensureOddsQuestionFirst(cleaned)
+  const queuedAttacks = options?.queuedAttacks === true
+  cleaned = ensureOddsQuestionFirst(cleaned, queuedAttacks)
   if (!cleaned) return cleaned
   const kept = splitCoachSentences(cleaned).slice(0, COACH_MAX_SENTENCES)
-  const ordered = ensureOddsQuestionFirst(putQuestionFirst(kept.join(" ").trim()))
+  const ordered = ensureOddsQuestionFirst(putQuestionFirst(kept.join(" ").trim()), queuedAttacks)
   return fitCoachReplyLength(ordered)
 }
 
@@ -809,6 +822,7 @@ export function capCoachReply(reply: string): string {
 export function shapeCoachReply(
   reply: string,
   followUp: string | null,
+  options?: { queuedAttacks?: boolean },
 ): { reply: string; followUp: string | null } {
   let text = reply.replace(/\s+/g, " ").trim()
   let next = followUp?.trim() ? followUp.trim() : null
@@ -822,7 +836,7 @@ export function shapeCoachReply(
       next = null
     }
   }
-  return { reply: capCoachReply(text), followUp: next }
+  return { reply: capCoachReply(text, options), followUp: next }
 }
 
 /** Socratic coach: keep a single map/UI pointer. */

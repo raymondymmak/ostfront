@@ -549,13 +549,29 @@ describe("campaign coach", () => {
   })
 
   it("opens odds-only replies with a question and names the plan", () => {
-    const shaped = shapeCoachReply("About 2.8:1 if the Russians don't reinforce.", null)
+    const shaped = shapeCoachReply("About 2.8:1 if the Russians don't reinforce.", null, { queuedAttacks: true })
     const sentences = splitCoachSentences(shaped.reply)
     expect(sentences[0]).toMatch(/\?$/)
     expect(sentences[0]).not.toMatch(/^\s*about\s+\d/i)
     expect(shaped.reply).toMatch(/2\.8:1/)
     expect(shaped.reply).toMatch(/queued plan/i)
     expect(sentences.length).toBeLessThanOrEqual(3)
+  })
+
+  it("does not relabel chronicle battle odds as a queued plan", () => {
+    const raw =
+      "What outcome did you expect at Kielce? The chronicle shows our assault from Kraków into Kielce failed at 0.7:1 (roll 1); we lost 61, they lost 23."
+    const plain = capCoachReply(raw)
+    expect(plain).toMatch(/0\.7:1 \(roll 1\)/)
+    expect(plain).not.toMatch(/on the queued plan/i)
+    expect(plain).not.toMatch(/What does that ratio change in your plan/i)
+    const withQueue = capCoachReply(raw, { queuedAttacks: true })
+    expect(withQueue).toMatch(/0\.7:1 \(roll 1\)/)
+    expect(withQueue).not.toMatch(/on the queued plan/i)
+    expect(withQueue).not.toMatch(/What does that ratio change in your plan/i)
+    const contact = capCoachReply("Kraków into Kielce is the strongest contact at about 4.2:1 if the Russians don't reinforce.")
+    expect(contact).not.toMatch(/on the queued plan/i)
+    expect(contact).toMatch(/about 4\.2:1/)
   })
 
   it("turns a clerk command into a tradeoff question", () => {
