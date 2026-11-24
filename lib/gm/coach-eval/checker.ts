@@ -166,6 +166,45 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
 
   results.push(provinceMentionsGrounded(reply, facts.allowedProvinceNames))
 
+  if (facts.mustContain?.length) {
+    const lower = reply.toLowerCase()
+    const missing = facts.mustContain.filter((needle) => !lower.includes(needle.toLowerCase()))
+    results.push({
+      id: "must_contain",
+      pass: missing.length === 0,
+      detail:
+        missing.length === 0
+          ? "Required phrases present"
+          : `Missing: ${missing.join(", ")}`,
+    })
+  }
+
+  if (facts.mustNotContain?.length) {
+    const lower = reply.toLowerCase()
+    const hits = facts.mustNotContain.filter((needle) => lower.includes(needle.toLowerCase()))
+    results.push({
+      id: "must_not_contain",
+      pass: hits.length === 0,
+      detail: hits.length === 0 ? "Forbidden phrases absent" : `Forbidden: ${hits.join(", ")}`,
+    })
+  }
+
+  const quotedOdds = reply.match(/\d+(?:\.\d+)?\s*:\s*1\b/gi) ?? []
+  if (quotedOdds.length) {
+    const missingReinforce = quotedOdds.some((_, index, all) => {
+      const start = reply.toLowerCase().indexOf(all[index]!.toLowerCase())
+      const tail = reply.slice(start, start + 80).toLowerCase()
+      return !tail.includes("if the russians don't reinforce")
+    })
+    results.push({
+      id: "odds_reinforce_framing",
+      pass: !missingReinforce,
+      detail: missingReinforce
+        ? "Odds figure missing \"if the Russians don't reinforce\""
+        : "Odds figures include reinforcement framing",
+    })
+  }
+
   if (facts.battleFortnight != null) {
     const needle = `fortnight ${facts.battleFortnight}`
     const hasFortnight = reply.toLowerCase().includes(needle)

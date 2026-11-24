@@ -29,6 +29,38 @@ export function leaveDepotGarrison<T extends { id: string; strength: number }>(
 }
 
 /** The same shape the turn route receives. Text directives are not queued arrows. */
+/** Map API/player queue into the shape `legalTargets` and the map UI use. */
+export function playerOrdersToQueued(orders: PlayerOrder[]): QueuedOrder[] {
+  const drafts: QueuedOrder[] = []
+  for (const order of orders) {
+    if (order.type === "text") continue
+    if (order.type === "fortify") {
+      drafts.push({ id: "", kind: "fortify", from: order.provinceId, unitIds: [] })
+    } else if (order.type === "recruit") {
+      drafts.push({
+        id: "",
+        kind: "recruit",
+        from: order.provinceId,
+        unitIds: [],
+        unitKind: order.unitKind,
+      })
+    } else if (order.type === "cancelRecruit") {
+      drafts.push({ id: "", kind: "cancelRecruit", from: "", unitIds: [], buildId: order.buildId })
+    } else if (order.type === "move") {
+      drafts.push({ id: "", kind: "move", from: "", to: order.to, unitIds: [order.unitId] })
+    } else if (order.type === "attack") {
+      drafts.push({
+        id: "",
+        kind: "attack",
+        from: order.from,
+        to: order.target,
+        unitIds: [...order.unitIds],
+      })
+    }
+  }
+  return drafts
+}
+
 export function queuedToPlayerOrders(queue: QueuedOrder[]): PlayerOrder[] {
   const orders: PlayerOrder[] = []
   for (const order of queue) {

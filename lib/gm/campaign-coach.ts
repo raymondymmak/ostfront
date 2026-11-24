@@ -10,9 +10,12 @@ import {
 import {
   combinedEngagementOdds,
   engagementOdds,
+  findProvince,
   findUnit,
   type EngagementPreview,
 } from "@/lib/engine/turn"
+import { playerOrdersToQueued } from "@/lib/orders"
+import { legalTargets } from "@/lib/ui/legal-targets"
 import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
 import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
 import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
@@ -140,6 +143,7 @@ export async function coachCampaign(input: {
 
   const queuedOdds = renderQueuedResolutionOdds(map, queued)
   const queueConflicts = detectQueuedOrderConflicts(map, queued)
+  const legalSlice = renderCoachLegalTargets(map, queued, input.selectedProvinceId)
   // DISPATCH contacts still use advisor formatOdds ("before the dice"); scrub so the model cannot copy it.
   const dispatch = scrubCoachOddsLanguage(renderSituation(situation)).replace(
     /(\S+)–(\S+) cut\b/g,
@@ -154,6 +158,9 @@ export async function coachCampaign(input: {
     "QUEUED_RESOLUTION_ODDS",
     queuedOdds,
     "",
+    "LEGAL_TARGETS",
+    legalSlice,
+    "",
     "SELECTED",
     selected,
     "",
@@ -166,7 +173,7 @@ export async function coachCampaign(input: {
     "CONVERSATION",
     renderConversation(input.messages),
     "",
-    "Answer the latest question. Use the dispatch, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders. Vary your challenge phrasing; put any intent question first; quote at most one odds figure (one decimal); never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
+    "Answer the latest question. Use the dispatch, LEGAL_TARGETS, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. LEGAL_TARGETS matches the map arrow legality (orderable attack/move vs reach-only neighbors). If QUEUED_RESOLUTION_ODDS shows REJECTED, cite that reason instead of odds. Never quote attack odds for provinces you already hold. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders. Vary your challenge phrasing; put any intent question first; quote at most one odds figure (one decimal), each with \"if the Russians don't reinforce\"; never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
   ].join("\n")
 
   let failure: "empty" | "http" | "timeout" | null = null
@@ -523,6 +530,15 @@ export function scrubCoachFiledClaims(reply: string): string {
 const ODDS_FIGURE =
   /\b(?:odds\s+(?:about\s+)?)?(?:\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+\d+(?:\.\d+)?\s*:\s*1\b/gi
 
+/** Every quoted X:1 must name the reinforcement gap (staff voice contract). */
+export function enforceOddsReinforceClause(reply: string): string {
+  return reply.replace(
+    /\b(about\s+)?(\d+(?:\.\d+)?)\s*:\s*1\b(?!\s+if the Russians don't reinforce)/gi,
+    (_, about: string | undefined, raw: string) =>
+      `${about ?? ""}${trimRatio(raw)}:1 if the Russians don't reinforce`,
+  )
+}
+
 /**
  * Keep the first odds ratio; drop later sentences that carry another ratio.
  * When two ratios share one sentence, cut at the subordinate comparison
@@ -661,6 +677,7 @@ export function capCoachReply(reply: string): string {
   cleaned = scrubCoachJargon(cleaned)
   cleaned = scrubCoachFiledClaims(cleaned)
   cleaned = keepOneOddsFigure(cleaned)
+  cleaned = enforceOddsReinforceClause(cleaned)
   cleaned = scrubDanglingOddsClauses(cleaned)
   cleaned = scrubVerblessSubordinates(cleaned)
   cleaned = scrubCoachOddsLanguage(cleaned)
@@ -781,7 +798,116 @@ export function extractCoachOddsRatio(text: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** Dispatch slice: one resolution-preview odds line per queued attack target. */
+export type CoachAttackCheck =
+  | { ok: true; preview: EngagementPreview; phrase: string | null }
+  | { ok: false; reason: string }
+
+/** Same validity gates as `validateAttack` in simultaneous resolve (supply, border, ownership). */
+export function coachAttackOrderCheck(
+  map: GameState,
+  order: Extract<PlayerOrder, { type: "attack" }>,
+): CoachAttackCheck {
+  const from = findProvince(map, order.from)
+  const target = findProvince(map, order.target)
+  if (!from || !target) return { ok: false, reason: "Unknown province in the attack." }
+  if (!order.unitIds.length) return { ok: false, reason: "Attack needs at least one formation." }
+  if (!from.neighbors.includes(target.id)) {
+    return {
+      ok: false,
+      reason: `${from.name} and ${target.name} do not share a border. The engine will reject the order.`,
+    }
+  }
+  for (const id of order.unitIds) {
+    const unit = from.units.find((item) => item.id === id)
+    if (!unit) {
+      const elsewhere = findUnit(map, id)
+      return {
+        ok: false,
+        reason: elsewhere
+          ? `${elsewhere.unit.name} is not in ${from.name}.`
+          : "Unknown formation in the attack.",
+      }
+    }
+    if (unit.faction !== "central") {
+      return { ok: false, reason: "Those formations are not Central Powers columns." }
+    }
+  }
+  if (target.controller === "central") {
+    return {
+      ok: false,
+      reason: `${target.name} is already held by your side — march there, do not attack it again.`,
+    }
+  }
+  if (from.supply < 30) {
+    return {
+      ok: false,
+      reason: `The attack from ${from.name} cannot march: supply is ${from.supply} (need 30).`,
+    }
+  }
+  const preview = engagementOdds(map, order.from, order.target, order.unitIds)
+  return { ok: true, preview: preview!, phrase: formatCoachOddsPhrase(preview) }
+}
+
+/**
+ * Map-arrow legality from the live board (same helper as the UI highlights).
+ * Selected province first when set.
+ */
+export function renderCoachLegalTargets(
+  map: GameState,
+  queued: PlayerOrder[],
+  selectedProvinceId?: string | null,
+): string {
+  const queue = playerOrdersToQueued(queued)
+  const fromIds = new Set<string>()
+  if (selectedProvinceId) fromIds.add(selectedProvinceId)
+  for (const order of queued) {
+    if (order.type === "attack") fromIds.add(order.from)
+    else if (order.type === "fortify" || order.type === "recruit") fromIds.add(order.provinceId)
+    else if (order.type === "move") {
+      const located = findUnit(map, order.unitId)
+      if (located) fromIds.add(located.province.id)
+    }
+  }
+  if (!fromIds.size) {
+    for (const province of map.provinces) {
+      if (province.controller === "central" && province.units.some((u) => u.faction === "central")) {
+        fromIds.add(province.id)
+      }
+    }
+  }
+  const lines: string[] = []
+  const sorted = [...fromIds].sort((a, b) => {
+    if (a === selectedProvinceId) return -1
+    if (b === selectedProvinceId) return 1
+    return provinceLabel(a).localeCompare(provinceLabel(b))
+  })
+  for (const fromId of sorted) {
+    const targets = legalTargets(map, fromId, queue)
+    const fromName = provinceLabel(fromId)
+    const attack = targets.attack.map((id) => provinceLabel(id)).join(", ")
+    const move = targets.move.map((id) => provinceLabel(id)).join(", ")
+    const reachAtk = targets.reach.attack
+      .filter((id) => !targets.attack.includes(id))
+      .map((id) => provinceLabel(id))
+      .join(", ")
+    const reachMove = targets.reach.move
+      .filter((id) => !targets.move.includes(id))
+      .map((id) => provinceLabel(id))
+      .join(", ")
+    const blocked = targets.blocked.map((item) => `${provinceLabel(item.id)}: ${item.reason}`).join("; ")
+    const bits = [
+      attack ? `orderable attack: ${attack}` : null,
+      move ? `orderable move: ${move}` : null,
+      reachAtk ? `reach-only attack (neighbor, not orderable this fortnight): ${reachAtk}` : null,
+      reachMove ? `reach-only move: ${reachMove}` : null,
+      blocked ? `blocked neighbors: ${blocked}` : null,
+    ].filter(Boolean)
+    lines.push(bits.length ? `${fromName}: ${bits.join("; ")}` : `${fromName}: no legal arrows this fortnight.`)
+  }
+  return lines.length ? lines.join("\n") : "None."
+}
+
+/** Dispatch slice: one resolution-preview odds line per queued attack target (or REJECTED reason). */
 export function renderQueuedResolutionOdds(map: GameState, queued: PlayerOrder[]): string {
   const oddsByTarget = queuedAttackOddsByTarget(map, queued)
   if (!oddsByTarget.size) return "None."
@@ -918,6 +1044,18 @@ export function queuedAttackOddsByTarget(
     byTarget.set(order.target, group)
   }
   for (const [targetId, prongs] of byTarget) {
+    let rejected: string | null = null
+    for (const order of prongs) {
+      const check = coachAttackOrderCheck(map, order)
+      if (!check.ok) {
+        rejected = check.reason
+        break
+      }
+    }
+    if (rejected) {
+      out.set(targetId, `REJECTED — ${rejected}`)
+      continue
+    }
     const preview =
       prongs.length >= 2
         ? combinedEngagementOdds(
@@ -926,9 +1064,61 @@ export function queuedAttackOddsByTarget(
             prongs.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
           )
         : engagementOdds(map, prongs[0]!.from, targetId, prongs[0]!.unitIds)
+    const target = findProvince(map, targetId)
+    if (target?.controller === "central") {
+      out.set(
+        targetId,
+        `REJECTED — ${target.name} is already held by your side — march there, do not attack it again.`,
+      )
+      continue
+    }
     out.set(targetId, formatCoachOddsPhrase(preview))
   }
   return out
+}
+
+export type LatestChronicleEvidence =
+  | {
+      kind: "battle"
+      turn: number
+      date: string
+      battle: BattleFacts
+      summary: string
+    }
+  | {
+      kind: "rejected"
+      turn: number
+      date: string
+      summary: string
+    }
+
+/** Newest chronicle row the coach may cite: latest battle, else latest rejected order. */
+export function latestChronicleEvidence(log: TurnRecord[]): LatestChronicleEvidence | null {
+  for (let i = log.length - 1; i >= 0; i -= 1) {
+    const record = log[i]!
+    const battles = record.resolutions.filter((item) => item.battle)
+    if (battles.length) {
+      const last = battles[battles.length - 1]!
+      return {
+        kind: "battle",
+        turn: record.turn,
+        date: record.date,
+        battle: last.battle!,
+        summary: last.summary,
+      }
+    }
+    const rejected = record.resolutions.filter((item) => item.status === "rejected")
+    if (rejected.length) {
+      const last = rejected[rejected.length - 1]!
+      return {
+        kind: "rejected",
+        turn: record.turn,
+        date: record.date,
+        summary: last.summary,
+      }
+    }
+  }
+  return null
 }
 
 /** Latest fortnight that recorded at least one battle, newest resolution last. */
@@ -962,10 +1152,14 @@ export function renderChronicle(log: TurnRecord[]): string {
       const battles = record.resolutions
         .filter((item) => item.battle)
         .map((item) => formatBattleForCoach(item.battle!))
+      const rejected = record.resolutions
+        .filter((item) => item.status === "rejected")
+        .map((item) => `REJECTED: ${item.summary}`)
       const routine = routineLog(record)
       return [
         `Fortnight ${record.turn + 1} · ${record.date}`,
         ...routine.slice(0, 8),
+        ...rejected,
         ...battles,
       ].join("\n")
     })
@@ -1022,6 +1216,9 @@ export function queuedAttackPreview(
   }
 
   for (const [targetId, prongs] of byTarget) {
+    const first = prongs[0]!
+    const check = coachAttackOrderCheck(map, first)
+    if (!check.ok) return { targetId, odds: null }
     const preview =
       prongs.length >= 2
         ? combinedEngagementOdds(
@@ -1029,7 +1226,9 @@ export function queuedAttackPreview(
             targetId,
             prongs.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
           )
-        : engagementOdds(map, prongs[0]!.from, targetId, prongs[0]!.unitIds)
+        : engagementOdds(map, first.from, targetId, first.unitIds)
+    const target = findProvince(map, targetId)
+    if (target?.controller === "central") return { targetId, odds: null }
     return { targetId, odds: formatCoachOddsPhrase(preview) }
   }
   return null
@@ -1076,6 +1275,73 @@ export function fortLevelPhrase(level: number): string {
   return `${level} forts`
 }
 
+function inputSelectedFrom(selected: string): string | null {
+  if (selected.startsWith("None")) return null
+  return selected.split(/\s+/)[0] ?? null
+}
+
+function provinceMentionedInText(map: GameState, text: string): string | null {
+  const lower = text.toLowerCase()
+  if (/warsaw|warszawa/.test(lower)) return "warszawa"
+  for (const province of map.provinces) {
+    if (lower.includes(province.name.toLowerCase()) || lower.includes(province.id)) {
+      return province.id
+    }
+  }
+  return null
+}
+
+function coachReachabilityReply(
+  map: GameState,
+  queued: PlayerOrder[],
+  selectedProvinceId: string | null,
+  questionLower: string,
+): { reply: string; followUp: string | null; highlights: CoachHighlight[] } | null {
+  const asksNeighbor =
+    /warsaw|warszawa|reachable|legal attack|share a border|no contact|cannot (?:reach|march)|can't (?:reach|march)/.test(
+      questionLower,
+    )
+  if (!asksNeighbor) return null
+  const targetId = provinceMentionedInText(map, questionLower)
+  if (!targetId) return null
+  const fromId =
+    selectedProvinceId ??
+    (questionLower.includes("lublin") || questionLower.includes("from lublin") ? "lublin" : null)
+  if (!fromId) return null
+  const queue = playerOrdersToQueued(queued)
+  const targets = legalTargets(map, fromId, queue)
+  const targetName = provinceLabel(targetId)
+  const fromName = provinceLabel(fromId)
+  const orderable = targets.attack.includes(targetId)
+  const reachable =
+    orderable || targets.reach.attack.includes(targetId) || targets.move.includes(targetId) || targets.reach.move.includes(targetId)
+  if (!reachable) {
+    return {
+      reply: `What are you weighing at ${fromName}? ${fromName} and ${targetName} are not legal attack neighbors on the current board.`,
+      followUp: null,
+      highlights: [{ provinceId: fromId }],
+    }
+  }
+  if (orderable) {
+    return {
+      reply: `What do you need ${targetName} for this fortnight? ${targetName} is an orderable attack neighbor from ${fromName} on the current board — draw the arrow if that is your aim.`,
+      followUp: null,
+      highlights: [{ provinceId: targetId }],
+    }
+  }
+  return {
+    reply: `What are you weighing at ${fromName}? ${targetName} borders ${fromName} but is not orderable this fortnight — check supply and unassigned formations on the Province paper.`,
+    followUp: null,
+    highlights: [{ provinceId: fromId }],
+  }
+}
+
+function strongestDispatchContact(situation: Situation, map: GameState) {
+  return [...situation.contacts]
+    .filter((contact) => findProvince(map, contact.targetId)?.controller !== "central")
+    .sort((a, b) => b.ratio - a.ratio)[0]
+}
+
 /** Varied intent openers — avoid a stock Kielce/Lemberg line on every turn. */
 export function intentQuestionForTarget(targetName: string): string {
   const options = [
@@ -1105,24 +1371,35 @@ function rulesCoach(
   const conflicts = detectQueuedOrderConflicts(map, queued)
 
   if (wantsReview) {
-    const battles = latestBattleFacts(log)
-    if (battles.length) {
-      const last = battles[battles.length - 1]!
-      const target = provinceLabel(last.battle.targetId)
-      const evidence = formatBattleReviewForPlayer(last.turn, last.date, last.battle, last.summary)
-      const evidenceBody = evidence.replace(/^In /, "").replace(/\.$/, "")
+    const chronicle = latestChronicleEvidence(log)
+    if (chronicle?.kind === "rejected") {
+      const body = chronicle.summary.replace(/\.$/, "")
+      return {
+        reply: `What were you trying to force in fortnight ${chronicle.turn + 1} (${chronicle.date})? The chronicle rejected that order: ${body}.`,
+        followUp: null,
+        highlights: [{ uiId: "chronicle-log-toggle" }],
+      }
+    }
+    if (chronicle?.kind === "battle") {
+      const target = provinceLabel(chronicle.battle.targetId)
+      const formatted = formatBattleReviewForPlayer(
+        chronicle.turn,
+        chronicle.date,
+        chronicle.battle,
+        chronicle.summary,
+      )
+      const evidenceBody = formatted.replace(/^In /, "").replace(/\.$/, "")
       if (prediction) {
         return {
           reply: `You expected ${prediction.replace(/\.$/, "")}; the chronicle shows ${evidenceBody}.`,
           followUp: null,
-          highlights: [{ provinceId: last.battle.targetId }],
+          highlights: [{ provinceId: chronicle.battle.targetId }],
         }
       }
-      // Name the fortnight even when the open fortnight has no battle yet.
       return {
         reply: `What outcome did you expect at ${target}? The chronicle shows ${evidenceBody}.`,
         followUp: null,
-        highlights: [{ provinceId: last.battle.targetId }],
+        highlights: [{ provinceId: chronicle.battle.targetId }],
       }
     }
     return {
@@ -1132,6 +1409,9 @@ function rulesCoach(
       highlights: [{ uiId: "chronicle-log-toggle" }],
     }
   }
+
+  const reachability = coachReachabilityReply(map, queued, inputSelectedFrom(selected), lower)
+  if (reachability) return reachability
 
   if (conflicts.length) {
     const conflict = conflicts[0]!
@@ -1149,7 +1429,7 @@ function rulesCoach(
       lower,
     )
   if (wantsFiling) {
-    const weak = [...situation.contacts].sort((a, b) => b.ratio - a.ratio)[0]
+    const weak = strongestDispatchContact(situation, map)
     if (weak) {
       const oddsBit = Number.isFinite(weak.ratio)
         ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
@@ -1169,14 +1449,17 @@ function rulesCoach(
     }
   }
 
-  if (situation.queue.length) {
+  const queuedAttacks = queued.filter((order) => order.type === "attack")
+  if (situation.queue.length || queuedAttacks.length) {
     const oddsByTarget = queuedAttackOddsByTarget(map, queued)
     if (oddsByTarget.size) {
       const [targetId, oddsPhrase] = [...oddsByTarget.entries()][0]!
       const target = provinceLabel(targetId)
-      const evidence = oddsPhrase
-        ? `That column stands at ${oddsPhrase}.`
-        : `You have a column queued into ${target}.`
+      const evidence = oddsPhrase?.startsWith("REJECTED")
+        ? `The engine would reject that march: ${oddsPhrase.replace(/^REJECTED —\s*/, "")}`
+        : oddsPhrase
+          ? `That column stands at ${oddsPhrase}.`
+          : `You have a column queued into ${target}.`
       const affirmsPlan = /^(?:yes|yep|yeah|ok|okay|sure|agreed|we(?:'ll| will| can)|deal with)\b/i.test(
         lower.trim(),
       )
@@ -1229,7 +1512,7 @@ function rulesCoach(
     }
   }
 
-  const weak = [...situation.contacts].sort((a, b) => b.ratio - a.ratio)[0]
+  const weak = strongestDispatchContact(situation, map)
   if (weak) {
     const oddsBit = Number.isFinite(weak.ratio)
       ? ` at about ${trimRatio(String(weak.ratio))}:1 if the Russians don't reinforce`
@@ -1240,6 +1523,24 @@ function rulesCoach(
       reply: `What axis are you weighing this fortnight? ${weak.fromName} into ${weak.targetName} is the strongest contact${oddsBit}.`,
       followUp: null,
       highlights: [{ provinceId: weak.targetId }],
+    }
+  }
+
+  const queue = playerOrdersToQueued(queued)
+  const selectedId = inputSelectedFrom(selected)
+  const probeFrom =
+    selectedId ??
+    map.provinces.find((province) => province.controller === "central")?.id ??
+    null
+  if (probeFrom) {
+    const legal = legalTargets(map, probeFrom, queue)
+    const legalAttack = legal.attack[0] ?? legal.reach.attack[0]
+    if (legalAttack) {
+      return {
+        reply: `What do you need ${provinceLabel(legalAttack)} for this fortnight? ${provinceLabel(probeFrom)} has a legal attack neighbor at ${provinceLabel(legalAttack)} on the current board.`,
+        followUp: null,
+        highlights: [{ provinceId: legalAttack }],
+      }
     }
   }
 

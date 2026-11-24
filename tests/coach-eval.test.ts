@@ -14,8 +14,8 @@ import { legalTargets } from "@/lib/ui/legal-targets"
 import { createInitialState } from "@/lib/data/scenario"
 
 describe("coach eval harness", () => {
-  it("ships 8 engine-grounded scenarios", () => {
-    expect(COACH_EVAL_SCENARIOS).toHaveLength(8)
+  it("ships 12 engine-grounded scenarios", () => {
+    expect(COACH_EVAL_SCENARIOS).toHaveLength(12)
     const ids = COACH_EVAL_SCENARIOS.map((scenario) => scenario.id)
     expect(ids).toEqual([
       "under-supply-trap",
@@ -26,12 +26,16 @@ describe("coach eval harness", () => {
       "fortify-attack-conflict",
       "post-battle-surprise",
       "illegal-move",
+      "reachable-warsaw",
+      "captured-province-odds",
+      "supply-rejected-queue",
+      "rejected-chronicle",
     ])
   })
 
   it("builds fixtures that match live engine facts", () => {
     const built = buildAllCoachEvalFixtures()
-    expect(built).toHaveLength(8)
+    expect(built).toHaveLength(12)
 
     const under = built.find((item) => item.id === "under-supply-trap")!.fixture
     const underMap = staffMap(under.state)
@@ -121,7 +125,7 @@ describe("coach eval harness", () => {
   it("hard-rule checker accepts a clean Socratic reply", () => {
     const surprise = COACH_EVAL_SCENARIOS.find((item) => item.id === "post-battle-surprise")!.build()
     const reply =
-      "What did you expect at Kielce? The chronicle shows fortnight 1 (2 May 1915) our assault from Kraków into Kielce failed at 0.7:1 (roll 1); we lost 61, they lost 23."
+      "What did you expect at Kielce? The chronicle shows fortnight 1 (2 May 1915) our assault from Kraków into Kielce failed at 0.7:1 if the Russians don't reinforce (roll 1); we lost 61, they lost 23."
     const results = checkHardRules(reply, surprise.facts)
     expect(hardRulesPassed(results)).toBe(true)
   })
@@ -173,7 +177,7 @@ describe("coach eval harness", () => {
     delete process.env.OSTFRONT_ADVISOR_FIXTURE
     const report = await runCoachEval({ offline: true, gradePedagogy: false })
     expect(report.mode).toBe("offline")
-    expect(report.scenarios).toHaveLength(8)
+    expect(report.scenarios).toHaveLength(12)
     expect(report.pedagogyPassCount).toBeNull()
     for (const scenario of report.scenarios) {
       expect(scenario.reply.length).toBeGreaterThan(10)

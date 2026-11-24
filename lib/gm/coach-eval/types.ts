@@ -15,6 +15,10 @@ export type CoachEvalFacts = {
   battleFortnight?: number
   /** When set, reply must include this chronicle date substring. */
   battleDate?: string
+  /** Reply must include each substring (case-insensitive). */
+  mustContain?: string[]
+  /** Reply must not include each substring (case-insensitive). */
+  mustNotContain?: string[]
 }
 
 export type CoachEvalFixture = {
@@ -44,6 +48,9 @@ export type HardRuleId =
   | "grounded_odds"
   | "grounded_provinces"
   | "battle_fortnight"
+  | "must_contain"
+  | "must_not_contain"
+  | "odds_reinforce_framing"
 
 export type HardRuleResult = {
   id: HardRuleId

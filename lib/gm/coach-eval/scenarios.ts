@@ -326,6 +326,187 @@ function fortifyAttackConflict(): CoachEvalFixture {
   }
 }
 
+/** Central-held Lublin can order an attack on neighbor Warsaw — coach must not deny contact. */
+function reachableWarsawFromLublin(): CoachEvalFixture {
+  const state = cloneState(createInitialState("normal"))
+  const lublin = state.provinces.find((province) => province.id === "lublin")
+  const krakow = state.provinces.find((province) => province.id === "krakow")
+  if (!lublin || !krakow) throw new Error("lublin/krakow missing")
+  if (!lublin.neighbors.includes("warszawa")) {
+    throw new Error("fixture invalid: Lublin must border Warszawa")
+  }
+  lublin.controller = "central"
+  lublin.supply = 100
+  lublin.units = krakow.units.filter((unit) => unit.faction === "central").map((unit) => ({
+    ...unit,
+    province: "lublin",
+  }))
+  krakow.units = krakow.units.filter((unit) => unit.faction !== "central")
+  const map = staffMap(state)
+  map.provinces.find((province) => province.id === "lublin")!.supply = 100
+  const legal = legalTargets(map, "lublin", [])
+  if (!legal.attack.includes("warszawa")) {
+    throw new Error(`expected orderable Warszawa from Lublin, got attack=${legal.attack.join(",")}`)
+  }
+  return {
+    state: map,
+    log: [],
+    messages: [
+      {
+        role: "user",
+        content: "From Lublin, can I reach Warsaw this fortnight? The map shows no contact.",
+      },
+    ],
+    queuedOrders: [],
+    selectedProvinceId: "lublin",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: ["warsaw", "orderable", "lublin"],
+      mustNotContain: ["no open march", "not share a border", "no contact"],
+    },
+  }
+}
+
+/** Do not quote attack odds into a province the Central Powers already hold. */
+function attackCapturedProvince(): CoachEvalFixture {
+  const state = cloneState(createInitialState("normal"))
+  const lublin = state.provinces.find((province) => province.id === "lublin")
+  const kielce = state.provinces.find((province) => province.id === "kielce")
+  const krakow = state.provinces.find((province) => province.id === "krakow")
+  if (!lublin || !kielce || !krakow) throw new Error("lublin/kielce/krakow missing")
+  lublin.controller = "central"
+  kielce.controller = "central"
+  lublin.units = krakow.units.filter((unit) => unit.faction === "central")
+  krakow.units = krakow.units.filter((unit) => unit.faction !== "central")
+  const map = staffMap(state)
+  const unitIds = centralUnitIds(map, "lublin")
+  if (!unitIds.length) throw new Error("no Lublin attackers")
+  const queued = [attackOrder("lublin", "kielce", unitIds)]
+  return {
+    state: map,
+    log: [],
+    messages: [{ role: "user", content: "Does my queued attack on Kielce look sound after we took it?" }],
+    queuedOrders: queued,
+    selectedProvinceId: "lublin",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: [],
+      mustContain: ["already held", "kielce"],
+      mustNotContain: [":1"],
+    },
+  }
+}
+
+/** Supply below 30 blocks the march — explain the limit, do not quote odds. */
+function supplyRejectedQueuedAttack(): CoachEvalFixture {
+  const state = cloneState(createInitialState("normal"))
+  const lublin = state.provinces.find((province) => province.id === "lublin")
+  const krakow = state.provinces.find((province) => province.id === "krakow")
+  if (!lublin || !krakow) throw new Error("lublin/krakow missing")
+  lublin.controller = "central"
+  lublin.units = krakow.units.filter((unit) => unit.faction === "central")
+  krakow.units = krakow.units.filter((unit) => unit.faction !== "central")
+  const map = staffMap(state)
+  const lublinMap = map.provinces.find((province) => province.id === "lublin")!
+  lublinMap.supply = 26
+  const unitIds = centralUnitIds(map, "lublin")
+  const target = lublin.neighbors.find(
+    (id) => map.provinces.find((province) => province.id === id)?.controller === "russia",
+  )
+  if (!target) throw new Error("no Russian neighbor from Lublin")
+  const queued = [attackOrder("lublin", target, unitIds)]
+  return {
+    state: map,
+    log: [],
+    messages: [{ role: "user", content: "What odds do I have marching from Lublin this fortnight?" }],
+    queuedOrders: queued,
+    selectedProvinceId: "lublin",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: [],
+      mustContain: ["supply", "30"],
+      mustNotContain: [":1"],
+    },
+  }
+}
+
+/** Chronicle fortnight 2 rejected order must not be drowned out by fortnight 1 battle. */
+function rejectedChronicleEntry(): CoachEvalFixture {
+  const state = createInitialState("normal")
+  const log: TurnRecord[] = [
+    {
+      turn: 0,
+      date: "2 May 1915",
+      narration: "",
+      diplomacy: [],
+      resolutions: [
+        {
+          proposal: { type: "attack", from: "krakow", target: "kielce", units: ["g-kra-11"] },
+          status: "applied",
+          summary: "Attack from Kraków into Kielce succeeds.",
+          battle: {
+            targetId: "kielce",
+            attacker: "central",
+            defender: "russia",
+            kind: "assault",
+            prongs: 1,
+            origins: ["krakow"],
+            attackerLoss: 7,
+            defenderLoss: 30,
+            encircled: false,
+            attackerWon: true,
+            attack: 120,
+            defense: 40,
+            ratio: 3,
+            roll: 5,
+            launchSupply: { krakow: 100 },
+            pooledSupply: null,
+          },
+        },
+      ],
+      events: [],
+      controlChanges: [],
+      logistics: [],
+      notes: [],
+      gmSource: "mock",
+    },
+    {
+      turn: 1,
+      date: "16 May 1915",
+      narration: "",
+      diplomacy: [],
+      resolutions: [
+        {
+          proposal: { type: "attack", from: "lublin", target: "kielce", units: ["g-kra-11"] },
+          status: "rejected",
+          summary:
+            "The attack from Lublin cannot march: supply is 26 (need 30).",
+        },
+      ],
+      events: [],
+      controlChanges: [],
+      logistics: [],
+      notes: [],
+      gmSource: "mock",
+    },
+  ]
+  const map = staffMap(state)
+  return {
+    state,
+    log,
+    messages: [{ role: "user", content: "Review the last battle from the chronicle." }],
+    queuedOrders: [],
+    selectedProvinceId: null,
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: ["fortnight 2", "rejected", "supply"],
+      mustNotContain: ["no battles are recorded"],
+    },
+  }
+}
+
 /** Non-adjacent Kraków → Warsaw (warszawa). Engine odds helpers ignore adjacency; legalTargets does not. */
 function illegalMove(): CoachEvalFixture {
   const state = createInitialState("normal")
@@ -420,6 +601,34 @@ export const COACH_EVAL_SCENARIOS: CoachEvalScenario[] = [
     blindSpot:
       "Kraków is not adjacent to Warszawa; coach must stay grounded and never claim the illegal attack was filed.",
     build: illegalMove,
+  },
+  {
+    id: "reachable-warsaw",
+    title: "Reachable Warsaw from Lublin",
+    blindSpot:
+      "After Lublin is captured, Warszawa is a legal attack neighbor — coach must not claim there is no contact.",
+    build: reachableWarsawFromLublin,
+  },
+  {
+    id: "captured-province-odds",
+    title: "No odds on already-held province",
+    blindSpot:
+      "Player queued an attack into Lublin after capturing it; coach must reject the idea, not quote odds.",
+    build: attackCapturedProvince,
+  },
+  {
+    id: "supply-rejected-queue",
+    title: "Supply-rejected queued attack",
+    blindSpot:
+      "Lublin supply 26 blocks the march; coach must cite the supply floor instead of quoting attack odds.",
+    build: supplyRejectedQueuedAttack,
+  },
+  {
+    id: "rejected-chronicle",
+    title: "Rejected chronicle entry",
+    blindSpot:
+      "Fortnight 2 carries a rejected march; coach must cite that rejection, not pretend fortnight 1 was the last entry.",
+    build: rejectedChronicleEntry,
   },
 ]
 

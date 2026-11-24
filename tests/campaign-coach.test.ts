@@ -19,12 +19,15 @@ import {
   hasDanglingCoachClause,
   hasMissingQuestionMark,
   hasVerblessTrailingSubordinate,
+  coachAttackOrderCheck,
+  enforceOddsReinforceClause,
   keepOneOddsFigure,
+  latestChronicleEvidence,
+  renderChronicle,
   latestBattleFacts,
   playerStatedIntent,
   putQuestionFirst,
   queuedAttackPreview,
-  renderChronicle,
   sanitizeHighlights,
   scrubCoachFiledClaims,
   scrubCoachFortLabels,
@@ -873,5 +876,112 @@ describe("campaign coach guards", () => {
       { "x-ostfront-turn-token": "secret-token" },
     )
     expect(allowed.status).toBe(200)
+  })
+
+  it("adds reinforcement framing to bare odds figures", () => {
+    expect(enforceOddsReinforceClause("About 4.7:1 if the Russians don't reinforce")).toBe(
+      "About 4.7:1 if the Russians don't reinforce",
+    )
+    expect(enforceOddsReinforceClause("That column stands at about 2.2:1.")).toBe(
+      "That column stands at about 2.2:1 if the Russians don't reinforce.",
+    )
+    expect(capCoachReply("What do you expect at Kielce? That column is about 3.1:1.")).toMatch(
+      /3\.1:1 if the Russians don't reinforce/,
+    )
+  })
+
+  it("rejects queued attacks below supply 30 instead of quoting odds", async () => {
+    const state = createInitialState()
+    const lublin = state.provinces.find((province) => province.id === "lublin")!
+    const krakow = state.provinces.find((province) => province.id === "krakow")!
+    lublin.controller = "central"
+    lublin.units = krakow.units.filter((unit) => unit.faction === "central")
+    krakow.units = krakow.units.filter((unit) => unit.faction !== "central")
+    const map = staffMap(state)
+    map.provinces.find((province) => province.id === "lublin")!.supply = 26
+    const unitIds = map.provinces
+      .find((province) => province.id === "lublin")!
+      .units.filter((unit) => unit.faction === "central")
+      .map((unit) => unit.id)
+    const target = lublin.neighbors.find(
+      (id) => map.provinces.find((province) => province.id === id)?.controller === "russia",
+    )!
+    const check = coachAttackOrderCheck(map, { type: "attack", from: "lublin", target, unitIds })
+    expect(check.ok).toBe(false)
+    if (!check.ok) expect(check.reason).toMatch(/supply is 26 \(need 30\)/)
+
+    const result = await coachCampaign({
+      state: map,
+      log: [],
+      messages: [{ role: "user", content: "What do you make of my queued plan?" }],
+      queuedOrders: [{ type: "attack", from: "lublin", target, unitIds }],
+      selectedProvinceId: "lublin",
+    })
+    expect(result.reply).toMatch(/supply/i)
+    expect(result.reply).not.toMatch(/:\s*1/)
+  })
+
+  it("prefers the latest rejected chronicle row over an older battle", async () => {
+    const log: TurnRecord[] = [
+      {
+        turn: 0,
+        date: "2 May 1915",
+        narration: "",
+        diplomacy: [],
+        resolutions: [
+          {
+            proposal: { type: "attack", from: "krakow", target: "kielce", units: ["g-kra-11"] },
+            status: "applied",
+            summary: "Attack from Kraków into Kielce succeeds.",
+            battle: battleFactsFixture({
+              targetId: "kielce",
+              attacker: "central",
+              defender: "russia",
+              kind: "assault",
+              prongs: 1,
+              origins: ["krakow"],
+              attackerLoss: 1,
+              defenderLoss: 2,
+              encircled: false,
+              attackerWon: true,
+            }),
+          },
+        ],
+        events: [],
+        controlChanges: [],
+        logistics: [],
+        notes: [],
+        gmSource: "mock",
+      },
+      {
+        turn: 1,
+        date: "16 May 1915",
+        narration: "",
+        diplomacy: [],
+        resolutions: [
+          {
+            proposal: { type: "attack", from: "lublin", target: "kielce", units: ["g-kra-11"] },
+            status: "rejected",
+            summary: "The attack from Lublin cannot march: supply is 26 (need 30).",
+          },
+        ],
+        events: [],
+        controlChanges: [],
+        logistics: [],
+        notes: [],
+        gmSource: "mock",
+      },
+    ]
+    expect(latestChronicleEvidence(log)?.kind).toBe("rejected")
+    expect(renderChronicle(log)).toMatch(/REJECTED:.*supply is 26/)
+    const result = await coachCampaign({
+      state: createInitialState(),
+      log,
+      messages: [{ role: "user", content: "Review the last battle from the chronicle." }],
+      queuedOrders: [],
+    })
+    expect(result.reply).toMatch(/fortnight 2/i)
+    expect(result.reply).toMatch(/rejected|supply is 26/i)
+    expect(result.reply).not.toMatch(/no battles are recorded/i)
   })
 })
