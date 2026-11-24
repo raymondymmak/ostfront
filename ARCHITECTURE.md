@@ -176,12 +176,12 @@ Same turn guard as turn (body limit, rate, origin/token) **plus** campaign stora
 `lib/gm/campaign-coach.ts` `coachCampaign()`:
 
 - Builds the engine dispatch via `buildSituation` / `renderSituation` (`lib/gm/advisor.ts`) plus chronicle from `save.log` (`BattleFacts`, routine lines).
-- Optional LLM (`resolveLlmModels` cheap path); else rules fallback. Schema **forbids** `suggestions` / order objects.
+- Optional LLM via the provider chain (OpenAI, then the `LLM_*` backup); else rules fallback. Schema **forbids** `suggestions` / order objects.
 - Returns `{ reply, followUp, highlights, source, unavailable, ordersClosed }`. Highlights are province / `uiId` pointers; `game-app` maps them to `WarMap` `coachHighlightIds`.
 
 Coach does **not** persist chat on the server (sessionStorage only).
 
-**Offline scenario eval** (`npm run eval:coach`, ADR 015): `lib/gm/coach-eval/` builds eight fixed `GameState` fixtures (including fortify+attack conflicts), runs `coachCampaign`, and applies Layer 1 deterministic hard-rule checks (sentence budget, question-first, no filed claims / banned jargon / dangling odds clauses, grounded odds & chronicle fortnight). Live mode (when `LLM_API_KEY` is set) adds a Layer 2 pedagogy rubric grader (`EVAL_JUDGE_MODEL` optional). `tests/coach-eval.test.ts` keeps fixtures and Layer 1 in CI without external APIs. Coach post-processing drops whole comparison clauses when scrubbing a second odds figure; the advisor panel aborts hung `/api/advisor` fetches client-side.
+**Offline scenario eval** (`npm run eval:coach`, ADR 015): `lib/gm/coach-eval/` builds eight fixed `GameState` fixtures (including fortify+attack conflicts), runs `coachCampaign`, and applies Layer 1 deterministic hard-rule checks (sentence budget, question-first, no filed claims / banned jargon / dangling odds clauses, grounded odds & chronicle fortnight). Live mode (when `OPENAI_API_KEY` or `LLM_API_KEY` is set) adds a Layer 2 pedagogy rubric grader on the first provider (`EVAL_JUDGE_MODEL` optional). `tests/coach-eval.test.ts` keeps fixtures and Layer 1 in CI without external APIs. Coach post-processing drops whole comparison clauses when scrubbing a second odds figure; the advisor panel aborts hung `/api/advisor` fetches client-side.
 
 ```mermaid
 flowchart LR
@@ -273,15 +273,21 @@ Grade thresholds (eastern VP captured, Kraków not Russian): Decisive ≥ **7**,
 
 `playTurn` always calls `mockAiTurn` → `stavkaTurn` for Russian **proposals**. Difficulty sets attack thresholds (`STAVKA_THRESHOLD` in `lib/ai/stavka.ts`).
 
-### LLM cascade (`lib/gm/cascade.ts`)
+### LLM provider chain (`lib/gm/providers.ts`, `lib/gm/cascade.ts`)
 
-When `LLM_API_KEY` is set, `planCascade` (`lib/gm/tier.ts`) picks models by tier. `fetchGmWithCascade` failure falls back to **staff simulation** (Stavka only).
+When `OPENAI_API_KEY` and/or `LLM_API_KEY` is set, `fetchGmWithCascade` tries providers in order (ADR 018):
 
-**Surprising fact (verify in `lib/gm/index.ts`):** even when the cascade succeeds, **only up to two diplomacy lines** are taken from the LLM. Russian unit orders, events, and narration still come from Stavka.
+1. OpenAI (`OPENAI_MODEL`, default `gpt-6.1-terra`; `reasoning_effort` from `OPENAI_REASONING_EFFORT`, default `medium`) and strict `json_schema`.
+2. The existing `LLM_*` client (OpenRouter in production), including `planCascade` / `LLM_MODEL_STRONG` inside that provider only.
+3. **Staff simulation** (Stavka only) if neither returns valid JSON.
 
-### Advisor
+The first provider gets about half of `GM_BUDGET_MS` so the backup still fits. Failover covers timeout, 429, 5xx, a missing key, an empty body, and unparseable or invalid JSON. Logs name the provider and model.
 
-Separate prompt in `lib/gm/advisor.ts`; uses `llmChat`, not the turn cascade.
+**Surprising fact (verify in `lib/gm/index.ts`):** even when a provider succeeds, **only up to two diplomacy lines** are taken from the LLM. Russian unit orders, events, and narration still come from Stavka.
+
+### Advisor and teach coach
+
+`/api/advisor` (`coachCampaign`) and `POST /api/teach/coach` use `llmChatChain` with the same provider order and a strict coach schema on OpenAI. The dispatch is still built in `lib/gm/advisor.ts`. They do not use the turn cascade's strong model.
 
 ### LLM Blob logging (`lib/gm/llm-log.ts`)
 

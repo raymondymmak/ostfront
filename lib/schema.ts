@@ -357,3 +357,83 @@ export const GM_JSON_SCHEMA = {
     },
   },
 } as const
+
+/**
+ * OpenAI structured outputs (`strict: true`) reject `const` and optional fields.
+ * `note` is required and nullable; proposal discriminators are single-value enums.
+ * OpenRouter keeps `GM_JSON_SCHEMA` with `strict: false`.
+ */
+export const OPENAI_GM_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["narration", "proposals", "events", "diplomacy"],
+  properties: {
+    narration: { type: "string" },
+    diplomacy: { type: "array", items: { type: "string" } },
+    events: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "province", "note"],
+        properties: {
+          type: {
+            type: "string",
+            enum: ["partisans", "strike", "epidemic", "breakthrough"],
+          },
+          province: { type: "string" },
+          note: { type: ["string", "null"] },
+        },
+      },
+    },
+    proposals: {
+      type: "array",
+      items: {
+        anyOf: [
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["type", "unit", "to"],
+            properties: {
+              type: { type: "string", enum: ["move"] },
+              unit: { type: "string" },
+              to: { type: "string" },
+            },
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["type", "from", "target", "units"],
+            properties: {
+              type: { type: "string", enum: ["attack"] },
+              from: { type: "string" },
+              target: { type: "string" },
+              units: { type: "array", items: { type: "string" } },
+            },
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["type", "province"],
+            properties: {
+              type: { type: "string", enum: ["fortify"] },
+              province: { type: "string" },
+            },
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["type", "province", "field", "delta", "reason"],
+            properties: {
+              type: { type: "string", enum: ["modify"] },
+              province: { type: "string" },
+              field: { type: "string", enum: ["unrest", "supply"] },
+              delta: { type: "number" },
+              reason: { type: "string" },
+            },
+          },
+        ],
+      },
+    },
+  },
+} as const

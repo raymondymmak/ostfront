@@ -63,6 +63,7 @@ describe("game master JSON", () => {
     vi.restoreAllMocks()
     delete process.env.BLOB_READ_WRITE_TOKEN
     delete process.env.LLM_MODEL_STRONG
+    delete process.env.OPENAI_API_KEY
     process.env.LLM_API_KEY = "test-key"
     process.env.LLM_BASE_URL = "https://openrouter.ai/api/v1"
     process.env.LLM_MODEL = "z-ai/glm-5.3-flash"

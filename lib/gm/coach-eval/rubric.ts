@@ -1,4 +1,4 @@
-import { extractTopLevelJson, llmChat } from "@/lib/gm/llm"
+import { extractTopLevelJson, llmChat, type LlmTarget } from "@/lib/gm/llm"
 import { z } from "zod"
 import type { PedagogyCriterionResult, PedagogyGrade } from "@/lib/gm/coach-eval/types"
 
@@ -35,6 +35,7 @@ export async function gradePedagogy(input: {
   playerMessages: string[]
   reply: string
   judgeModel: string
+  target?: LlmTarget
 }): Promise<PedagogyGrade> {
   const user = [
     `SCENARIO_ID: ${input.scenarioId}`,
@@ -57,6 +58,7 @@ export async function gradePedagogy(input: {
     timeoutMs: 30_000,
     maxTokens: 800,
     temperature: 0,
+    target: input.target,
   })
 
   if (!chat.ok) {

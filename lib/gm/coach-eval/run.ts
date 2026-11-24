@@ -1,5 +1,6 @@
 import { coachCampaign } from "@/lib/gm/campaign-coach"
-import { llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
+import { llmConfigured, resolveProviderChain } from "@/lib/gm/llm"
+import { targetFromProvider } from "@/lib/gm/providers"
 import { checkHardRules, hardRulesPassed } from "@/lib/gm/coach-eval/checker"
 import { gradePedagogy, resolveJudgeModel } from "@/lib/gm/coach-eval/rubric"
 import { COACH_EVAL_SCENARIOS } from "@/lib/gm/coach-eval/scenarios"
@@ -19,8 +20,8 @@ export type RunCoachEvalOptions = {
 export async function runCoachEval(options: RunCoachEvalOptions = {}): Promise<CoachEvalReport> {
   const offline = Boolean(options.offline) || !llmConfigured()
   const wantPedagogy = options.gradePedagogy !== false && !offline && llmConfigured()
-  const models = offline ? null : resolveLlmModels()
-  const coachModel = models?.cheap ?? null
+  const primary = offline ? null : (resolveProviderChain()[0] ?? null)
+  const coachModel = primary?.model ?? null
   const judgeModel = coachModel ? resolveJudgeModel(coachModel) : null
 
   const selected = options.scenarioIds?.length
@@ -35,8 +36,10 @@ export async function runCoachEval(options: RunCoachEvalOptions = {}): Promise<C
 
   // Offline / CI: ensure no accidental live calls even if a key is present.
   const previousKey = process.env.LLM_API_KEY
+  const previousOpenAI = process.env.OPENAI_API_KEY
   if (offline) {
     delete process.env.LLM_API_KEY
+    delete process.env.OPENAI_API_KEY
   }
 
   const scenarios: ScenarioEvalResult[] = []
@@ -76,6 +79,7 @@ export async function runCoachEval(options: RunCoachEvalOptions = {}): Promise<C
           playerMessages,
           reply: response.reply,
           judgeModel,
+          target: primary ? targetFromProvider(primary) : undefined,
         })
       }
 
@@ -85,6 +89,8 @@ export async function runCoachEval(options: RunCoachEvalOptions = {}): Promise<C
     if (offline) {
       if (previousKey === undefined) delete process.env.LLM_API_KEY
       else process.env.LLM_API_KEY = previousKey
+      if (previousOpenAI === undefined) delete process.env.OPENAI_API_KEY
+      else process.env.OPENAI_API_KEY = previousOpenAI
     }
   }
 

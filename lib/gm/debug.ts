@@ -1,6 +1,6 @@
 export type GmContentState = "empty" | "present" | "n/a"
 
-export type GmModelEnv = "LLM_MODEL" | "LLM_MODEL_STRONG"
+export type GmModelEnv = "LLM_MODEL" | "LLM_MODEL_STRONG" | "OPENAI_MODEL"
 
 export type GmTokenUsage = {
   promptTokens: number | null
@@ -15,6 +15,8 @@ export type GmDebug = {
   elapsedMs: number
   model: string
   modelEnv: GmModelEnv
+  /** Endpoint that produced this failure. */
+  provider?: "openai" | "openrouter"
   httpStatus: number | null
   content: GmContentState
   fallback: "staff-simulation"
@@ -24,7 +26,7 @@ export type GmDebug = {
 }
 
 const SECRET =
-  /Bearer\s+\S+|sk-[A-Za-z0-9_-]{6,}|\bLLM_API_KEY\s*[=:]\s*\S+|api[_-]?key["']?\s*[:=]\s*["']?[^\s"']+/gi
+  /Bearer\s+\S+|sk-[A-Za-z0-9_-]{6,}|\b(?:LLM_API_KEY|OPENAI_API_KEY)\s*[=:]\s*\S+|api[_-]?key["']?\s*[:=]\s*["']?[^\s"']+/gi
 
 /** Drop keys, bearer tokens, and prompt-sized blobs before anything reaches the player. */
 export function sanitizeGmText(message: string): string {
@@ -41,6 +43,7 @@ export function formatGmDebug(debug: GmDebug): string {
     `abort: ${reason}`,
     `${elapsed}ms`,
     `model ${model} (${debug.modelEnv})`,
+    ...(debug.provider ? [`provider ${debug.provider}`] : []),
     `http ${http}`,
     `content ${debug.content}`,
   ]

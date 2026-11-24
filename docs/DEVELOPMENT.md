@@ -35,15 +35,18 @@ CI runs typecheck, lint (0 warnings), test, and build on every PR.
 Copy `.env.example` to `.env.local` only if you want a live narrator. The game is fully playable with none of these set.
 
 ```
+OPENAI_API_KEY=
+# OPENAI_MODEL=gpt-6.1-terra
+# OPENAI_REASONING_EFFORT=medium
 LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
 LLM_MODEL_STRONG=
 ```
 
-`LLM_BASE_URL` is any OpenAI-compatible chat-completions endpoint. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent when set. The chief of staff uses `LLM_MODEL`, the fast model. `LLM_MODEL_STRONG` stays on important Russian diplomacy turns.
+`OPENAI_API_KEY` is tried first. `OPENAI_MODEL` defaults to `gpt-6.1-terra`. `OPENAI_REASONING_EFFORT` defaults to `medium` (`none`, `low`, `medium`, `high`, `xhigh`, `max` on Chat Completions as `reasoning_effort`). `LLM_BASE_URL` is the backup OpenAI-compatible chat-completions endpoint (OpenRouter in production) and is unchanged. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent on that backup only. The chief of staff uses the first provider's model. `LLM_MODEL_STRONG` still escalates inside the backup provider on important Russian diplomacy turns. Clocks stay 45s per call and 90s for the turn; the first provider gets about half so Terra at medium can fail over without a longer budget.
 
-When a key is present, the server still asks Stavka for the Russian orders. The model is called only for diplomacy (and chief-of-staff chat). Turns are classed routine, important, or critical (`lib/gm/tier.ts`). With `LLM_MODEL_STRONG` set, important and critical turns try the strong model first. A cheap reply may be retried once on the strong model if validation fails or more than 30 percent of that draft’s proposals would be rejected. The wall clock for both calls is about 90 seconds (`GM_BUDGET_MS`), and each call is capped at about 45 seconds (`LLM_TIMEOUT_MS`). The turn function allows 120 seconds, and the browser waits longer than that. One JSON line is logged per call (`ostfront.gm.call`), without the key or the prompt. If the model fails, Stavka’s own diplomacy is kept.
+When either key is present, the server still asks Stavka for the Russian orders. The model is called only for diplomacy (and chief-of-staff chat). The provider order is OpenAI, then the `LLM_*` backup, then the staff simulation. A provider is skipped when its key is missing, and the chain moves on after a timeout, HTTP 429 or 5xx, an empty reply, or JSON that will not parse or validate. The first provider gets about half of the 90 second wall clock (`GM_BUDGET_MS`) so the backup still fits; each call is capped at about 45 seconds (`LLM_TIMEOUT_MS`). Turns are classed routine, important, or critical (`lib/gm/tier.ts`). With `LLM_MODEL_STRONG` set, that escalation stays inside the backup provider. The turn function allows 120 seconds, and the browser waits longer than that. One JSON line is logged per call (`ostfront.gm.call` and `ostfront.llm.log`), including the provider and model, without the key or the prompt. If every provider fails, Stavka’s own diplomacy is kept.
 
 OpenRouter calls ask for low reasoning effort and leave that trace out of the message, with a 4000-token completion cap. Invalid JSON, a schema miss, or an empty message (the budget was spent reasoning and `content` came back blank) is tried once more when about eight seconds of `GM_BUDGET_MS` remain. The player-facing debug line adds `finish length` when the reply was cut off, and token counts, including reasoning tokens, when the provider sent them.
 

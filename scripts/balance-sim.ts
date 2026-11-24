@@ -6,6 +6,7 @@ import { scenarioSpec } from "@/lib/data/objectives"
 import type { Difficulty, GameState, PlayerOrder, UnitKind } from "@/lib/types"
 
 delete process.env.LLM_API_KEY
+delete process.env.OPENAI_API_KEY
 
 const SEEDS = [19150604, 19150605, 19150606, 19150607, 19150608, 19150609]
 const DIFFICULTIES: Difficulty[] = ["easy", "normal", "hard"]

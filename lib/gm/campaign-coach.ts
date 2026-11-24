@@ -17,7 +17,8 @@ import {
 import { playerOrdersToQueued } from "@/lib/orders"
 import { legalTargets } from "@/lib/ui/legal-targets"
 import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
-import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
+import { extractTopLevelJson, llmChatChain, llmConfigured, stripNullFields } from "@/lib/gm/llm"
+import { CAMPAIGN_COACH_JSON_SCHEMA } from "@/lib/gm/providers"
 import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
 import { provinceLabel } from "@/lib/news/battle"
 import { routineLog } from "@/lib/news/routine-copy"
@@ -189,9 +190,7 @@ export async function coachCampaign(input: {
       highlights: rules.highlights,
     }
   } else {
-    const models = resolveLlmModels()
-    const chat = await llmChat({
-      model: models.cheap,
+    const chat = await llmChatChain({
       system: COACH_SYSTEM,
       user: prompt,
       timeoutMs: COACH_TIMEOUT_MS,
@@ -199,11 +198,23 @@ export async function coachCampaign(input: {
       temperature: 0.3,
       gameTurn: map.turn,
       gameDate: map.date,
+      kind: "advisor",
+      jsonSchema: { name: "campaign_coach", schema: CAMPAIGN_COACH_JSON_SCHEMA },
+      accept: (content) => {
+        const judged = classifyCoachJson(content)
+        if (judged.parsed) return { ok: true }
+        return {
+          ok: false,
+          outcome: judged.outcome === "parse" ? "invalid_json" : "schema",
+          error: judged.error ?? "invalid coach JSON",
+        }
+      },
     })
     console.log(
       JSON.stringify({
         tag: "ostfront.coach.call",
-        model: models.cheap,
+        provider: chat.provider,
+        model: chat.model,
         latencyMs: chat.latencyMs,
         outcome: chat.ok ? "ok" : chat.kind,
       }),
@@ -216,7 +227,8 @@ export async function coachCampaign(input: {
         attempt: chat.exchange.attempt,
         gameTurn: map.turn,
         gameDate: map.date,
-        model: models.cheap,
+        provider: chat.provider,
+        model: chat.model,
         latencyMs: chat.exchange.latencyMs,
         httpStatus: chat.exchange.httpStatus,
         finishReason: chat.exchange.finishReason,
@@ -228,7 +240,7 @@ export async function coachCampaign(input: {
       })
       if (!parsed) failure = "empty"
     } else {
-      failure = chat.kind === "unconfigured" ? "http" : chat.kind
+      failure = chat.kind === "unconfigured" || chat.kind === "invalid_json" ? "http" : chat.kind
     }
   }
 
@@ -1917,7 +1929,7 @@ function classifyCoachJson(text: string): {
 } {
   const extracted = extractTopLevelJson(text)
   if (!extracted.ok) return { outcome: "parse", error: extracted.error, parsed: null }
-  const raw = extracted.value
+  const raw = stripNullFields(extracted.value)
   if (raw && typeof raw === "object" && !Array.isArray(raw) && "suggestions" in raw) {
     return { outcome: "schema", error: "suggestions_forbidden", parsed: null }
   }
