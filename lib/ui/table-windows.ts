@@ -89,7 +89,8 @@ export function clampWindowPosition(
 
 /** Soft size estimates used when placing defaults before measure. */
 export const TABLE_WINDOW_SIZE_HINTS: Record<TableWindowId, { w: number; h: number }> = {
-  ohl: { w: 480, h: 88 },
+  // 27rem — matches OhlOrdersWindow. Keeps "11 July." intact and wraps before "Never".
+  ohl: { w: 432, h: 88 },
   orders: { w: 368, h: 520 },
   province: { w: 368, h: 520 },
   legend: { w: 288, h: 340 },
