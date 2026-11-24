@@ -41,18 +41,18 @@ describe("turn guard", () => {
   })
 
   it("allows matching origins when configured", () => {
-    process.env.TURN_ALLOWED_ORIGINS = "https://ostfront-two.vercel.app"
+    process.env.TURN_ALLOWED_ORIGINS = "https://raymondymmak-ostfront.vercel.app"
     const ok = checkAccess(
-      requestWith({ origin: "https://ostfront-two.vercel.app" }),
+      requestWith({ origin: "https://raymondymmak-ostfront.vercel.app" }),
       "",
-      ["https://ostfront-two.vercel.app"],
+      ["https://raymondymmak-ostfront.vercel.app"],
     )
     expect(ok.ok).toBe(true)
 
     const bad = checkAccess(
       requestWith({ origin: "https://evil.example" }),
       "",
-      ["https://ostfront-two.vercel.app"],
+      ["https://raymondymmak-ostfront.vercel.app"],
     )
     expect(bad.ok).toBe(false)
   })

@@ -11,7 +11,6 @@ import { chromium } from "playwright"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { join } from "node:path"
 import { configureRedaction, redactSensitiveText, redactUrl } from "./demo-check-redact.mjs"
-import { assertQueueReflectsAdvisorAction } from "./demo-check-queue.mjs"
 
 const PRODUCTION_URL = "https://raymondymmak-ostfront.vercel.app"
 const OUT_DIR = "demo-check-output"
@@ -270,7 +269,9 @@ async function selectKrakowOnMap(page) {
     await page.waitForTimeout(400)
   }
   await restoreTrayTab(page, "tab-province")
-  const title = page.locator("aside h2").filter({ hasText: "Kraków" }).first()
+  const provinceRoot = page.locator("[data-testid=province-window], aside").first()
+  await provinceRoot.waitFor({ state: "visible", timeout: 10_000 })
+  const title = provinceRoot.locator("h2").filter({ hasText: "Kraków" }).first()
   await title.waitFor({ state: "attached", timeout: 10_000 })
   await title.scrollIntoViewIfNeeded()
   await title.waitFor({ state: "visible", timeout: 10_000 })
@@ -392,154 +393,6 @@ async function sendAdvisorQuestion(page, question) {
   return waitForAdvisorReplyContainer(page, repliesBefore)
 }
 
-/** @param {import('playwright').Locator} container */
-async function analyzeAdvisorCards(container) {
-  const cards = container.locator("[data-testid=advisor-suggestion]")
-  const count = await cards.count()
-  /** @type {{ index: number, label: string, state: string, action: "accept" | "override" | null, skip: string | null }[]} */
-  const rows = []
-  for (let i = 0; i < count; i++) {
-    const card = cards.nth(i)
-    const state = (await card.getAttribute("data-advisor-state")) ?? "unknown"
-    const label = ((await card.locator("p").first().textContent()) ?? "").replace(/\s+/g, " ").trim()
-    if (state === "duplicate") {
-      const accept = card.locator("[data-testid=advisor-accept]")
-      if ((await accept.count()) > 0 && !(await accept.isDisabled())) {
-        throw new Error(`duplicate card "${label || i + 1}" must have disabled Accept`)
-      }
-      rows.push({
-        index: i,
-        label: label || `(card ${i + 1})`,
-        state,
-        action: null,
-        skip: "duplicate (Already queued)",
-      })
-      continue
-    }
-    const rejectVisible = await card.getByText("The engine rejects this").isVisible().catch(() => false)
-    if (rejectVisible) {
-      const body = ((await card.textContent()) ?? "").replace(/\s+/g, " ").trim()
-      const reason = body.includes("The engine rejects this.")
-        ? body.split("The engine rejects this.")[1]?.trim() || "engine rejected"
-        : "engine rejected"
-      rows.push({ index: i, label: label || `(card ${i + 1})`, state, action: null, skip: reason })
-      continue
-    }
-    if (state === "new") {
-      const accept = card.locator("[data-testid=advisor-accept]").first()
-      if ((await accept.count()) === 0 || (await accept.isDisabled())) {
-        rows.push({
-          index: i,
-          label: label || `(card ${i + 1})`,
-          state,
-          action: null,
-          skip: "new card missing enabled Accept",
-        })
-      } else {
-        rows.push({ index: i, label: label || `(card ${i + 1})`, state, action: "accept", skip: null })
-      }
-      continue
-    }
-    if (state === "conflict") {
-      const override = card.locator("[data-testid=advisor-override]").first()
-      if ((await override.count()) === 0) {
-        rows.push({
-          index: i,
-          label: label || `(card ${i + 1})`,
-          state,
-          action: null,
-          skip: "conflict card missing Override",
-        })
-      } else {
-        rows.push({ index: i, label: label || `(card ${i + 1})`, state, action: "override", skip: null })
-      }
-      continue
-    }
-    rows.push({
-      index: i,
-      label: label || `(card ${i + 1})`,
-      state,
-      action: null,
-      skip: `unexpected data-advisor-state="${state}"`,
-    })
-  }
-  return { count, rows }
-}
-
-/** @param {import('playwright').Page} page */
-async function readQueueSnapshots(page) {
-  return page.evaluate(() => {
-    const items = document.querySelectorAll("[data-testid=queued-orders] > li")
-    /** @type {unknown[]} */
-    const rows = []
-    for (const li of items) {
-      const raw = li.getAttribute("data-queued-order")
-      if (!raw) continue
-      try {
-        rows.push(JSON.parse(raw))
-      } catch {
-        /* ignore */
-      }
-    }
-    return rows
-  })
-}
-
-/** @param {import('playwright').Locator} card */
-async function readCardOrderSnapshots(card) {
-  const raw = await card.getAttribute("data-advisor-orders")
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-/** @param {import('playwright').Page} page @param {import('playwright').Locator} container */
-async function acceptFirstValidAdvisorCard(page, container) {
-  const { count, rows } = await analyzeAdvisorCards(container)
-  const describe = (row) => {
-    const head = `card ${row.index + 1} [${row.state}] "${row.label}"`
-    return row.skip ? `${head}: ${row.skip}` : `${head}: usable (${row.action})`
-  }
-  const report = rows.map(describe).join("; ")
-  const pick =
-    rows.find((row) => row.state === "new" && row.action === "accept" && !row.skip) ??
-    rows.find((row) => row.state === "conflict" && row.action === "override" && !row.skip)
-  if (!pick || !pick.action) {
-    return { ok: false, report: `${count} card(s); ${report || "no cards"}` }
-  }
-  const card = container.locator("[data-testid=advisor-suggestion]").nth(pick.index)
-  const cardOrders = await readCardOrderSnapshots(card)
-  const before = await readQueueSnapshots(page)
-  const mode = pick.action === "accept" ? "accept" : "override"
-  if (pick.action === "accept") {
-    await card.locator("[data-testid=advisor-accept]").click()
-  } else {
-    await card.locator("[data-testid=advisor-override]").click()
-  }
-  const after = await readQueueSnapshots(page)
-  const queueCheck = assertQueueReflectsAdvisorAction({
-    before,
-    after,
-    cardOrders,
-    cardLabel: pick.label,
-    mode,
-  })
-  if (!queueCheck.ok) {
-    return {
-      ok: false,
-      report: `${count} card(s); ${mode} "${pick.label}" but ${queueCheck.message}; cardOrders=${cardOrders.length} before=${before.length} after=${after.length}; ${report}`,
-    }
-  }
-  return {
-    ok: true,
-    report: `${count} card(s); ${pick.action} "${pick.label}" (${queueCheck.message}); ${report}`,
-  }
-}
-
 /** @param {import('playwright').Page} page @param {string} pattern RegExp source or substring for fortify */
 async function assertQueuedFortifyKrakow(page) {
   await restoreTrayTab(page, "tab-orders")
@@ -648,6 +501,7 @@ function buildSteps(cli, targets) {
         await page.waitForTimeout(MAP_SETTLE_MS)
         await page.locator("[data-testid=scenario-picker]").waitFor({ state: "hidden", timeout: 10_000 })
         // No province auto-selected at Begin (Kraków used to be).
+        // MapLibre selected filter uses "__none__" as a sentinel when nothing is selected.
         const selectedAtStart = await page.evaluate(() => {
           const filter = window.__ostfrontMap?.getFilter?.("selected")
           if (!Array.isArray(filter) || filter.length < 3) return null
@@ -965,7 +819,8 @@ function buildSteps(cli, targets) {
       name: "Queue fortify province action",
       async run({ page }) {
         await selectKrakowOnMap(page)
-        const fortify = page.locator("[data-testid=fortify]")
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        const fortify = province.locator("[data-testid=fortify]")
         await fortify.waitFor({ state: "visible", timeout: 10_000 })
         if (await fortify.isDisabled()) {
           const label = ((await fortify.textContent()) ?? "").trim()
@@ -974,7 +829,7 @@ function buildSteps(cli, targets) {
             return
           }
           const reason =
-            (await page.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
+            (await province.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
             "Fortify button disabled on Kraków province panel."
           throw new Error(reason)
         }
@@ -988,11 +843,13 @@ function buildSteps(cli, targets) {
       name: "Queue move via neighbor button",
       async run({ page }) {
         await selectKrakowOnMap(page)
-        const move = page.locator("aside button").filter({ hasText: "Katowice" }).filter({ hasText: "Move" })
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        const move = province.getByRole("button").filter({ hasText: "Katowice" }).filter({ hasText: "Move" })
         await move.first().waitFor({ state: "visible", timeout: 10_000 })
         await move.first().click()
         await restoreTrayTab(page, "tab-orders")
-        await page.locator("aside").getByText(/Move to Katowice/).first().waitFor({ state: "visible", timeout: 10_000 })
+        const orders = page.locator("[data-testid=orders-window]").or(page.locator("aside")).first()
+        await orders.getByText(/Move to Katowice/).first().waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {
@@ -1015,11 +872,13 @@ function buildSteps(cli, targets) {
       name: "Queue attack via neighbor button",
       async run({ page }) {
         await selectKrakowOnMap(page)
-        const attack = page.locator("aside button").filter({ hasText: "Lemberg" }).filter({ hasText: "Attack" })
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        const attack = province.getByRole("button").filter({ hasText: "Lemberg" }).filter({ hasText: "Attack" })
         await attack.first().waitFor({ state: "visible", timeout: 10_000 })
         await attack.first().click()
         await restoreTrayTab(page, "tab-orders")
-        await page.locator("aside").getByText(/Attack Lemberg from/).first().waitFor({ state: "visible", timeout: 10_000 })
+        const orders = page.locator("[data-testid=orders-window]").or(page.locator("aside")).first()
+        await orders.getByText(/Attack Lemberg from/).first().waitFor({ state: "visible", timeout: 10_000 })
       },
     },
     {
@@ -1046,41 +905,38 @@ function buildSteps(cli, targets) {
     },
     {
       id: "15-advisor-starter",
-      name: "Ask Falkenhayn starter (/api/advisor)",
+      name: "Ask Falkenhayn coach starter (/api/advisor)",
       async run({ page }) {
         await restoreTrayTab(page, "advisor-toggle")
         await page.locator("[data-testid=advisor-panel]").waitFor({ state: "visible" })
-        await page.locator("[data-testid=advisor-starter-weakest]").click()
+        await page.locator("[data-testid=advisor-starter-plan]").click()
         const reply = page.locator("[data-testid=advisor-reply]").last()
         await reply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
         const text = (await reply.textContent()) ?? ""
-        if (/unavailable offline/i.test(text)) {
+        if (/unavailable offline/i.test(text) && !/map|dispatch|queue|chronicle/i.test(text)) {
           throw new Error("Advisor offline fallback (no model key).")
         }
         if (!text.trim()) throw new Error("Empty advisor reply.")
+        if (await page.locator("[data-testid=advisor-suggestion]").count()) {
+          throw new Error("Coach must not show order suggestion cards.")
+        }
       },
     },
     {
-      id: "16-advisor-send-accept",
-      name: "Typed advisor question, Send, Accept suggestion",
+      id: "16-advisor-send-coach",
+      name: "Typed coach question, Send, no Accept cards",
       async run({ page, log }) {
-        const prompts = [
-          "What should I do this fortnight?",
-          "Name one fresh order I have not already queued—do not repeat fortify, recruit, or moves now in my queue.",
-        ]
-        /** @type {string | undefined} */
-        let lastReport
-        for (let attempt = 0; attempt < prompts.length; attempt++) {
-          await ensureAdvisorPanelOpen(page)
-          const container = await sendAdvisorQuestion(page, prompts[attempt])
-          const outcome = await acceptFirstValidAdvisorCard(page, container)
-          lastReport = outcome.report
-          log(`step 16 attempt ${attempt + 1}: ${lastReport}`)
-          if (outcome.ok) return
-          if (attempt < prompts.length - 1) continue
-          const message = `advisor returned no valid cards (${lastReport})`
-          if (cli.allowFallback) return `skipped: ${message}`
-          throw new Error(message)
+        await ensureAdvisorPanelOpen(page)
+        const container = await sendAdvisorQuestion(page, "What do you make of my queued plan?")
+        const reply = container.locator("[data-testid=advisor-reply]").last()
+        await reply.waitFor({ state: "visible", timeout: ADVISOR_TIMEOUT_MS })
+        const text = ((await reply.textContent()) ?? "").trim()
+        log(`step 16 coach reply length=${text.length}`)
+        if (!text) throw new Error("Empty coach reply.")
+        const cards = await container.locator("[data-testid=advisor-suggestion]").count()
+        if (cards > 0) throw new Error(`Coach returned ${cards} forbidden suggestion card(s).`)
+        if (await page.locator("[data-testid=advisor-accept]").count()) {
+          throw new Error("Coach must not expose Accept.")
         }
       },
     },

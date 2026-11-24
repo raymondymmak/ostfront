@@ -69,7 +69,7 @@ Province labels are **MapLibre symbol layers**, not HTML markers. WebGL paints d
 | Below `lg` | Stacked map + aside; phone **document tray** (`CAMPAIGN_PHONE_TRAY_ITEMS`) swaps Orders / Province / **Chief of Staff** (embedded advisor) following `trayOrder`. Map-corner Log stays above the legend through tablet widths (640–1023px). Campaign goal is a dismissible OHL strip, not the HUD strength block. Compact HUD (Options gear only — no Chief of Staff) with wrapped stats; no overflow at 390×844. |
 | `/teach` | Same tray model (`lib/ui/teach-windows.ts`): Lesson, Orders, Province, Legend. Same slim HUD with `[data-testid=teach-goal]` (lesson title) and Options menu; hides campaign scoring. Default-open: Lesson top-left, Legend under it, Orders top-right — height caps keep the left column clear of map targets. One Resolve in Lesson (`teach-resolve`, pinned footer); Orders omits end-turn. Brass lesson-focus outlines (`data-lesson-highlights`). Below `lg`: `h-dvh` stack — capped map, bounded Lesson (`teach-lesson-stack`) with Resolve in-viewport, then phone tray swapping Orders/Province/Legend. |
 
-**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`, `--brass-deep` / `--primary` (chrome text ≥4.5:1 on paper); faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`), Options menu, tray paper-tabs, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
+**Palette tokens** (`app/globals.css`): `--paper`, `--paper-deep`, `--ink`, `--ink-muted`, `--leather`, `--brass`, `--brass-deep` / `--primary` (chrome text ≥4.5:1 on paper); faction `--faction-central` / `--faction-russia` (map paint unchanged). HUD strip (`.table-hud`, `HUD_Z` above `PAPER_DRAG_Z` so the Options dropdown is never covered by a paper drag-handle), Options menu, tray paper-tabs, map-mode/zoom, news/modals, and phone Log sheets share this chrome.
 
 ADR 010 (campaign), ADR 011 (`/teach`), ADR 012 (document tray), ADR 013 (slim HUD Options menu).
 
@@ -165,28 +165,32 @@ Legacy Blob campaigns are not migrated.
 
 ---
 
-## Advisor flow (`POST /api/advisor`)
+## Advisor / campaign coach (`POST /api/advisor`)
 
-`components/advisor-panel.tsx` sends chat history, **full client `GameState`**, and queued orders. Route: `app/api/advisor/route.ts`.
+Phase **2E round 1** (ADR 015). `components/advisor-panel.tsx` sends `{ gameId, expectedTurn, messages, queuedOrders, selectedProvinceId? }` only — **no** client `GameState`. Route: `app/api/advisor/route.ts`.
 
-Same turn guard as turn (body limit, rate, origin/token) but **no** campaign storage check.
+Same turn guard as turn (body limit, rate, origin/token) **plus** campaign storage: `loadStoredCampaign` → 404 `unknown_game`; `expectedTurn` mismatch → 409 `stale_turn`; `withServerSeed` for the coach dispatch. Seed never returns to the client.
 
-`lib/gm/advisor.ts` `advise()`:
+`lib/gm/campaign-coach.ts` `coachCampaign()`:
 
-- Rebinds topology, builds a “dispatch” from engine previews (`engagementOdds`, supply, objectives).
-- If `llmConfigured()`, calls the model; else rules-only fallback (`source: "rules"`, `unavailable: true`).
-- Suggestions are validated with the same helpers as real orders; nothing is applied until the player accepts into the queue.
+- Builds the engine dispatch via `buildSituation` / `renderSituation` (`lib/gm/advisor.ts`) plus chronicle from `save.log` (`BattleFacts`, routine lines).
+- Optional LLM (`resolveLlmModels` cheap path); else rules fallback. Schema **forbids** `suggestions` / order objects.
+- Returns `{ reply, followUp, highlights, source, unavailable, ordersClosed }`. Highlights are province / `uiId` pointers; `game-app` maps them to `WarMap` `coachHighlightIds`.
 
-Advisor does **not** persist chat on the server in the campaign store.
+Coach does **not** persist chat on the server (sessionStorage only).
+
+**Offline scenario eval** (`npm run eval:coach`, ADR 015): `lib/gm/coach-eval/` builds eight fixed `GameState` fixtures (including fortify+attack conflicts), runs `coachCampaign`, and applies Layer 1 deterministic hard-rule checks (sentence budget, question-first, no filed claims / banned jargon / dangling odds clauses, grounded odds & chronicle fortnight). Live mode (when `LLM_API_KEY` is set) adds a Layer 2 pedagogy rubric grader (`EVAL_JUDGE_MODEL` optional). `tests/coach-eval.test.ts` keeps fixtures and Layer 1 in CI without external APIs. Coach post-processing drops whole comparison clauses when scrubbing a second odds figure; the advisor panel aborts hung `/api/advisor` fetches client-side.
 
 ```mermaid
 flowchart LR
-  A["advisor-panel"] -->|"POST state + messages"| B["/api/advisor"]
-  B --> C["advise"]
-  C --> D["engine previews"]
+  A["advisor-panel"] -->|"POST gameId + messages + queue"| B["/api/advisor"]
+  B --> S["loadStoredCampaign"]
+  S --> C["coachCampaign"]
+  C --> D["engine dispatch + chronicle"]
   C --> E["optional LLM"]
-  C --> F["AdvisorResponse JSON"]
+  C --> F["coach JSON + highlights"]
   F --> A
+  F --> M["WarMap coachHighlightIds"]
 ```
 
 ---

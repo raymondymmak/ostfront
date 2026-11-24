@@ -20,14 +20,11 @@ export function campaignGoalLine(scenario: ScenarioId = "gorlice"): string {
     return `never lose ${name}`
   })
   if (!takes.length) return `${homes.join("; ")}.`.replace(/^./, (c) => c.toUpperCase())
-  const primary = takes[0]
-  const rest =
-    takes.length > 1
-      ? ` Then ${takes
-          .slice(1)
-          .map((line) => line.replace(/^Take /, ""))
-          .join("; ")}.`
-      : "."
   const home = homes.length ? ` ${homes.join("; ").replace(/^./, (c) => c.toUpperCase())}.` : ""
-  return `${primary}${rest}${home}`
+  if (takes.length === 1) return `${takes[0]}.${home}`
+  const rest = takes
+    .slice(1)
+    .map((line) => line.replace(/^Take /, ""))
+    .join("; ")
+  return `${takes[0]}; ${rest}.${home}`
 }

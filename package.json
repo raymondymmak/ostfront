@@ -13,6 +13,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "demo-check": "node scripts/demo-check.mjs",
     "test": "vitest run",
+    "eval:coach": "tsx scripts/eval-coach.ts",
     "llm-logs": "tsx scripts/list-llm-logs.ts",
     "map": "tsx scripts/map-graph.ts",
     "build:theater": "python3 scripts/build-hoi4-theater.py",

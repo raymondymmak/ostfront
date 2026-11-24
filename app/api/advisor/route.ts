@@ -3,13 +3,20 @@ import {
   readBodyWithLimit,
   turnGuardConfig,
 } from "@/lib/api/turn-guard"
-import { advise } from "@/lib/gm/advisor"
+import { campaignStorageStatus } from "@/lib/campaign/availability"
+import { loadStoredCampaign, withServerSeed } from "@/lib/campaign/store"
+import { coachCampaign } from "@/lib/gm/campaign-coach"
 import { AdvisorRequestSchema } from "@/lib/schema"
 
-/** Same 120s ceiling as the turn route. The chief of staff call itself stays shorter. */
+/** Same 120s ceiling as the turn route. The coach call itself stays shorter. */
 export const maxDuration = 120
 
 export async function POST(request: Request) {
+  const storage = campaignStorageStatus()
+  if (!storage.ok) {
+    return Response.json({ error: storage.error, code: storage.code }, { status: storage.status })
+  }
+
   const { maxBody } = turnGuardConfig()
   const raw = await readBodyWithLimit(request, maxBody)
   if (!raw.ok) {
@@ -40,20 +47,42 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await advise({
-      state: parsed.data.state,
+    const stored = await loadStoredCampaign(parsed.data.gameId)
+    if (!stored) {
+      return Response.json(
+        { error: "No campaign was found for this game id.", code: "unknown_game" },
+        { status: 404 },
+      )
+    }
+
+    if (stored.head.turn !== parsed.data.expectedTurn) {
+      return Response.json(
+        {
+          error: `Expected fortnight ${parsed.data.expectedTurn}, but the server holds fortnight ${stored.head.turn}. Reload or start a new campaign.`,
+          code: "stale_turn",
+        },
+        { status: 409 },
+      )
+    }
+
+    const state = withServerSeed(stored.save.state, stored.head.seed)
+    const result = await coachCampaign({
+      state,
+      log: stored.save.log ?? [],
       messages: parsed.data.messages,
       queuedOrders: parsed.data.queuedOrders,
+      selectedProvinceId: parsed.data.selectedProvinceId,
     })
     return Response.json(result)
-  } catch {
+  } catch (error) {
+    console.error("[ostfront] /api/advisor failed", error)
     return Response.json({
-      reply: "The chief of staff is unavailable offline. The map is unchanged.",
-      source: "rules",
+      reply: "I could not read the staff wire. The map is unchanged.",
+      source: "fallback",
       unavailable: true,
-      suggestions: [],
-      dropped: 0,
-      ordersClosed: Boolean(parsed.data.state.result),
+      followUp: null,
+      highlights: [],
+      ordersClosed: false,
     })
   }
 }

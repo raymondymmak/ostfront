@@ -41,10 +41,10 @@ import {
   finalePhase,
   ordersLocked,
 } from "@/lib/finale"
-import type { AdvisorOrder } from "@/lib/gm/advisor-types"
+import type { CoachHighlight } from "@/lib/gm/campaign-coach"
 import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
-import { applyAdvisorToQueue, leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import {
   isNeighborOrderTarget,
@@ -93,6 +93,7 @@ export function GameApp() {
   const [sideTab, setSideTab] = useState("orders")
   const [chatEpoch, setChatEpoch] = useState(0)
   const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
+  const [coachHighlightIds, setCoachHighlightIds] = useState<string[]>([])
   const [windows, setWindows] = useState<TableWindowState[]>(() => createDefaultTableWindows())
   const [trayOrder, setTrayOrder] = useState<TableWindowId[]>(() => defaultTrayOrder(CAMPAIGN_TRAY_ITEMS))
   const [trayDropActive, setTrayDropActive] = useState(false)
@@ -573,34 +574,17 @@ export function GameApp() {
     setSideTab("orders")
     setChatEpoch((value) => value + 1)
     setNewsQueue([])
+    setCoachHighlightIds([])
     resetTableWindows()
   }
 
-  function acceptAdvisorOrders(
-    orders: AdvisorOrder[],
-    mode: "accept" | "override",
-  ): { ok: boolean; reason?: string } {
-    if (ordersLocked(Boolean(game.state.result))) {
-      const reason = "Orders are closed. Nothing was filed."
-      setHint(reason)
-      return { ok: false, reason }
-    }
-    const filed = applyAdvisorToQueue(game.state, queue, orders, mode)
-    if (!filed.accepted) {
-      const reason = filed.reason ?? "Nothing was filed."
-      setHint(reason)
-      return { ok: false, reason }
-    }
-    setQueue(filed.queue)
-    setHint(
-      mode === "override"
-        ? "Replaced the queued order. The engine resolves it when the fortnight closes."
-        : "Filed in the queue. The engine resolves it when the fortnight closes.",
+  const applyCoachHighlights = useCallback((highlights: CoachHighlight[]) => {
+    setCoachHighlightIds(
+      Array.from(
+        new Set(highlights.map((item) => item.provinceId).filter((id): id is string => Boolean(id))),
+      ),
     )
-    setSideTab("orders")
-    if (desktopShell) setWindowOpen("orders", true)
-    return { ok: true }
-  }
+  }, [])
 
   const latest = game.log.at(-1)
   const fallback = !error && latest?.warning ? latest : null
@@ -763,6 +747,7 @@ export function GameApp() {
             overlay={overlay}
             orders={queue}
             flashIds={flash}
+            coachHighlightIds={coachHighlightIds}
             orderMode={orderMode && !finished}
             showMapLegend={!desktopShell}
             showRails={showRails}
@@ -848,6 +833,7 @@ export function GameApp() {
                     y={win.y}
                     z={win.z}
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    testId="orders-window"
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
@@ -867,6 +853,7 @@ export function GameApp() {
                     y={win.y}
                     z={win.z}
                     maxHeightClassName="max-h-[min(70dvh,36rem)]"
+                    testId="province-window"
                     onFocus={focus}
                     onClose={stow}
                     onMove={onMove}
@@ -951,12 +938,14 @@ export function GameApp() {
                     <AdvisorPanel
                       open={win.open}
                       embedded
+                      gameId={game.gameId}
                       state={game.state}
                       queue={queue}
+                      selectedProvinceId={selectedId}
                       closed={finished}
                       epoch={chatEpoch}
                       onClose={stow}
-                      onAccept={acceptAdvisorOrders}
+                      onHighlights={applyCoachHighlights}
                     />
                   </FloatingWindow>
                 )
@@ -1035,15 +1024,17 @@ export function GameApp() {
                 <AdvisorPanel
                   open={sideTab === "advisor"}
                   embedded
+                  gameId={game.gameId}
                   state={game.state}
                   queue={queue}
+                  selectedProvinceId={selectedId}
                   closed={finished}
                   epoch={chatEpoch}
                   onClose={() => {
                     setSideTab("orders")
                     setWindowOpen("advisor", false)
                   }}
-                  onAccept={acceptAdvisorOrders}
+                  onHighlights={applyCoachHighlights}
                 />
               </TabsContent>
             </Tabs>

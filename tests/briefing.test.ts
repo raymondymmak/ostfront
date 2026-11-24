@@ -17,6 +17,11 @@ describe("opening briefing", () => {
     for (const phrase of ["Lemberg", "13 June", "Kraków"]) {
       expect(goal).toContain(phrase)
     }
+    expect(goal).toMatch(/Take Lemberg by 13 June;/)
+    expect(goal).not.toMatch(/13 June Then/)
+    expect(goal).toBe(
+      "Take Lemberg by 13 June; Volhynia by 27 June; Lublin by 11 July. Never lose Kraków.",
+    )
     expect(goal).not.toContain("Dimitriev")
     expect(goal).not.toContain("XXI Corps")
     expect(goal).not.toContain("4 VP")
