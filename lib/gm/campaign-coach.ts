@@ -1351,30 +1351,77 @@ function foldDiacritics(raw: string): string {
   return raw.normalize("NFD").replace(/\p{M}/gu, "")
 }
 
-function labelMentionedInQuestion(question: string, label: string): boolean {
+function escapeRegExp(raw: string): string {
+  return raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function mentionTexts(question: string): string[] {
   const lower = question.toLowerCase()
-  const foldedQuestion = foldDiacritics(question).toLowerCase()
-  const normalized = label.toLowerCase()
-  const foldedLabel = foldDiacritics(label).toLowerCase()
-  if (lower.includes(normalized) || foldedQuestion.includes(foldedLabel)) return true
-  const tokens = normalized.split(/[\s-]+/).filter((part) => part.length > 2)
-  return tokens.some((token) => lower.includes(token) || foldedQuestion.includes(foldDiacritics(token)))
+  const folded = foldDiacritics(question).toLowerCase()
+  return lower === folded ? [lower] : [lower, folded]
+}
+
+function boundaryPattern(phrase: string): RegExp {
+  const body = escapeRegExp(phrase).replace(/\s+/g, "\\s+")
+  return new RegExp(`\\b${body}\\b`, "i")
+}
+
+function fullLabelMentionedInQuestion(question: string, label: string): boolean {
+  const trimmed = label.trim()
+  if (!trimmed) return false
+  const labelForms = [...new Set([trimmed.toLowerCase(), foldDiacritics(trimmed).toLowerCase()])]
+  for (const text of mentionTexts(question)) {
+    for (const form of labelForms) {
+      if (boundaryPattern(form).test(text)) return true
+    }
+  }
+  return false
+}
+
+function tokenMentionedInQuestion(question: string, token: string): boolean {
+  if (token.length <= 2) return false
+  const tokenForms = [...new Set([token.toLowerCase(), foldDiacritics(token).toLowerCase()])]
+  for (const text of mentionTexts(question)) {
+    for (const form of tokenForms) {
+      if (boundaryPattern(form).test(text)) return true
+    }
+  }
+  return false
+}
+
+function labelMentionedInQuestion(question: string, label: string): boolean {
+  if (fullLabelMentionedInQuestion(question, label)) return true
+  const tokens = label
+    .toLowerCase()
+    .split(/[\s-]+/)
+    .filter((part) => part.length > 2)
+  if (tokens.length <= 1) return tokenMentionedInQuestion(question, tokens[0] ?? label)
+  return tokens.every((token) => tokenMentionedInQuestion(question, token))
+}
+
+function provinceLabels(province: GameState["provinces"][number]): string[] {
+  const catalog = CATALOG_BY_ID[province.id]
+  return [...new Set([province.id, province.name, ...(catalog?.aliases ?? [])])]
 }
 
 /** Catalog names, ids, and aliases (ASCII fold) mentioned in player text. */
 export function collectMentionedProvinceIds(map: GameState, question: string): string[] {
-  const mentioned: string[] = []
+  const fullMatch: string[] = []
   for (const province of map.provinces) {
-    const catalog = CATALOG_BY_ID[province.id]
-    const labels = new Set<string>([province.id, province.name, ...(catalog?.aliases ?? [])])
-    for (const label of labels) {
-      if (labelMentionedInQuestion(question, label)) {
-        mentioned.push(province.id)
-        break
-      }
+    if (provinceLabels(province).some((label) => fullLabelMentionedInQuestion(question, label))) {
+      fullMatch.push(province.id)
     }
   }
-  return [...new Set(mentioned)]
+  const uniqueFull = [...new Set(fullMatch)]
+  if (uniqueFull.length > 0) return uniqueFull
+
+  const tokenMatch: string[] = []
+  for (const province of map.provinces) {
+    if (provinceLabels(province).some((label) => labelMentionedInQuestion(question, label))) {
+      tokenMatch.push(province.id)
+    }
+  }
+  return [...new Set(tokenMatch)]
 }
 
 function provinceIdFromLooseLabel(map: GameState, raw: string): string | null {
@@ -1388,11 +1435,13 @@ function provinceIdFromLooseLabel(map: GameState, raw: string): string | null {
     if (exact) return exact
   }
   for (const province of map.provinces) {
-    if (labelMentionedInQuestion(needle, province.id) || labelMentionedInQuestion(needle, province.name)) {
+    if (provinceLabels(province).some((label) => fullLabelMentionedInQuestion(needle, label))) {
       return province.id
     }
-    for (const alias of CATALOG_BY_ID[province.id]?.aliases ?? []) {
-      if (labelMentionedInQuestion(needle, alias)) return province.id
+  }
+  for (const province of map.provinces) {
+    if (provinceLabels(province).some((label) => labelMentionedInQuestion(needle, label))) {
+      return province.id
     }
   }
   return null

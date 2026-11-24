@@ -964,6 +964,18 @@ describe("campaign coach guards", () => {
     expect(endpoints.targetId).toBe("lodz")
   })
 
+  it("does not conflate Upper and Lower Silesia on shared tokens", () => {
+    const map = staffMap(createInitialState())
+    const question = "Is Upper Silesia reachable from Lublin?"
+    const mentioned = collectMentionedProvinceIds(map, question)
+    expect(mentioned).toContain("oberschlesien")
+    expect(mentioned).toContain("lublin")
+    expect(mentioned).not.toContain("niederschlesien")
+    const endpoints = resolveReachabilityEndpoints(map, question, null)
+    expect(endpoints.fromId).toBe("lublin")
+    expect(endpoints.targetId).toBe("oberschlesien")
+  })
+
   it("rejects queued attacks below supply 30 instead of quoting odds", async () => {
     const state = createInitialState()
     const lublin = state.provinces.find((province) => province.id === "lublin")!
