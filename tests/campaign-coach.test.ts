@@ -23,6 +23,9 @@ import {
   conversationStatedReinforceCaveat,
   reinforcementsPlausiblyMatter,
   shouldQuoteReinforceCaveat,
+  queuedAttackOddsByTarget,
+  renderQueuedResolutionOdds,
+  resolveReachabilityEndpoints,
   keepOneOddsFigure,
   latestChronicleEvidence,
   renderChronicle,
@@ -913,6 +916,41 @@ describe("campaign coach guards", () => {
     expect(capCoachReply("What next? That column stands at about 2.2:1.")).toBe(
       "What next? That column stands at about 2.2:1.",
     )
+  })
+
+  it("keeps concentric odds when only one prong fails supply validation", () => {
+    const state = createInitialState()
+    const map = staffMap(state)
+    const krakowIds = map.provinces
+      .find((province) => province.id === "krakow")!
+      .units.filter((unit) => unit.faction === "central")
+      .map((unit) => unit.id)
+    const katowiceIds = map.provinces
+      .find((province) => province.id === "katowice")!
+      .units.filter((unit) => unit.faction === "central")
+      .map((unit) => unit.id)
+    map.provinces.find((province) => province.id === "katowice")!.supply = 26
+    const queued: PlayerOrder[] = [
+      { type: "attack", from: "krakow", target: "kielce", unitIds: krakowIds },
+      { type: "attack", from: "katowice", target: "kielce", unitIds: katowiceIds },
+    ]
+    const odds = queuedAttackOddsByTarget(map, queued)
+    const row = odds.get("kielce")
+    expect(row?.phrase).toMatch(/:\s*1/)
+    expect(row?.phrase).not.toMatch(/^REJECTED/)
+    expect(row?.rejectedProngs.length).toBe(1)
+    expect(renderQueuedResolutionOdds(map, queued)).toMatch(/REJECTED_PRONG/)
+  })
+
+  it("resolves reachability destination from question wording", () => {
+    const map = staffMap(createInitialState())
+    const endpoints = resolveReachabilityEndpoints(
+      map,
+      "From Lublin, can I reach Warsaw this fortnight?",
+      "lublin",
+    )
+    expect(endpoints.fromId).toBe("lublin")
+    expect(endpoints.targetId).toBe("warszawa")
   })
 
   it("rejects queued attacks below supply 30 instead of quoting odds", async () => {

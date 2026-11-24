@@ -934,7 +934,13 @@ export function renderCoachLegalTargets(
   return lines.length ? lines.join("\n") : "None."
 }
 
-/** Dispatch slice: one resolution-preview odds line per queued attack target (or REJECTED reason). */
+export type QueuedTargetOdds = {
+  phrase: string | null
+  /** Per-prong engine rejections (supply, border, …) that still leave other prongs valid. */
+  rejectedProngs: string[]
+}
+
+/** Dispatch slice: odds per target plus separate REJECTED_PRONG lines for failed prongs only. */
 export function renderQueuedResolutionOdds(
   map: GameState,
   queued: PlayerOrder[],
@@ -942,9 +948,14 @@ export function renderQueuedResolutionOdds(
 ): string {
   const oddsByTarget = queuedAttackOddsByTarget(map, queued, messages)
   if (!oddsByTarget.size) return "None."
-  return [...oddsByTarget.entries()]
-    .map(([targetId, phrase]) => `${targetId} ${provinceLabel(targetId)}: ${phrase ?? "unknown"}`)
-    .join("\n")
+  const lines: string[] = []
+  for (const [targetId, row] of oddsByTarget) {
+    lines.push(`${targetId} ${provinceLabel(targetId)}: ${row.phrase ?? "unknown"}`)
+    for (const prong of row.rejectedProngs) {
+      lines.push(`REJECTED_PRONG ${prong}`)
+    }
+  }
+  return lines.join("\n")
 }
 
 function centralView(battle: BattleFacts): { ours: number; theirs: number; weWon: boolean } {
@@ -1021,7 +1032,7 @@ function describeNonAttackOrders(map: GameState, queued: PlayerOrder[]): string[
 export function formatQueuedPlanForPlayer(
   map: GameState,
   queued: PlayerOrder[],
-  oddsByTarget: Map<string, string | null> | null,
+  oddsByTarget: Map<string, QueuedTargetOdds> | null,
 ): string {
   const attacks = queued.filter(
     (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
@@ -1049,7 +1060,7 @@ export function formatQueuedPlanForPlayer(
     const fromPlaces = [...new Set(prongs.map((order) => provinceLabel(order.from)))]
     const units = joinNames(names)
     const from = joinNames(fromPlaces)
-    const odds = oddsByTarget?.get(targetId)
+    const odds = oddsByTarget?.get(targetId)?.phrase
     const oddsClause = odds ? `, ${odds}` : ""
     attackClauses.push(`${units} from ${from} into ${target}${oddsClause}`)
   }
@@ -1064,8 +1075,8 @@ export function queuedAttackOddsByTarget(
   map: GameState,
   queued: PlayerOrder[],
   messages: AdvisorChatMessage[] = [],
-): Map<string, string | null> {
-  const out = new Map<string, string | null>()
+): Map<string, QueuedTargetOdds> {
+  const out = new Map<string, QueuedTargetOdds>()
   const attacks = queued.filter(
     (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
   )
@@ -1076,36 +1087,46 @@ export function queuedAttackOddsByTarget(
     byTarget.set(order.target, group)
   }
   for (const [targetId, prongs] of byTarget) {
-    let rejected: string | null = null
+    const accepted: Extract<PlayerOrder, { type: "attack" }>[] = []
+    const rejectedProngs: string[] = []
     for (const order of prongs) {
       const check = coachAttackOrderCheck(map, order)
       if (!check.ok) {
-        rejected = check.reason
-        break
+        rejectedProngs.push(
+          `${provinceLabel(order.from)}→${provinceLabel(targetId)}: ${check.reason}`,
+        )
+        continue
       }
+      accepted.push(order)
     }
-    if (rejected) {
-      out.set(targetId, `REJECTED — ${rejected}`)
+    const target = findProvince(map, targetId)
+    if (target?.controller === "central") {
+      out.set(targetId, {
+        phrase: `REJECTED — ${target.name} is already held by your side — march there, do not attack it again.`,
+        rejectedProngs,
+      })
+      continue
+    }
+    if (!accepted.length) {
+      out.set(targetId, {
+        phrase: `REJECTED — ${rejectedProngs.join("; ")}`,
+        rejectedProngs,
+      })
       continue
     }
     const preview =
-      prongs.length >= 2
+      accepted.length >= 2
         ? combinedEngagementOdds(
             map,
             targetId,
-            prongs.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
+            accepted.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
           )
-        : engagementOdds(map, prongs[0]!.from, targetId, prongs[0]!.unitIds)
-    const target = findProvince(map, targetId)
-    if (target?.controller === "central") {
-      out.set(
-        targetId,
-        `REJECTED — ${target.name} is already held by your side — march there, do not attack it again.`,
-      )
-      continue
-    }
+        : engagementOdds(map, accepted[0]!.from, targetId, accepted[0]!.unitIds)
     const includeReinforce = shouldQuoteReinforceCaveat(messages, map, targetId)
-    out.set(targetId, formatCoachOddsPhrase(preview, includeReinforce))
+    out.set(targetId, {
+      phrase: formatCoachOddsPhrase(preview, includeReinforce),
+      rejectedProngs,
+    })
   }
   return out
 }
@@ -1263,17 +1284,16 @@ export function queuedAttackPreview(
   }
 
   for (const [targetId, prongs] of byTarget) {
-    const first = prongs[0]!
-    const check = coachAttackOrderCheck(map, first)
-    if (!check.ok) return { targetId, odds: null }
+    const accepted = prongs.filter((order) => coachAttackOrderCheck(map, order).ok)
+    if (!accepted.length) return { targetId, odds: null }
     const preview =
-      prongs.length >= 2
+      accepted.length >= 2
         ? combinedEngagementOdds(
             map,
             targetId,
-            prongs.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
+            accepted.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
           )
-        : engagementOdds(map, first.from, targetId, first.unitIds)
+        : engagementOdds(map, accepted[0]!.from, targetId, accepted[0]!.unitIds)
     const target = findProvince(map, targetId)
     if (target?.controller === "central") return { targetId, odds: null }
     return { targetId, odds: formatCoachOddsPhrase(preview) }
@@ -1327,15 +1347,54 @@ function inputSelectedFrom(selected: string): string | null {
   return selected.split(/\s+/)[0] ?? null
 }
 
-function provinceMentionedInText(map: GameState, text: string): string | null {
-  const lower = text.toLowerCase()
-  if (/warsaw|warszawa/.test(lower)) return "warszawa"
+function provinceIdFromLooseLabel(map: GameState, raw: string): string | null {
+  const needle = raw.trim().toLowerCase()
+  if (!needle) return null
+  if (needle.includes("warsaw") || needle.includes("warszawa")) return "warszawa"
   for (const province of map.provinces) {
-    if (lower.includes(province.name.toLowerCase()) || lower.includes(province.id)) {
+    const name = province.name.toLowerCase()
+    if (needle === province.id || needle === name || name.includes(needle) || needle.includes(name)) {
       return province.id
     }
   }
   return null
+}
+
+/** Pick origin/destination from the question wording — not catalog iteration order. */
+export function resolveReachabilityEndpoints(
+  map: GameState,
+  question: string,
+  selectedProvinceId?: string | null,
+): { fromId: string | null; targetId: string | null } {
+  const lower = question.toLowerCase()
+  let fromId: string | null = selectedProvinceId ?? null
+  const fromMatch = lower.match(/\bfrom\s+([^,?]+?)(?:\s*,|\s+can|\s+to|\s+into|\?|$)/i)
+  if (fromMatch?.[1]) {
+    fromId = provinceIdFromLooseLabel(map, fromMatch[1]) ?? fromId
+  }
+  let targetId: string | null = null
+  const destMatch = lower.match(/\b(?:to|into|reach|attack)\s+([^,?]+?)(?:\s*\?|$|,|\s+this)/i)
+  if (destMatch?.[1]) {
+    targetId = provinceIdFromLooseLabel(map, destMatch[1])
+  }
+  if (!targetId) {
+    const mentioned: string[] = []
+    if (/warsaw|warszawa/.test(lower)) mentioned.push("warszawa")
+    for (const province of map.provinces) {
+      if (lower.includes(province.name.toLowerCase())) mentioned.push(province.id)
+    }
+    const unique = [...new Set(mentioned)]
+    targetId = unique.find((id) => id !== fromId) ?? unique[0] ?? null
+  }
+  if (targetId === fromId) {
+    const alt = [...new Set(
+      map.provinces
+        .filter((province) => lower.includes(province.name.toLowerCase()))
+        .map((province) => province.id),
+    )].find((id) => id !== fromId)
+    if (alt) targetId = alt
+  }
+  return { fromId, targetId }
 }
 
 function coachReachabilityReply(
@@ -1349,12 +1408,8 @@ function coachReachabilityReply(
       questionLower,
     )
   if (!asksNeighbor) return null
-  const targetId = provinceMentionedInText(map, questionLower)
-  if (!targetId) return null
-  const fromId =
-    selectedProvinceId ??
-    (questionLower.includes("lublin") || questionLower.includes("from lublin") ? "lublin" : null)
-  if (!fromId) return null
+  const { fromId, targetId } = resolveReachabilityEndpoints(map, questionLower, selectedProvinceId)
+  if (!targetId || !fromId) return null
   const queue = playerOrdersToQueued(queued)
   const targets = legalTargets(map, fromId, queue)
   const targetName = provinceLabel(targetId)
@@ -1501,12 +1556,17 @@ function rulesCoach(
   if (situation.queue.length || queuedAttacks.length) {
     const oddsByTarget = queuedAttackOddsByTarget(map, queued, messages)
     if (oddsByTarget.size) {
-      const [targetId, oddsPhrase] = [...oddsByTarget.entries()][0]!
+      const [targetId, oddsRow] = [...oddsByTarget.entries()][0]!
+      const oddsPhrase = oddsRow.phrase
       const target = provinceLabel(targetId)
+      const rejectedNote =
+        oddsRow.rejectedProngs.length && oddsPhrase && !oddsPhrase.startsWith("REJECTED")
+          ? ` ${oddsRow.rejectedProngs.length === 1 ? "One prong was rejected" : "Some prongs were rejected"}: ${oddsRow.rejectedProngs.join("; ")}.`
+          : ""
       const evidence = oddsPhrase?.startsWith("REJECTED")
         ? `The engine would reject that march: ${oddsPhrase.replace(/^REJECTED —\s*/, "")}`
         : oddsPhrase
-          ? `That column stands at ${oddsPhrase}.`
+          ? `That column stands at ${oddsPhrase}.${rejectedNote}`
           : `You have a column queued into ${target}.`
       const affirmsPlan = /^(?:yes|yep|yeah|ok|okay|sure|agreed|we(?:'ll| will| can)|deal with)\b/i.test(
         lower.trim(),
@@ -1583,7 +1643,7 @@ function rulesCoach(
     null
   if (probeFrom) {
     const legal = legalTargets(map, probeFrom, queue)
-    const legalAttack = legal.attack[0] ?? legal.reach.attack[0]
+    const legalAttack = legal.attack[0]
     if (legalAttack) {
       return {
         reply: `What do you need ${provinceLabel(legalAttack)} for this fortnight? ${provinceLabel(probeFrom)} has a legal attack neighbor at ${provinceLabel(legalAttack)} on the current board.`,
