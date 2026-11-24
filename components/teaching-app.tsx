@@ -600,7 +600,7 @@ export function TeachingApp() {
       busy={busy}
       onResolve={() => void resolveDrill()}
       feedback={feedback}
-      silentAvailable
+      silentAvailable={lessonId === "converging-lublin" && variant === "guided"}
       onSilent={() => void loadSession("converging-lublin", "silent", priorAttemptId)}
       onSupplyLesson={
         lessonId === "converging-lublin" && variant === "guided" && feedback

@@ -110,10 +110,29 @@ export function comparePredictionSupply(
 
   const choseHeavy = supplyPlan.chosenFrom === supplyPlan.heavyFromId
   const engineFavorsFed = supplyPlan.fedPreview.ratio > supplyPlan.heavyPreview.ratio
+  const choseFedLaunch = Boolean(supplyPlan.chosenFrom) && !choseHeavy && !supplyPlan.allInConvergence
+  const soundFedPlan = feedback.kind.startsWith("supply_sound")
+
+  if (soundFedPlan && choseFedLaunch) {
+    if (favorsFed) {
+      paragraphs.push("Your prediction matched the engine trade-off: the well-supplied column hits harder per strength.")
+      return { headline: "Prediction vs outcome", paragraphs, stance: "aligned" }
+    }
+    if (favorsHeavy) {
+      paragraphs.push(
+        "You queued the lean, well-supplied column — the engine-strong choice — though your written prediction still stressed headcount over supply.",
+      )
+      return { headline: "Prediction vs plan", paragraphs, stance: "partial" }
+    }
+    paragraphs.push(
+      "You struck from the better-supplied launch; compare your stated expectation to the preview lines in Orders.",
+    )
+    return { headline: "Prediction vs outcome", paragraphs, stance: "partial" }
+  }
 
   if (favorsHeavy && engineFavorsFed && !choseHeavy) {
     paragraphs.push(
-      "You leaned toward the heavy column, but the engine preview already favoured the lean, well-supplied launch. Supply scales attack power — headcount alone did not win the preview.",
+      "Your prediction stressed the heavy column, but the engine preview already favoured the lean, well-supplied launch. Supply scales attack power — headcount alone did not win the preview.",
     )
     return { headline: "Prediction vs engine", paragraphs, stance: "misaligned" }
   }
