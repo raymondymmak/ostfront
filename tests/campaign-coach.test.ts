@@ -43,6 +43,25 @@ import { playTurn } from "@/lib/gm"
 import { createInitialState } from "@/lib/data/scenario"
 import type { PlayerOrder } from "@/lib/types"
 
+function battleFactsFixture(
+  battle: Omit<
+    BattleFacts,
+    "attack" | "defense" | "ratio" | "roll" | "launchSupply" | "pooledSupply"
+  > &
+    Partial<Pick<BattleFacts, "attack" | "defense" | "ratio" | "roll" | "launchSupply" | "pooledSupply">>,
+): BattleFacts {
+  const origin = battle.origins[0] ?? "krakow"
+  return {
+    attack: 120,
+    defense: 40,
+    ratio: 3,
+    roll: 4,
+    launchSupply: { [origin]: 100 },
+    pooledSupply: null,
+    ...battle,
+  }
+}
+
 async function postAdvisor(body: unknown, headers: Record<string, string> = {}) {
   const { POST } = await import("@/app/api/advisor/route")
   return POST(
@@ -183,7 +202,7 @@ describe("campaign coach", () => {
   })
 
   it("labels ours/theirs from the Central Powers view when Russia attacked", () => {
-    const battle: BattleFacts = {
+    const battle: BattleFacts = battleFactsFixture({
       targetId: "krakow",
       attacker: "russia",
       defender: "central",
@@ -194,7 +213,7 @@ describe("campaign coach", () => {
       defenderLoss: 40,
       encircled: false,
       attackerWon: true,
-    }
+    })
     const line = formatBattleForCoach(battle)
     expect(line).toMatch(/Russian assault from Kielce/i)
     expect(line).toMatch(/Russia took Kraków|Krakow/i)
@@ -203,7 +222,7 @@ describe("campaign coach", () => {
   })
 
   it("writes battle reviews as plain sentences, never key=value debug fields", () => {
-    const battle: BattleFacts = {
+    const battle: BattleFacts = battleFactsFixture({
       targetId: "kielce",
       attacker: "central",
       defender: "russia",
@@ -214,7 +233,9 @@ describe("campaign coach", () => {
       defenderLoss: 30,
       encircled: false,
       attackerWon: true,
-    }
+      ratio: 5.48,
+      roll: 6,
+    })
     const summary =
       "Attack from Kraków into Kielce succeeds, odds 5.48 (roll 6). Kielce passes to the Central Powers. The remnants retreat to Warsaw, shaken. Losses — attackers 7, defenders 30."
     const line = formatBattleReviewForPlayer(0, "2 May 1915", battle, summary)
@@ -236,7 +257,7 @@ describe("campaign coach", () => {
           proposal: { type: "attack", from: "krakow", target: "kielce", units: ["g-kra-11"] },
           status: "applied",
           summary: "Early fight at Kielce.",
-          battle: {
+          battle: battleFactsFixture({
             targetId: "kielce",
             attacker: "central",
             defender: "russia",
@@ -247,7 +268,7 @@ describe("campaign coach", () => {
             defenderLoss: 2,
             encircled: false,
             attackerWon: true,
-          },
+          }),
         },
       ],
       events: [],
@@ -266,7 +287,7 @@ describe("campaign coach", () => {
           status: "applied",
           summary:
             "Attack from Kraków into Lublin fails, odds 0.80 (roll 2). Lublin holds. Losses — attackers 3, defenders 5.",
-          battle: {
+          battle: battleFactsFixture({
             targetId: "lublin",
             attacker: "central",
             defender: "russia",
@@ -277,7 +298,9 @@ describe("campaign coach", () => {
             defenderLoss: 5,
             encircled: false,
             attackerWon: false,
-          },
+            ratio: 0.8,
+            roll: 2,
+          }),
         },
       ],
       logistics: ["Central Powers collect 2 manpower."],
@@ -310,7 +333,7 @@ describe("campaign coach", () => {
           status: "applied",
           summary:
             "Attack from Kraków into Kielce succeeds, odds 5.48 (roll 6). Kielce passes to the Central Powers. Losses — attackers 7, defenders 30.",
-          battle: {
+          battle: battleFactsFixture({
             targetId: "kielce",
             attacker: "central",
             defender: "russia",
@@ -321,7 +344,9 @@ describe("campaign coach", () => {
             defenderLoss: 30,
             encircled: false,
             attackerWon: true,
-          },
+            ratio: 5.48,
+            roll: 6,
+          }),
         },
       ],
       events: [],
@@ -392,7 +417,7 @@ describe("campaign coach", () => {
           status: "applied",
           summary:
             "Attack from Kraków into Kielce succeeds, odds 5.48 (roll 6). Kielce passes to the Central Powers. Losses — attackers 7, defenders 30.",
-          battle: {
+          battle: battleFactsFixture({
             targetId: "kielce",
             attacker: "central",
             defender: "russia",
@@ -403,7 +428,9 @@ describe("campaign coach", () => {
             defenderLoss: 30,
             encircled: false,
             attackerWon: true,
-          },
+            ratio: 5.48,
+            roll: 6,
+          }),
         },
       ],
       events: [],
