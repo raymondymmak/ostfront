@@ -9,7 +9,7 @@ News cards and the Chronicle Log need **engine-authored loss counts** and encirc
 
 ## Decision
 
-Add an optional `battle?: BattleFacts` field on `Resolution`, populated in `resolveManeuvers` only for meeting engagements and assaults that already emit a **Losses —** line. `BattleFacts` includes sorted `origins` (province ids) from engine assault plans or the meeting attacker’s `leftId`. `lib/news/` consumes facts for encirclement cards (`NewsKind.encirclement`), map vignette arrows via `battle.origins`, compact **Ours · Theirs** loss lines, and Log drawer routine rows. Zod schemas accept records with or without `battle` so older saves load unchanged.
+Add an optional `battle?: BattleFacts` field on `Resolution`, populated in `resolveManeuvers` only for meeting engagements and assaults that already emit a **Losses —** line. `BattleFacts` includes sorted `origins` (province ids) from engine assault plans or the meeting attacker’s `leftId`. As of ADR **016**, facts also carry pre-roll `attack`/`defense`/`ratio`/`roll`, per-origin `launchSupply`, and converging `pooledSupply` when applicable. `lib/news/` consumes facts for encirclement cards (`NewsKind.encirclement`), map vignette arrows via `battle.origins`, compact **Ours · Theirs** loss lines, and Log drawer routine rows; `/teach` grading reads the same fields (see `lib/teach/battle-from-record.ts`). Zod schemas accept records with or without `battle` so older saves load unchanged.
 
 ## Consequences
 

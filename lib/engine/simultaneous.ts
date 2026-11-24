@@ -234,6 +234,12 @@ export function resolveManeuvers(
       defenderLoss: rightLoss,
       encircled: false,
       attackerWon: outcome.attackerWins,
+      attack: leftPower,
+      defense: rightPower,
+      ratio: outcome.ratio,
+      roll: outcome.roll,
+      launchSupply: { [meeting.leftId]: supplyAtStart.get(meeting.leftId) ?? 0 },
+      pooledSupply: null,
     }
     battleLines.push({
       key: meeting.key,
@@ -258,6 +264,9 @@ export function resolveManeuvers(
     stayerParty: Unit[]
     odds: string
     title: string
+    attack: number
+    defense: number
+    pooledSupply: number | null
   }
   const plans: AssaultPlan[] = []
   assaults.sort((a, b) => a.key.localeCompare(b.key))
@@ -272,7 +281,7 @@ export function resolveManeuvers(
       from: prong.from,
       bodies: attackBodies(prong),
     }))
-    const { attack } = assaultAttackPower(assault.target, prepared)
+    const { attack, pooledSupply } = assaultAttackPower(assault.target, prepared)
     const defenderPool = assault.target.units.filter((unit) => unit.faction === assault.target.controller)
     const fullBodies = fightingUnits(defenderPool)
     const virtual = defenseBodies(assault.target, moverIds, attackerIds)
@@ -339,6 +348,9 @@ export function resolveManeuvers(
       stayerParty: defenderPool.filter((unit) => !moverIds.has(unit.id) && !attackerIds.has(unit.id)),
       odds: outcome.defense <= 0 ? "undefended" : `odds ${outcome.ratio.toFixed(2)} (roll ${outcome.roll})`,
       title: attackTitle(assault.prongs),
+      attack,
+      defense,
+      pooledSupply,
     })
   }
 
@@ -382,6 +394,10 @@ export function resolveManeuvers(
     })
     const defender =
       controllerAtStart.get(plan.assault.target.id) ?? plan.assault.target.controller
+    const launchSupply: Record<string, number> = {}
+    for (const origin of plan.origins) {
+      launchSupply[origin] = supplyAtStart.get(origin) ?? 0
+    }
     const battle: BattleFacts = {
       targetId: plan.assault.target.id,
       attacker: plan.assault.faction,
@@ -393,6 +409,12 @@ export function resolveManeuvers(
       defenderLoss: plan.defenderLoss,
       encircled: plan.encircled,
       attackerWon: plan.outcome.attackerWins,
+      attack: plan.attack,
+      defense: plan.defense,
+      ratio: plan.outcome.ratio,
+      roll: plan.outcome.roll,
+      launchSupply,
+      pooledSupply: plan.pooledSupply,
     }
     battleLines.push({
       key: plan.assault.key,

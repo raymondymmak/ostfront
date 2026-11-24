@@ -15,6 +15,7 @@ On desktop (`lg+`, ≥1024px) `/teach` uses the same general’s-table shell as 
 | Plan on map | Same arrows / Province **Attack** as campaign | `[data-testid=queued-orders]`; engine preview attack/defence lines |
 | Reasoning | `[data-testid=teach-reasoning]` | Free text; coach compares to server plan |
 | Prediction (required) | `[data-testid=teach-prediction]` | Server rejects resolve if under 12 chars; stored on attempt; compared post-resolve in feedback |
+| Post-resolve verdict | Lesson evidence lines | Grades use engine `Resolution.battle` (odds, roll, prongs, launch supply, win/loss) — not parsed battle summary text |
 | Belief recall | `[data-testid=teach-belief-recall]` | Silent session with `priorAttemptId`; server-loaded belief — not client-writable |
 | Discuss plan (guided) | `[data-testid=teach-discuss-plan]` | POST **`/api/teach/coach`** |
 | Pedagogy notice | `[data-testid=teach-pedagogy-notice]` | Guided fixed die roll disclosed (expandable) before resolve |

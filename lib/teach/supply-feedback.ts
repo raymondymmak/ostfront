@@ -1,4 +1,4 @@
-import { CATALOG_BY_ID } from "@/lib/data/catalog"
+import { teachBattleOnTarget } from "@/lib/teach/battle-from-record"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
 import type { RecordPersistenceStatus } from "@/lib/teach/record"
 import type { TurnRecord } from "@/lib/types"
@@ -14,26 +14,14 @@ export type SupplyTeachFeedback = {
   pointers: Array<{ provinceId?: string; uiId?: string }>
 }
 
-function battleOnTarget(record: TurnRecord, targetId: string): { summary: string; won: boolean } | null {
-  const targetName = CATALOG_BY_ID[targetId]?.name ?? targetId
-  for (const item of record.resolutions) {
-    if (item.proposal.type !== "attack") continue
-    if (item.proposal.target !== targetId && !item.summary.includes(targetName)) continue
-    if (item.status === "applied" || item.status === "rejected") {
-      const won = /succeeds/i.test(item.summary)
-      return { summary: item.summary, won }
-    }
-  }
-  return null
-}
-
 export function buildSupplyTeachFeedback(
   meta: LessonMeta,
   variant: TeachVariant,
   supplyPlan: SupplyPlanAnalysis,
   record: TurnRecord,
 ): SupplyTeachFeedback {
-  const battle = battleOnTarget(record, meta.targetProvinceId)
+  const battle = teachBattleOnTarget(record, meta.targetProvinceId)
+  const attackerWon = battle?.facts.attackerWon ?? false
   const { heavyFromId, fedFromId } = supplyPlan
   const choseHeavy =
     supplyPlan.chosenFrom === heavyFromId && !supplyPlan.allInConvergence
@@ -63,8 +51,15 @@ export function buildSupplyTeachFeedback(
   }
 
   const evidence = [...supplyPlan.engineLines]
-  if (battle) {
-    evidence.push(`Resolved battle: ${battle.summary.replace(/\s+/g, " ").trim()}`)
+  if (battle?.facts) {
+    const { facts } = battle
+    const oddsLabel = Number.isFinite(facts.ratio) ? facts.ratio.toFixed(2) : "undefended"
+    evidence.push(
+      `Resolved battle: odds ${oddsLabel} on roll ${facts.roll}; attack ${facts.attack.toFixed(1)} vs defence ${facts.defense.toFixed(1)}.`,
+    )
+    if (facts.pooledSupply !== null) {
+      evidence.push(`Converging pooled launch supply: ${facts.pooledSupply}.`)
+    }
   }
 
   const paragraphs: string[] = []
@@ -76,7 +71,7 @@ export function buildSupplyTeachFeedback(
       "Queue exactly one assault on the objective from either launch province. Compare the engine preview lines — supply scales attack power at max(0.15, supply÷100).",
     )
   } else if (kind === "supply_all_in_convergence") {
-    headline = battle?.won ? "Engine mismatch" : "All-in starved the assault"
+    headline = attackerWon ? "Engine mismatch" : "All-in starved the assault"
     paragraphs.push(
       "Converging columns share the worst launch supply; a starved prong also forfeits the flank bonus and chokes the objective. Headcount did not buy a better pooled ratio than the lean column.",
     )
@@ -85,8 +80,8 @@ export function buildSupplyTeachFeedback(
         `Engine preview before the die: lean column ratio ${supplyPlan.fedPreview.ratio.toFixed(2)} vs all-in ${supplyPlan.combinedPreview.ratio.toFixed(2)} (pooled attack ${supplyPlan.combinedPreview.attack.toFixed(1)}).`,
       )
     }
-    if (battle && !battle.won) {
-      paragraphs.push("The resolver summary matches the weaker pooled odds — the lean Fed-only plan is the engine-stronger choice.")
+    if (battle && !attackerWon) {
+      paragraphs.push("The structured battle facts match the weaker pooled odds — the lean Fed-only plan is the engine-stronger choice.")
     }
   } else if (kind === "supply_chose_starved_stack") {
     headline = "Headcount is not attack power"
@@ -103,8 +98,8 @@ export function buildSupplyTeachFeedback(
     paragraphs.push(
       "You struck from the better-supplied province. The preview attack/defence numbers come from the resolver inputs, not coach prose.",
     )
-    if (battle?.won) {
-      paragraphs.push("The resolver summary agrees: the lean column carried the assault.")
+    if (attackerWon) {
+      paragraphs.push("The engine battle record agrees: the lean column carried the assault.")
     } else if (battle) {
       paragraphs.push(
         "The plan matched the engine preview; if the battle failed, compare the fixed teaching die to the odds line.",

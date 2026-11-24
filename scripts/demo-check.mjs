@@ -504,7 +504,8 @@ function buildSteps(cli, targets) {
         // MapLibre selected filter uses "__none__" as a sentinel when nothing is selected.
         const selectedAtStart = await page.evaluate(() => {
           const filter = window.__ostfrontMap?.getFilter?.("selected")
-          const id = Array.isArray(filter) ? filter[2] : null
+          if (!Array.isArray(filter) || filter.length < 3) return null
+          const id = filter[2]
           return id === "__none__" ? null : id
         })
         if (selectedAtStart) {
@@ -1056,8 +1057,9 @@ function buildSteps(cli, targets) {
       name: "Restart campaign (confirm)",
       async run({ page }) {
         await dismissNewsCardsIfOpen(page)
+        await stowPapersForMapClick(page)
         await page.locator("[data-testid=hud-options]").click()
-        await page.locator("[data-testid=hud-options-restart]").click()
+        await page.locator("[data-testid=hud-options-restart]").click({ force: true })
         await page.locator("[data-testid=hud-options-restart]").getByText("Confirm restart").waitFor({
           state: "visible",
           timeout: 5_000,
@@ -1080,7 +1082,8 @@ function buildSteps(cli, targets) {
         await page.waitForTimeout(MAP_SETTLE_MS)
         const teachSelectedAtStart = await page.evaluate(() => {
           const filter = window.__ostfrontMap?.getFilter?.("selected")
-          const id = Array.isArray(filter) ? filter[2] : null
+          if (!Array.isArray(filter) || filter.length < 3) return null
+          const id = filter[2]
           return id === "__none__" ? null : id
         })
         if (teachSelectedAtStart) {
