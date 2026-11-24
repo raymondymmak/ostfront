@@ -46,7 +46,7 @@ export function OhlOrdersWindow({
       z={z}
       widthPx={widthPx}
       heightPx={heightPx}
-      widthClassName="w-[min(36rem,calc(100%-1.5rem))]"
+      widthClassName="w-[min(27rem,calc(100%-1.5rem))]"
       maxHeightClassName="max-h-[min(40dvh,12rem)]"
       testId="ohl-orders-window"
       onFocus={onFocus}

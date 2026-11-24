@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
   clampWindowPosition,
@@ -20,6 +21,18 @@ import {
 } from "@/lib/ui/teach-windows"
 
 describe("table-windows", () => {
+  it("keeps Orders from OHL at 27rem and on the stage", () => {
+    expect(TABLE_WINDOW_SIZE_HINTS.ohl.w).toBe(432)
+    const source = readFileSync("components/ohl-orders-window.tsx", "utf8")
+    expect(source).toContain('widthClassName="w-[min(27rem,calc(100%-1.5rem))]"')
+    for (const width of [1440, 1024]) {
+      const ohl = createDefaultTableWindows(width, 700).find((item) => item.id === "ohl")
+      expect(ohl).toBeTruthy()
+      expect(ohl!.x + TABLE_WINDOW_SIZE_HINTS.ohl.w).toBeLessThanOrEqual(width - TABLE_WINDOW_MARGIN)
+      expect(ohl!.y).toBeGreaterThanOrEqual(TABLE_WINDOW_MARGIN)
+    }
+  })
+
   it("defaults open Orders, Legend, and Orders from OHL", () => {
     const windows = createDefaultTableWindows(1440, 820)
     expect(isWindowOpen(windows, "orders")).toBe(true)
