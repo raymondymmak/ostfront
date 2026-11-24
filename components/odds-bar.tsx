@@ -18,10 +18,6 @@ const TONE_CLASS: Record<string, string> = {
 
 export function OddsBar({ preview, testId, compact }: OddsBarProps) {
   const band = oddsBand(preview)
-  const width =
-    band.tone === "open"
-      ? 100
-      : Math.min(100, Math.max(18, Math.round((band.ratio / 2.2) * 50 + 25)))
   const tooltip = band.detail.join(" ")
 
   return (
@@ -33,10 +29,13 @@ export function OddsBar({ preview, testId, compact }: OddsBarProps) {
       title={tooltip}
     >
       <div className="flex items-center gap-2">
-        <div className="h-1.5 min-w-[4.5rem] flex-1 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-1.5 w-full min-w-[8rem] max-w-[12rem] shrink-0 overflow-hidden rounded-full bg-muted"
+          data-odds-track
+        >
           <div
-            className={`h-full ${TONE_CLASS[band.tone] ?? TONE_CLASS.even}`}
-            style={{ width: `${width}%` }}
+            className={`h-full w-full ${TONE_CLASS[band.tone] ?? TONE_CLASS.even}`}
+            data-odds-fill
           />
         </div>
         <span className="shrink-0 text-xs font-medium text-foreground">{band.label}</span>
