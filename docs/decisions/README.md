@@ -15,6 +15,6 @@ Short notes on choices that shape Ostfront. Each ADR is one file in this folder.
 
 Keep ADRs small. Link to `ARCHITECTURE.md` and code paths instead of pasting implementation detail.
 
-Recent: **016** — `applyAttack` wraps `resolveManeuvers`; teach grades on `BattleFacts`; **015** — campaign coach (no orders, server-loaded state); **014** — terminal fortnights advance turn index, freeze date (#62); **013** — slim HUD + Options menu (Part 8); **012** — document tray for stowed parchment papers (Part 7); **011** — `/teach` general’s-table shell; **010** — campaign floating windows.
+Recent: **017** — campaign shell lifecycle reducer; **016** — `applyAttack` wraps `resolveManeuvers`; teach grades on `BattleFacts`; **015** — campaign coach (no orders, server-loaded state); **014** — terminal fortnights advance turn index, freeze date (#62); **013** — slim HUD + Options menu (Part 8); **012** — document tray for stowed parchment papers (Part 7); **011** — `/teach` general’s-table shell; **010** — campaign floating windows.
 
 When you change architecture, routes, storage, trust boundaries, or game rules, update `ARCHITECTURE.md` and add or revise an ADR in the same pull request (see `AGENTS.md`).

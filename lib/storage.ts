@@ -68,7 +68,7 @@ function migrateSave(parsed: {
   }
 }
 
-export function loadGame(): SaveGame | null {
+function readPersistedSave(): SaveGame | null {
   if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(KEY)
@@ -92,11 +92,21 @@ export function loadGame(): SaveGame | null {
             log: parsed.log ?? [],
             state: rebindTopology(withCampaign(state)),
           }
-    if (!save || !save.gameId) return null
-    return save
+    return save ?? null
   } catch {
     return null
   }
+}
+
+/** Parse localStorage even when `gameId` is missing (boot must not enter the table without one). */
+export function peekSave(): SaveGame | null {
+  return readPersistedSave()
+}
+
+export function loadGame(): SaveGame | null {
+  const save = readPersistedSave()
+  if (!save?.gameId) return null
+  return save
 }
 
 export function saveGame(game: SaveGame) {

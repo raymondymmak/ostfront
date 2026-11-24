@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { AdvisorPanel } from "@/components/advisor-panel"
 import { Hud } from "@/components/hud"
 import { OrderPanel } from "@/components/order-panel"
@@ -68,28 +68,48 @@ import { restorePositionAboveTray } from "@/lib/ui/window-drag"
 import { useDesktopShell } from "@/lib/ui/use-desktop-shell"
 import { selectNewsEvents } from "@/lib/news/select"
 import type { NewsEvent } from "@/lib/news/types"
-import { clearGame, freshGame, loadGame, saveGame } from "@/lib/storage"
+import {
+  bootCampaignShell,
+  campaignShellReducer,
+  shellBeginBusy,
+  shellIsSetup,
+  shellResultOpen,
+  shellStale,
+  shellTurnBusy,
+} from "@/lib/ui/campaign-shell"
+import { clearGame, freshGame, loadGame, peekSave, saveGame } from "@/lib/storage"
 import type { Difficulty, GameState, PlayerOrder, SaveGame, TurnRecord, UnitKind } from "@/lib/types"
 import { WarMap, type MapProvince } from "@/components/war-map"
 
 export function GameApp() {
-  const [game, setGame] = useState<SaveGame>(() => loadGame() ?? freshGame())
-  const [setupOpen, setSetupOpen] = useState(() => loadGame() === null)
+  const [game, setGame] = useState<SaveGame>(() => {
+    if (typeof window === "undefined") return freshGame()
+    return loadGame() ?? freshGame()
+  })
+  const [shell, dispatchShell] = useReducer(
+    campaignShellReducer,
+    undefined as unknown as ReturnType<typeof bootCampaignShell>,
+    () => {
+      const persisted = typeof window !== "undefined" ? peekSave() : null
+      return bootCampaignShell(persisted?.gameId)
+    },
+  )
+  const setupOpen = shellIsSetup(shell)
+  const beginBusy = shellBeginBusy(shell)
+  const busy = shellTurnBusy(shell)
+  const staleCampaign = shellStale(shell)
+  const resultOpen = shellResultOpen(shell)
   const [difficulty, setDifficulty] = useState<Difficulty>("normal")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
   const [orderMode, setOrderMode] = useState(false)
   const [directive, setDirective] = useState("")
   const [queue, setQueue] = useState<QueuedOrder[]>([])
-  const [busy, setBusy] = useState(false)
-  const [beginBusy, setBeginBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [staleCampaign, setStaleCampaign] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const [flash, setFlash] = useState<string[]>([])
   const [logIndex, setLogIndex] = useState<number | null>(null)
   const [armReset, setArmReset] = useState(false)
-  const [resultOpen, setResultOpen] = useState(false)
   const [sideTab, setSideTab] = useState("orders")
   const [chatEpoch, setChatEpoch] = useState(0)
   const [newsQueue, setNewsQueue] = useState<NewsEvent[]>([])
@@ -117,6 +137,12 @@ export function GameApp() {
   useEffect(() => {
     if (!setupOpen && game.gameId) saveGame(game)
   }, [game, setupOpen])
+
+  useEffect(() => {
+    if (shell.kind === "table" && !game.gameId) {
+      dispatchShell({ type: "ENTER_SETUP" })
+    }
+  }, [shell.kind, game.gameId])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -149,7 +175,7 @@ export function GameApp() {
           state: payload.state,
           log,
         })
-        setSetupOpen(false)
+        dispatchShell({ type: "BEGIN_SUCCESS", gameId: payload.gameId })
       } catch {
         /* keep local render until the next successful turn */
       }
@@ -410,9 +436,9 @@ export function GameApp() {
   }
 
   async function begin(nextDifficulty: Difficulty) {
-    setBeginBusy(true)
+    dispatchShell({ type: "BEGIN_PENDING" })
     setError(null)
-    setStaleCampaign(false)
+    dispatchShell({ type: "CLEAR_STALE" })
     try {
       const response = await fetch("/api/new-game", {
         method: "POST",
@@ -449,14 +475,14 @@ export function GameApp() {
       setSelectedId(null)
       setOrderMode(false)
       setArmReset(false)
-      setResultOpen(false)
+      dispatchShell({ type: "CLOSE_RESULT" })
       setSideTab("orders")
       setChatEpoch((value) => value + 1)
-      setSetupOpen(false)
+      dispatchShell({ type: "BEGIN_SUCCESS", gameId: payload.gameId })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The server could not open a new campaign.")
     } finally {
-      setBeginBusy(false)
+      dispatchShell({ type: "BEGIN_IDLE" })
     }
   }
 
@@ -478,15 +504,14 @@ export function GameApp() {
 
   const endTurn = useCallback(async () => {
     if (busy || ordersLocked(Boolean(game.state.result))) return
-    setBusy(true)
+    dispatchShell({ type: "TURN_PENDING" })
     setError(null)
     const orders: PlayerOrder[] = queuedToPlayerOrders(queue)
     if (directive.trim()) orders.push({ type: "text", text: directive.trim() })
 
     if (!game.gameId) {
       setError("Start a new campaign before you close a fortnight.")
-      setStaleCampaign(true)
-      setBusy(false)
+      dispatchShell({ type: "TURN_BLOCKED_NO_GAME" })
       return
     }
 
@@ -512,9 +537,10 @@ export function GameApp() {
       }
       // A non-2xx leaves the map and the queue untouched so the player can retry.
       if (!response.ok || !payload.state || !payload.record) {
-        if (payload.code === "stale_turn" || payload.code === "unknown_game") {
-          setStaleCampaign(true)
-        }
+        dispatchShell({
+          type: "TURN_FAILURE",
+          stale: payload.code === "stale_turn" || payload.code === "unknown_game",
+        })
         throw new Error(
           payload.error ??
             (response.ok ? "The staff could not close the fortnight." : formatTurnFailure(response.status, raw)),
@@ -523,7 +549,7 @@ export function GameApp() {
       const record = payload.record
       const prevState = game.state
       const events = selectNewsEvents(prevState, payload.state!, record)
-      setStaleCampaign(false)
+      dispatchShell({ type: "TURN_SUCCESS" })
       setGame((current) => ({
         version: 2,
         gameId: current.gameId,
@@ -539,8 +565,7 @@ export function GameApp() {
       setOrderMode(false)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The turn failed.")
-    } finally {
-      setBusy(false)
+      dispatchShell({ type: "TURN_FAILURE" })
     }
   }, [busy, directive, game.gameId, game.state, queue])
 
@@ -563,7 +588,7 @@ export function GameApp() {
       return
     }
     clearGame()
-    setSetupOpen(true)
+    dispatchShell({ type: "ENTER_SETUP" })
     setQueue([])
     setDirective("")
     setFlash([])
@@ -710,7 +735,7 @@ export function GameApp() {
               data-testid="start-new-campaign"
               onClick={() => {
                 setError(null)
-                setStaleCampaign(false)
+                dispatchShell({ type: "CLEAR_STALE" })
                 reset()
               }}
             >
@@ -978,7 +1003,12 @@ export function GameApp() {
                   <span className="mx-2 text-muted-foreground">·</span>
                   <span className="font-display text-lg leading-none">{game.state.date}</span>
                 </p>
-                <Button type="button" size="sm" data-testid="see-result" onClick={() => setResultOpen(true)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="see-result"
+                  onClick={() => dispatchShell({ type: "OPEN_RESULT" })}
+                >
                   {SEE_RESULT_LABEL}
                 </Button>
               </div>
@@ -1053,10 +1083,10 @@ export function GameApp() {
       <EndgameModal
         state={game.state}
         result={game.state.result}
-        onBackToMap={() => setResultOpen(false)}
+        onBackToMap={() => dispatchShell({ type: "CLOSE_RESULT" })}
         onPlayAgain={() => {
-          setResultOpen(false)
-          setSetupOpen(true)
+          dispatchShell({ type: "CLOSE_RESULT" })
+          dispatchShell({ type: "ENTER_SETUP" })
         }}
       />
     )}
