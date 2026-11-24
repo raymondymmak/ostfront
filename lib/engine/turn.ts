@@ -12,22 +12,17 @@ import {
 } from "@/lib/engine/economy"
 import { decideFortnight, gradeLabel, noteCaptures } from "@/lib/engine/victory"
 import { assaultAttackPower, prongsFromIds } from "@/lib/engine/assault"
-import {
-  attackerPower,
-  defenderPower,
-  resolveCombat,
-} from "@/lib/engine/combat"
+import { defenderPower } from "@/lib/engine/combat"
 import {
   fightingUnits,
   independentFormations,
-  keptAfterHarm,
   partyOf,
   standingUnits,
 } from "@/lib/engine/echelon"
 import { resolveManeuvers } from "@/lib/engine/simultaneous"
-import { attackerSupplyFromProvince, decaySupplyModifier, defenderSupplyInProvince } from "@/lib/engine/supply"
+import { decaySupplyModifier, defenderSupplyInProvince } from "@/lib/engine/supply"
 import { clamp, FACTION_LABEL, scenarioDate, signed } from "@/lib/format"
-import { makeRng, rollD6 } from "@/lib/rng"
+import { fixedRollRng, makeRng, rollD6 } from "@/lib/rng"
 import type {
   AttackProposal,
   ControlChange,
@@ -344,6 +339,7 @@ export function applyMove(
   }
 }
 
+/** Single-attack dry run or advisor legality — delegates to `resolveManeuvers`. */
 export function applyAttack(
   state: GameState,
   proposal: AttackProposal,
@@ -351,157 +347,26 @@ export function applyAttack(
   roll: number,
   attacked: Set<string> = new Set(),
 ): Resolution {
-  const from = findProvince(state, proposal.from)
-  const target = findProvince(state, proposal.target)
-  if (!from || !target) return reject(proposal, "Unknown province in the attack.")
-  if (!proposal.units.length) {
-    return reject(proposal, "Attack needs at least one formation.")
-  }
-  if (!from.neighbors.includes(target.id)) {
-    return reject(
-      proposal,
-      `${from.name} and ${target.name} do not share a border.`,
-    )
-  }
-
-  const named: Unit[] = []
-  for (const id of proposal.units) {
-    const unit = from.units.find((item) => item.id === id)
-    if (!unit) {
-      const elsewhere = findUnit(state, id)
-      return reject(
-        proposal,
-        elsewhere
-          ? `${elsewhere.unit.name} is not in ${from.name}.`
-          : "Unknown formation in the attack.",
-      )
-    }
-    named.push(unit)
-  }
-  const attackerParty = partyOf(from.units, named.map((unit) => unit.id))
-  const busy = attackerParty.find((unit) => usedUnits.has(unit.id))
-  if (busy) {
-    return reject(proposal, `${busy.name} already has orders this fortnight.`)
-  }
-
-  const faction = named[0].faction
-  if (attackerParty.some((unit) => unit.faction !== faction)) {
-    return reject(proposal, "Those formations are not all of one side.")
-  }
-  if (target.controller === faction) {
-    return reject(
-      proposal,
-      `${target.name} is already held by your side. Move instead.`,
-    )
-  }
-  if (from.supply < 30) {
-    return reject(
-      proposal,
-      `The attack from ${from.name} cannot march: supply is ${from.supply} (need 30).`,
-    )
-  }
-
-  const defenderPool = target.units.filter((unit) => unit.faction === target.controller)
-  const attackerBodies = fightingUnits(from.units, independentFormations(attackerParty))
-  const defenderBodies = fightingUnits(defenderPool)
-  const attack = attackerPower(attackerBodies, attackerSupplyFromProvince(from), target.terrain, target.fort)
-  const defense = defenderPower(
-    defenderBodies,
-    defenderSupplyInProvince(target),
-    target.terrain,
-    target.fort,
+  const attackKey = `attack|${proposal.target}|${proposal.from}|${[...proposal.units].sort().join(",")}`
+  const resolutions = resolveManeuvers(
+    state,
+    [proposal],
+    fixedRollRng(roll),
+    attacked,
+    usedUnits,
   )
-  const outcome = resolveCombat(attack, defense, roll)
-  const attackerStrengthBefore = sumStrength(attackerBodies)
-  const defenderStrengthBefore = sumStrength(defenderBodies)
-
-  const survivingAttackers = keptAfterHarm(
-    attackerParty,
-    harm(attackerBodies, outcome.attackerLossFraction, outcome.attackerMoraleDelta),
+  const battleLine = resolutions.find(
+    (item) =>
+      item.proposal.type === "attack" &&
+      item.proposal.from === proposal.from &&
+      item.proposal.target === proposal.target,
   )
-  const survivingDefenders = keptAfterHarm(
-    defenderPool,
-    harm(defenderBodies, outcome.defenderLossFraction, outcome.defenderMoraleDelta),
+  if (battleLine) return battleLine
+  const rejected = resolutions.find(
+    (item) => item.proposal.type === "attack" && item.status === "rejected",
   )
-  const attackerLoss = attackerStrengthBefore - sumStrength(fightingUnits(survivingAttackers))
-  const defenderLoss = defenderStrengthBefore - sumStrength(fightingUnits(survivingDefenders))
-  if (faction === "central") state.cpStrengthLost += attackerLoss
-  if (target.controller === "central") state.cpStrengthLost += defenderLoss
-  for (const unit of attackerParty) attacked.add(unit.id)
-
-  const attackerIds = new Set(attackerParty.map((unit) => unit.id))
-  const defenderIds = new Set(defenderPool.map((unit) => unit.id))
-  from.units = from.units.filter((unit) => !attackerIds.has(unit.id))
-  target.units = target.units.filter((unit) => !defenderIds.has(unit.id))
-
-  const odds =
-    outcome.defense <= 0
-      ? "undefended"
-      : `odds ${outcome.ratio.toFixed(2)} (roll ${outcome.roll})`
-
-  if (outcome.attackerWins && survivingAttackers.length > 0) {
-    const previous = target.controller
-    let retreatSummary = "The garrison is destroyed."
-    if (survivingDefenders.length > 0) {
-      for (const unit of survivingDefenders) {
-        if (survivingDefenders.some((other) => other.parentId === unit.id)) continue
-        const shaken = Math.max(5, Math.round(unit.strength * 0.45))
-        if (unit.faction === "central") state.cpStrengthLost += unit.strength - shaken
-        unit.strength = shaken
-      }
-      const retreatTo = retreatDestination(state, target, previous, [from.id])
-      if (retreatTo) {
-        retreatTo.units.push(...survivingDefenders)
-        retreatSummary = `The remnants retreat to ${retreatTo.name}, shaken.`
-      } else {
-        retreatSummary = "No friendly province is open. The remnants are lost."
-      }
-    } else if (defenderBodies.length === 0) {
-      retreatSummary = "The province was empty."
-    }
-    target.units.push(...survivingAttackers)
-    if (target.controller !== faction && target.fort > 0) {
-      target.fort = clamp(target.fort - 1, 0, 3)
-      target.fortPending = 0
-    }
-    target.controller = faction
-    if (faction !== target.owner) target.unrest = clamp(target.unrest + 12, 0, 100)
-    else target.unrest = clamp(target.unrest - 8, 0, 100)
-    for (const unit of survivingAttackers) usedUnits.add(unit.id)
-    return {
-      proposal,
-      status: "applied",
-      summary: `Attack from ${from.name} into ${target.name} succeeds, ${odds}. ${target.name} passes to ${faction === "central" ? "the Central Powers" : "Russia"}. ${retreatSummary} Losses — attackers ${attackerLoss}, defenders ${defenderLoss}.`,
-    }
-  }
-
-  from.units.push(...survivingAttackers)
-  target.units.push(...survivingDefenders)
-  for (const unit of survivingAttackers) usedUnits.add(unit.id)
-  if (outcome.attackerWins && survivingAttackers.length === 0) {
-    return {
-      proposal,
-      status: "applied",
-      summary: `Attack from ${from.name} into ${target.name} breaks the line and then dies on it, ${odds}. No formation remains to occupy ${target.name}.`,
-    }
-  }
-  return {
-    proposal,
-    status: "applied",
-    summary: `Attack from ${from.name} into ${target.name} fails, ${odds}. ${target.name} holds. Losses — attackers ${attackerLoss}, defenders ${defenderLoss}.`,
-  }
-}
-
-
-function harm(units: Unit[], fraction: number, moraleDelta: number): Unit[] {
-  const survivors: Unit[] = []
-  for (const unit of units) {
-    const strength = Math.max(0, Math.round(unit.strength * (1 - fraction)))
-    const morale = clamp(Math.round(unit.morale + moraleDelta), 0, 100)
-    if (strength < 5 || morale <= 0) continue
-    survivors.push({ ...unit, strength, morale })
-  }
-  return survivors
+  if (rejected) return rejected
+  return reject(proposal, `Attack ${attackKey} produced no resolution.`)
 }
 
 function retreatDestination(
@@ -887,10 +752,6 @@ export function findUnit(
     if (unit) return { unit, province }
   }
   return undefined
-}
-
-function sumStrength(units: Unit[]): number {
-  return units.reduce((sum, unit) => sum + unit.strength, 0)
 }
 
 export type EngagementPreview = {

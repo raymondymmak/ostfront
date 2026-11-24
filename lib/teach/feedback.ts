@@ -1,4 +1,4 @@
-import { CATALOG_BY_ID } from "@/lib/data/catalog"
+import { teachBattleOnTarget } from "@/lib/teach/battle-from-record"
 import type { PlanAnalysis } from "@/lib/teach/plan"
 import type { LessonMeta, TeachVariant } from "@/lib/teach/lessons"
 import type { RecordPersistenceStatus, TeachRecordResult } from "@/lib/teach/record"
@@ -36,35 +36,13 @@ export type TeachFeedback = {
   beliefPersistence: RecordPersistenceStatus | null
 }
 
-function parseRoll(summary: string): number | null {
-  const match = summary.match(/\(roll\s+(\d+)\)/i)
-  return match ? Number(match[1]) : null
-}
-
-function parseRatio(summary: string): number | null {
-  const match = summary.match(/,\s*odds\s+([\d.]+)\s+\(roll/i)
-  return match ? Number(match[1]) : null
-}
-
-function battleOnTarget(record: TurnRecord, targetId: string): { summary: string; applied: boolean } | null {
-  const targetName = CATALOG_BY_ID[targetId]?.name ?? targetId
-  for (const item of record.resolutions) {
-    if (item.proposal.type !== "attack") continue
-    if (item.proposal.target !== targetId && !item.summary.includes(targetName)) continue
-    return { summary: item.summary, applied: item.status === "applied" }
-  }
-  return null
-}
-
 export function buildTeachFeedback(
   meta: LessonMeta,
   variant: TeachVariant,
   plan: PlanAnalysis,
   record: TurnRecord,
 ): TeachFeedback {
-  const battle = battleOnTarget(record, meta.targetProvinceId)
-  const roll = battle ? parseRoll(battle.summary) : null
-  const ratio = battle ? parseRatio(battle.summary) : null
+  const battle = teachBattleOnTarget(record, meta.targetProvinceId)
   const convergedExpected =
     plan.convergingOnTarget === meta.targetProvinceId &&
     meta.prongProvinceIds.every((id) =>
@@ -74,9 +52,8 @@ export function buildTeachFeedback(
   let kind: FeedbackKind = "other"
   if (!plan.attackProngs.length) {
     kind = "no_attack"
-  } else if (convergedExpected && battle) {
-    const won = battle.summary.includes("succeeds") || battle.summary.includes("breaks the line")
-    kind = won ? "sound_converging_success" : "sound_converging_unlucky"
+  } else if (convergedExpected && battle?.applied) {
+    kind = battle.facts.attackerWon ? "sound_converging_success" : "sound_converging_unlucky"
   } else if (plan.singleProngOnTarget) {
     kind = "reasonable_single_prong"
   } else if (plan.attackProngs.length && !plan.convergingOnTarget) {
@@ -84,12 +61,15 @@ export function buildTeachFeedback(
   }
 
   const evidence = [...plan.engineLines]
-  if (battle) {
-    if (ratio !== null && roll !== null) {
-      evidence.push(`Resolved battle: odds ${ratio.toFixed(2)} on die roll ${roll} (engine summary).`)
-    } else {
-      evidence.push(`Resolved battle: ${battle.summary.replace(/\s+/g, " ").trim()}`)
-    }
+  if (battle?.facts) {
+    const { facts } = battle
+    const oddsLabel = Number.isFinite(facts.ratio) ? facts.ratio.toFixed(2) : "undefended"
+    evidence.push(
+      `Resolved battle: odds ${oddsLabel} on die roll ${facts.roll}; ${facts.prongs} prong(s); launch supply ${facts.origins.map((id) => `${id} ${facts.launchSupply[id] ?? "?"}`).join(", ")}.`,
+    )
+    evidence.push(
+      facts.attackerWon ? "Engine outcome: attacker win." : "Engine outcome: defender held.",
+    )
   }
 
   const paragraphs: string[] = []

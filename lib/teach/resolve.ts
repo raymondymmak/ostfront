@@ -1,6 +1,7 @@
 import { buildStaffTurn } from "@/lib/gm/cascade"
 import { interpretOrders } from "@/lib/gm/interpret"
 import { resolveTurn } from "@/lib/engine/turn"
+import { fixedRollRng } from "@/lib/rng"
 import {
   extractLearnerBelief,
   loadBeliefForAttempt,
@@ -43,15 +44,6 @@ export type TeachResolveResult = {
   combatRoll: number
   beliefId: string | null
   beliefPersistence: RecordPersistenceStatus
-}
-
-function fixedRollRng(roll: number): () => number {
-  let calls = 0
-  return () => {
-    calls += 1
-    if (calls === 1) return (roll - 0.5) / 6
-    return 0.5
-  }
 }
 
 export class TeachResolveValidationError extends Error {
