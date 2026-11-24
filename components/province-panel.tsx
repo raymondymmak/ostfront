@@ -169,16 +169,15 @@ export function ProvincePanel({
           )}
           <ul className="mt-2 flex flex-col gap-2">
             {province.units.map((unit) => (
-              <li key={unit.id} className="rounded-lg border border-border px-2.5 py-2">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium">{unit.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {KIND_LABEL[unit.kind]}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {FACTION_LABEL[unit.faction]} · strength {unit.strength} · morale{" "}
-                  {unit.morale}
+              <li key={unit.id} className="rounded-lg border border-border px-2.5 py-2" data-testid="formation-row">
+                <p className="text-sm font-medium leading-snug">
+                  {KIND_LABEL[unit.kind]}
+                  <span className="font-normal"> · {unit.strength}</span>
+                  <span className="font-normal text-muted-foreground"> · morale {unit.morale}</span>
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {unit.name}
+                  <span className="sr-only">, {FACTION_LABEL[unit.faction]}</span>
                 </p>
               </li>
             ))}

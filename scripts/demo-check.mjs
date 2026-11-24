@@ -526,15 +526,16 @@ function buildSteps(cli, targets) {
     },
     {
       id: "04-hud",
-      name: "Top bar strength, provinces, VP, treasury, grade",
+      name: "Top bar strength, VP, treasury, grade",
       async run({ page }) {
         await page.locator("[data-testid=objectives]").waitFor({ state: "visible" })
         await page.locator("[data-testid=treasury]").waitFor({ state: "visible" })
         await page.locator("[data-testid=grade]").waitFor({ state: "visible" })
-        const hud = page.locator("header")
+        const hud = page.locator("[data-testid=table-hud]")
         await expectText(hud, "Strength")
-        await expectText(hud, "Provinces")
         await expectText(hud, "VP")
+        const hudText = await hud.innerText()
+        if (/\bProvinces\b/.test(hudText)) throw new Error("Top bar still shows Provinces held")
         await openChronicleDrawer(page)
         await page.locator("[data-testid=map-legend]").waitFor({ state: "visible", timeout: 10_000 })
         await assertNoOverlap(

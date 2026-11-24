@@ -18,7 +18,7 @@ import { geometryPath } from "@/lib/map/svg-geometry"
 import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
-import { provinceHoverNote } from "@/lib/ui/map-hover"
+import { cursorHoverText, cursorTipPosition } from "@/lib/ui/map-hover"
 import { provincePaintProperties, resolvedFill, roleFor } from "@/lib/map/province-paint"
 import { TARGET_HIGHLIGHT_FADE_MS } from "@/lib/map/target-highlight"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
@@ -58,7 +58,7 @@ export function SvgMap({
   }, [originId])
   const [preview, setPreview] = useState<[number, number] | null>(null)
   const [hoverTargetId, setHoverTargetId] = useState<string | null>(null)
-  const [hoverTip, setHoverTip] = useState<string | null>(null)
+  const [hoverTip, setHoverTip] = useState<{ text: string; x: number; y: number } | null>(null)
 
   const view = useMemo(() => {
     const [minLon, minLat, maxLon, maxLat] = VIEW_BBOX
@@ -242,7 +242,7 @@ export function SvgMap({
           strokeWidth = view.label * 0.14
           fillOpacity = 0.72
         }
-        const tip = provinceHoverNote(province, targetHoverNote)
+        const tip = cursorHoverText(province, targetHoverNote)
         const pathD = geometryPath(province.polygon)
         return (
           <g key={province.id}>
@@ -263,8 +263,20 @@ export function SvgMap({
                   : "pointer",
                 transition: `fill ${TARGET_HIGHLIGHT_FADE_MS}ms ease, fill-opacity ${TARGET_HIGHLIGHT_FADE_MS}ms ease`,
               }}
-              onPointerOver={() => {
-                setHoverTip(tip)
+              onPointerMove={(event) => {
+                if (!tip) {
+                  setHoverTip(null)
+                  return
+                }
+                const box = svgRef.current?.getBoundingClientRect()
+                if (!box) return
+                const pos = cursorTipPosition(
+                  event.clientX - box.left,
+                  event.clientY - box.top,
+                  box.width,
+                  box.height,
+                )
+                setHoverTip({ text: tip, x: pos.x, y: pos.y })
               }}
               onPointerOut={() => {
                 setHoverTip(null)
@@ -292,7 +304,7 @@ export function SvgMap({
                 onSelect(province.id)
               }}
             >
-              <title>{tip}</title>
+              {tip ? <title>{tip}</title> : null}
             </path>
           </g>
         )
@@ -422,11 +434,12 @@ export function SvgMap({
       </svg>
       {hoverTip ? (
         <div
-          className={`pointer-events-none absolute left-2 z-20 max-w-[min(14rem,calc(100%-1rem))] rounded-sm border border-leather/40 bg-paper/95 px-2.5 py-2 text-xs whitespace-pre-line text-ink shadow-[0_6px_14px_rgba(36,28,20,0.18)] ${orderMode ? "top-12" : "top-2"}`}
+          className="pointer-events-none absolute z-20 max-w-[11rem] rounded-sm border border-leather/40 bg-paper/95 px-1.5 py-1 text-[11px] leading-snug text-ink shadow-[0_4px_10px_rgba(36,28,20,0.16)]"
+          style={{ left: hoverTip.x, top: hoverTip.y }}
           role="tooltip"
           data-testid="svg-map-hover-tip"
         >
-          {hoverTip}
+          {hoverTip.text}
         </div>
       ) : null}
     </>

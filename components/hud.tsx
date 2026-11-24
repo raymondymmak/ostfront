@@ -31,10 +31,6 @@ export function Hud({
   void _tableShell
   const central = strength(state, "central")
   const russia = strength(state, "russia")
-  const held = {
-    central: state.provinces.filter((province) => province.controller === "central").length,
-    russia: state.provinces.filter((province) => province.controller === "russia").length,
-  }
   const spec = scenarioSpec(state.scenario)
   const board = standing(state)
   const income = projectIncome(state, "central")
@@ -98,21 +94,6 @@ export function Hud({
                   >
                     <span className="sr-only">{FACTION_LABEL.russia} </span>
                     {russia}
-                  </span>
-                </span>
-                <span aria-hidden="true" className="hidden sm:inline">
-                  ·
-                </span>
-                <span title={`Provinces held, ${FACTION_LABEL.central} versus ${FACTION_LABEL.russia}`}>
-                  Provinces{" "}
-                  <span title={`Provinces held by the ${FACTION_LABEL.central}`}>
-                    <span className="sr-only">{FACTION_LABEL.central} </span>
-                    {held.central}
-                  </span>
-                  {" vs "}
-                  <span title={`Provinces held by ${FACTION_LABEL.russia}`}>
-                    <span className="sr-only">{FACTION_LABEL.russia} </span>
-                    {held.russia}
                   </span>
                 </span>
                 <span aria-hidden="true" className="hidden lg:inline">
