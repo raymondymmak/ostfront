@@ -11,13 +11,13 @@ Game-master diplomacy, `/api/advisor`, and the teach reasoning coach shared one 
 
 `resolveProviderChain` in `lib/gm/providers.ts` orders providers:
 
-1. **OpenAI** when `OPENAI_API_KEY` is set. `OPENAI_MODEL` defaults to `gpt-6-luna` (the model id on the OpenAI docs as of 24 Nov 2026). Terra is `gpt-6.1-terra`, set only via `OPENAI_MODEL`.
+1. **OpenAI** when `OPENAI_API_KEY` is set. `OPENAI_MODEL` defaults to `gpt-6.1-terra` (the model id on the OpenAI docs as of 24 Nov 2026; not `gpt-6-terra`). Chat Completions send `reasoning_effort` from `OPENAI_REASONING_EFFORT`, default `medium`. Terra documents `none`, `low`, `medium` (its API default), `high`, `xhigh`, and `max`. `minimal` is not a Terra value and falls back to `medium`. Responses would use `reasoning.effort` instead; this client stays on Chat Completions.
 2. **Backup** when `LLM_API_KEY` is set. Base URL, model, and `LLM_MODEL_STRONG` are unchanged. Strong-model escalation stays inside this provider.
 3. **Staff simulation** when no provider answers. Stavka still owns Russian orders either way.
 
 Fail over to the next provider on timeout, HTTP 429, HTTP 5xx, a missing key (that provider is omitted), an empty reply, JSON that will not parse, or JSON that fails schema validation. Any other unsuccessful HTTP or transport error also yields, so a dead primary cannot skip a live backup.
 
-The first provider gets about half of `GM_BUDGET_MS` (default 90s, per-call cap `LLM_TIMEOUT_MS`). Advisor and teach coach split their own timeouts the same way. OpenAI chat completions send `reasoning_effort: "low"`, omit `temperature` while that effort is set, use `max_completion_tokens`, and `response_format.json_schema.strict: true` (`OPENAI_GM_JSON_SCHEMA`, `CAMPAIGN_COACH_JSON_SCHEMA`, `TEACH_COACH_JSON_SCHEMA`). The backup still sends OpenRouter's `reasoning: { effort: "low", exclude: true }` and `strict: false` when the base URL is OpenRouter.
+The first provider gets about half of `GM_BUDGET_MS` (default 90s, per-call cap `LLM_TIMEOUT_MS` 45s). Advisor (20s) and teach coach (18s) split their own timeouts the same way. Those clocks are unchanged for Terra at medium: a slow OpenAI attempt fails over inside the existing half, it does not lengthen the budget. Compatibility retries (dropping `reasoning_effort`, `max_completion_tokens`, or `json_schema`) share that same provider deadline and recompute the time left before each request. OpenAI omits `temperature` unless effort is `none`, uses `max_completion_tokens`, and `response_format.json_schema.strict: true` (`OPENAI_GM_JSON_SCHEMA`, `CAMPAIGN_COACH_JSON_SCHEMA`, `TEACH_COACH_JSON_SCHEMA`). The backup still sends OpenRouter's `reasoning: { effort: "low", exclude: true }` and `strict: false` when the base URL is OpenRouter.
 
 `ostfront.gm.call`, `ostfront.llm.log`, and Blob LLM records include `provider` and `model`. OpenRouter `HTTP-Referer` / `X-Title` headers are not sent to OpenAI.
 

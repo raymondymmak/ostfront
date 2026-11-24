@@ -36,14 +36,15 @@ Copy `.env.example` to `.env.local` only if you want a live narrator. The game i
 
 ```
 OPENAI_API_KEY=
-# OPENAI_MODEL=gpt-6-luna
+# OPENAI_MODEL=gpt-6.1-terra
+# OPENAI_REASONING_EFFORT=medium
 LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
 LLM_MODEL_STRONG=
 ```
 
-`OPENAI_API_KEY` is tried first (`OPENAI_MODEL` defaults to `gpt-6-luna`; set `gpt-6.1-terra` for Terra). `LLM_BASE_URL` is the backup OpenAI-compatible chat-completions endpoint (OpenRouter in production) and is unchanged. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent on that backup only. The chief of staff uses the first provider's model. `LLM_MODEL_STRONG` still escalates inside the backup provider on important Russian diplomacy turns.
+`OPENAI_API_KEY` is tried first. `OPENAI_MODEL` defaults to `gpt-6.1-terra`. `OPENAI_REASONING_EFFORT` defaults to `medium` (`none`, `low`, `medium`, `high`, `xhigh`, `max` on Chat Completions as `reasoning_effort`). `LLM_BASE_URL` is the backup OpenAI-compatible chat-completions endpoint (OpenRouter in production) and is unchanged. Optional `LLM_HTTP_REFERER` and `LLM_HTTP_TITLE` are sent on that backup only. The chief of staff uses the first provider's model. `LLM_MODEL_STRONG` still escalates inside the backup provider on important Russian diplomacy turns. Clocks stay 45s per call and 90s for the turn; the first provider gets about half so Terra at medium can fail over without a longer budget.
 
 When either key is present, the server still asks Stavka for the Russian orders. The model is called only for diplomacy (and chief-of-staff chat). The provider order is OpenAI, then the `LLM_*` backup, then the staff simulation. A provider is skipped when its key is missing, and the chain moves on after a timeout, HTTP 429 or 5xx, an empty reply, or JSON that will not parse or validate. The first provider gets about half of the 90 second wall clock (`GM_BUDGET_MS`) so the backup still fits; each call is capped at about 45 seconds (`LLM_TIMEOUT_MS`). Turns are classed routine, important, or critical (`lib/gm/tier.ts`). With `LLM_MODEL_STRONG` set, that escalation stays inside the backup provider. The turn function allows 120 seconds, and the browser waits longer than that. One JSON line is logged per call (`ostfront.gm.call` and `ostfront.llm.log`), including the provider and model, without the key or the prompt. If every provider fails, Stavka’s own diplomacy is kept.
 

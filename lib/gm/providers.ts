@@ -2,11 +2,26 @@ import { callTimeoutMs } from "@/lib/gm/timeouts"
 
 /**
  * Verified against OpenAI's model docs (24 Nov 2026):
- * https://developers.openai.com/api/docs/models/gpt-6-luna
- * Terra's id is `gpt-6.1-terra`, not `gpt-6-terra`.
+ * https://developers.openai.com/api/docs/models/gpt-6.1-terra
+ * Model id is `gpt-6.1-terra` (not `gpt-6-terra`).
+ * `reasoning.effort` on that page: none, low, medium (default), high, xhigh, max.
+ * Chat Completions sends that as `reasoning_effort` (Responses uses `reasoning.effort`).
+ * `minimal` is a general Chat Completions value but not listed for Terra.
  */
-export const DEFAULT_OPENAI_MODEL = "gpt-6-luna"
+export const DEFAULT_OPENAI_MODEL = "gpt-6.1-terra"
 export const OPENAI_CHAT_BASE = "https://api.openai.com/v1"
+
+/** Chat Completions `reasoning_effort` values Terra documents. */
+export const OPENAI_REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const
+export type OpenAiReasoningEffort = (typeof OPENAI_REASONING_EFFORTS)[number]
+export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAiReasoningEffort = "medium"
+
+/** Unknown or unsupported values (including `minimal`) stay on medium. */
+export function resolveOpenAiReasoningEffort(env: NodeJS.ProcessEnv = process.env): OpenAiReasoningEffort {
+  const raw = env.OPENAI_REASONING_EFFORT?.trim().toLowerCase()
+  if (raw && (OPENAI_REASONING_EFFORTS as readonly string[]).includes(raw)) return raw as OpenAiReasoningEffort
+  return DEFAULT_OPENAI_REASONING_EFFORT
+}
 
 export type LlmProviderId = "openai" | "openrouter"
 export type LlmWire = "openai" | "compatible"

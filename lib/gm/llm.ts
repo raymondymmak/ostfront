@@ -9,6 +9,7 @@ import {
 import {
   failureShouldFailover,
   providerAttemptTimeout,
+  resolveOpenAiReasoningEffort,
   resolveProviderChain,
   targetFromProvider,
   type LlmProviderId,
@@ -209,7 +210,7 @@ async function completeWithFormatFallback(
       const extra = openAiExtra(attempt, jsonSchema)
       return complete(target, model, user, extra, left(), log, {
         tokenParam: attempt.tokenParam,
-        omitTemperature: attempt.useReasoning,
+        omitTemperature: omitOpenAiTemperature(attempt),
       })
     })
   }
@@ -252,7 +253,7 @@ type OpenAiAttempt = {
   tokenParam: "max_completion_tokens" | "max_tokens"
 }
 
-/** OpenAI chat: `reasoning_effort`, strict json_schema, no temperature while reasoning, `max_completion_tokens`. */
+/** OpenAI chat: `reasoning_effort`, strict json_schema, no temperature unless effort is `none`, `max_completion_tokens`. */
 async function runOpenAiAttempts<T>(run: (attempt: OpenAiAttempt) => Promise<T>): Promise<T> {
   let useReasoning = true
   let useSchema = true
@@ -288,8 +289,13 @@ function openAiExtra(attempt: OpenAiAttempt, jsonSchema: JsonSchemaSpec | null):
   const extra: Record<string, unknown> = {}
   if (attempt.useSchema && jsonSchema) extra.response_format = schemaFormat(jsonSchema, true)
   else extra.response_format = { type: "json_object" }
-  if (attempt.useReasoning) extra.reasoning_effort = "low"
+  if (attempt.useReasoning) extra.reasoning_effort = resolveOpenAiReasoningEffort()
   return extra
+}
+
+/** Temperature is unsupported while Chat Completions reasoning effort is not `none`. */
+function omitOpenAiTemperature(attempt: OpenAiAttempt): boolean {
+  return attempt.useReasoning && resolveOpenAiReasoningEffort() !== "none"
 }
 
 function mentions(error: unknown, needle: string): boolean {
@@ -896,11 +902,14 @@ async function chatWithFallbacks(
   },
   log: AttemptLog,
 ): Promise<{ content: string; exchange: LlmExchange }> {
+  const deadline = Date.now() + Math.max(1, options.timeoutMs)
+  const remainingOptions = () => ({ ...options, timeoutMs: callWindow(deadline, options.timeoutMs) })
+
   if (target.wire === "openai") {
     return runOpenAiAttempts((attempt) =>
-      sendChatOnce(target, options, openAiExtra(attempt, options.jsonSchema ?? null), log, {
+      sendChatOnce(target, remainingOptions(), openAiExtra(attempt, options.jsonSchema ?? null), log, {
         tokenParam: attempt.tokenParam,
-        omitTemperature: attempt.useReasoning,
+        omitTemperature: omitOpenAiTemperature(attempt),
       }),
     )
   }
@@ -919,7 +928,7 @@ async function chatWithFallbacks(
   let last: unknown
   for (let index = 0; index < attempts.length; index += 1) {
     try {
-      return await sendChatOnce(target, options, attempts[index] ?? {}, log, {
+      return await sendChatOnce(target, remainingOptions(), attempts[index] ?? {}, log, {
         tokenParam: "max_tokens",
         omitTemperature: false,
       })

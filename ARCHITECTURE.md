@@ -277,7 +277,7 @@ Grade thresholds (eastern VP captured, Kraków not Russian): Decisive ≥ **7**,
 
 When `OPENAI_API_KEY` and/or `LLM_API_KEY` is set, `fetchGmWithCascade` tries providers in order (ADR 018):
 
-1. OpenAI (`OPENAI_MODEL`, default `gpt-6-luna`) with `reasoning_effort` and strict `json_schema`.
+1. OpenAI (`OPENAI_MODEL`, default `gpt-6.1-terra`; `reasoning_effort` from `OPENAI_REASONING_EFFORT`, default `medium`) and strict `json_schema`.
 2. The existing `LLM_*` client (OpenRouter in production), including `planCascade` / `LLM_MODEL_STRONG` inside that provider only.
 3. **Staff simulation** (Stavka only) if neither returns valid JSON.
 

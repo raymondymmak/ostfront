@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { fetchGmWithCascade } from "@/lib/gm/cascade"
-import { llmChatChain } from "@/lib/gm/llm"
+import { llmChat, llmChatChain } from "@/lib/gm/llm"
+import {
+  DEFAULT_OPENAI_MODEL,
+  providerAttemptTimeout,
+  resolveOpenAiReasoningEffort,
+  resolveProviderChain,
+} from "@/lib/gm/providers"
 import { OPENAI_GM_JSON_SCHEMA } from "@/lib/schema"
-import { DEFAULT_OPENAI_MODEL, providerAttemptTimeout, resolveProviderChain } from "@/lib/gm/providers"
 
 const TURN = {
   narration: "The front holds.",
@@ -67,6 +72,7 @@ describe("provider chain", () => {
     vi.spyOn(console, "log").mockImplementation(() => {})
     process.env.OPENAI_API_KEY = "sk-openai-test-key"
     delete process.env.OPENAI_MODEL
+    delete process.env.OPENAI_REASONING_EFFORT
     process.env.LLM_API_KEY = "sk-openrouter-test-key"
     process.env.LLM_BASE_URL = "https://openrouter.ai/api/v1"
     process.env.LLM_MODEL = "z-ai/glm-5.3-flash"
@@ -79,11 +85,16 @@ describe("provider chain", () => {
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
-  it("defaults OpenAI to gpt-6-luna and keeps OpenRouter second", () => {
+  it("defaults OpenAI to gpt-6.1-terra at medium effort and keeps OpenRouter second", () => {
     const chain = resolveProviderChain()
     expect(chain.map((provider) => provider.id)).toEqual(["openai", "openrouter"])
     expect(chain[0]?.model).toBe(DEFAULT_OPENAI_MODEL)
-    expect(chain[0]?.model).toBe("gpt-6-luna")
+    expect(chain[0]?.model).toBe("gpt-6.1-terra")
+    expect(resolveOpenAiReasoningEffort()).toBe("medium")
+    const effort = (value: string) => resolveOpenAiReasoningEffort({ OPENAI_REASONING_EFFORT: value } as unknown as NodeJS.ProcessEnv)
+    expect(effort("low")).toBe("low")
+    expect(effort("minimal")).toBe("medium")
+    expect(effort("none")).toBe("none")
     expect(chain[1]?.model).toBe("z-ai/glm-5.3-flash")
     expect(chain[1]?.baseUrl).toBe("https://openrouter.ai/api/v1")
     expect(providerAttemptTimeout(90_000, true, 45_000)).toBe(45_000)
@@ -105,8 +116,8 @@ describe("provider chain", () => {
     expect(result.ok).toBe(true)
     expect(calls).toHaveLength(1)
     expect(calls[0]?.url).toBe("https://api.openai.com/v1/chat/completions")
-    expect(calls[0]?.body.model).toBe("gpt-6-luna")
-    expect(calls[0]?.body.reasoning_effort).toBe("low")
+    expect(calls[0]?.body.model).toBe("gpt-6.1-terra")
+    expect(calls[0]?.body.reasoning_effort).toBe("medium")
     expect(calls[0]?.body).not.toHaveProperty("reasoning")
     expect(calls[0]?.body).not.toHaveProperty("temperature")
     expect(calls[0]?.body.max_completion_tokens).toBe(4000)
@@ -118,7 +129,7 @@ describe("provider chain", () => {
     expect(calls[0]?.headers.authorization).toBe("Bearer sk-openai-test-key")
     const logged = vi.mocked(console.info).mock.calls.map((args) => String(args[0])).join("\n")
     expect(logged).toContain('"provider":"openai"')
-    expect(logged).toContain('"model":"gpt-6-luna"')
+    expect(logged).toContain('"model":"gpt-6.1-terra"')
   })
 
   it("drops an unsupported OpenAI reasoning param without leaving the provider", async () => {
@@ -244,7 +255,7 @@ describe("provider chain", () => {
     const { record } = await playTurn(createInitialState(), [])
     expect(record.gmSource).toBe("mock")
     expect(record.gmDebug).toContain("provider openai")
-    expect(record.gmDebug).toContain("gpt-6-luna")
+    expect(record.gmDebug).toContain("gpt-6.1-terra")
     expect(record.gmDebug).toContain("OPENAI_MODEL")
   })
 })
@@ -257,6 +268,7 @@ describe("chat provider chain", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     process.env.OPENAI_API_KEY = "sk-openai-test-key"
     delete process.env.OPENAI_MODEL
+    delete process.env.OPENAI_REASONING_EFFORT
     process.env.LLM_API_KEY = "sk-openrouter-test-key"
     process.env.LLM_BASE_URL = "https://openrouter.ai/api/v1"
     process.env.LLM_MODEL = "z-ai/glm-5.3-flash"
@@ -292,11 +304,11 @@ describe("chat provider chain", () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.provider).toBe("openai")
-      expect(result.model).toBe("gpt-6-luna")
+      expect(result.model).toBe("gpt-6.1-terra")
       expect(result.content).toContain("Which flank")
     }
     expect(calls).toHaveLength(1)
-    expect(calls[0]?.body.reasoning_effort).toBe("low")
+    expect(calls[0]?.body.reasoning_effort).toBe("medium")
     const format = calls[0]?.body.response_format as { json_schema: { strict: boolean } }
     expect(format.json_schema.strict).toBe(true)
   })
@@ -359,4 +371,58 @@ describe("chat provider chain", () => {
     expect(calls).toHaveLength(2)
     expect(Date.now() - started).toBeLessThan(7_000)
   }, 15_000)
+
+  it("keeps compatibility retries inside the original OpenAI timeout", async () => {
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const calls = installFetch(async (_url, init, index) => {
+      if (index === 0) {
+        await delay(250)
+        return httpError(400, "unsupported parameter: reasoning_effort")
+      }
+      if (index === 1) {
+        await delay(250)
+        return httpError(400, "unsupported response_format json_schema")
+      }
+      return hang(init)
+    })
+    const started = Date.now()
+    const result = await llmChat({
+      model: "gpt-6.1-terra",
+      system: "Return JSON.",
+      user: "Hello",
+      timeoutMs: 800,
+      maxTokens: 40,
+      target: {
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "sk-openai-test-key",
+        wire: "openai",
+      },
+    })
+    expect(result.ok).toBe(false)
+    expect(calls.length).toBeGreaterThanOrEqual(2)
+    expect(Date.now() - started).toBeLessThan(1_150)
+  })
+
+  it("sends none effort with temperature when OPENAI_REASONING_EFFORT=none", async () => {
+    process.env.OPENAI_REASONING_EFFORT = "none"
+    const calls = installFetch(() => completion(JSON.stringify({ reply: "Which flank?" })))
+    const result = await llmChat({
+      model: "gpt-6.1-terra",
+      system: "Return JSON.",
+      user: "Hello",
+      timeoutMs: 2_000,
+      maxTokens: 40,
+      temperature: 0.3,
+      target: {
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "sk-openai-test-key",
+        wire: "openai",
+      },
+    })
+    expect(result.ok).toBe(true)
+    expect(calls[0]?.body.reasoning_effort).toBe("none")
+    expect(calls[0]?.body.temperature).toBe(0.3)
+  })
 })
