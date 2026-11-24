@@ -15,18 +15,19 @@ import {
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
 import { geometryPath } from "@/lib/map/svg-geometry"
+import { provinceResourceYield } from "@/lib/engine/economy"
 import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
 import { cursorHoverText, cursorTipPosition } from "@/lib/ui/map-hover"
-import { provincePaintProperties, resolvedFill, roleFor } from "@/lib/map/province-paint"
+import { provincePaintProperties, resolvedFill, roleFor, type PaintOverlayMode } from "@/lib/map/province-paint"
 import { TARGET_HIGHLIGHT_FADE_MS } from "@/lib/map/target-highlight"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
 
 type SvgMapProps = {
   provinces: MapProvince[]
   selectedId: string | null
-  overlay: "none" | "supply" | "unrest"
+  overlay: PaintOverlayMode
   orders: QueuedOrder[]
   flashIds: string[]
   orderMode: boolean
@@ -224,7 +225,11 @@ export function SvgMap({
         const selected = province.id === selectedId
         const flashing = flashIds.includes(province.id)
         const role = roleFor(province.id, paintTargets, selectedId)
-        const paint = provincePaintProperties(province, overlay, role)
+        const paint = provincePaintProperties(
+          { ...province, resourceYield: provinceResourceYield(province) },
+          overlay,
+          role,
+        )
         let stroke = selected ? "#f3e2a8" : province.controller === "central" ? "#1c3348" : "#5c261c"
         let strokeWidth = selected ? view.label * 0.22 : view.label * 0.08
         const fill = resolvedFill(paint, role)

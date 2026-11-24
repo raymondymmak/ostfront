@@ -576,7 +576,7 @@ function buildSteps(cli, targets) {
     },
     {
       id: "06-map-modes",
-      name: "Map modes Control / Supply / Unrest",
+      name: "Map modes Control / Supply / Unrest / Resources",
       async run({ page }) {
         // Overlay scale lives in the Legend paper — restore it after map-click stows.
         await restoreTrayTab(page, "legend-toggle")
@@ -585,8 +585,41 @@ function buildSteps(cli, targets) {
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-unrest]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible" })
+        await page.locator("[data-testid=map-mode-resources]").click()
+        const scale = page.locator("[data-testid=overlay-scale]")
+        await scale.waitFor({ state: "visible" })
+        const scaleText = ((await scale.innerText()) ?? "").replace(/\s+/g, " ")
+        if (!/unrest\/100/i.test(scaleText)) {
+          throw new Error(`Resources scale missing yield formula: ${scaleText.slice(0, 240)}`)
+        }
         await page.locator("[data-testid=map-mode-none]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "hidden", timeout: 5_000 })
+      },
+    },
+    {
+      id: "06b-economy-breakdown",
+      name: "Manpower and industry breakdown",
+      async run({ page }) {
+        const manpower = page.locator("[data-testid=economy-manpower]")
+        await manpower.click()
+        const panel = page.locator("[data-testid=economy-breakdown]")
+        await panel.waitFor({ state: "visible", timeout: 5_000 })
+        const text = ((await panel.innerText()) ?? "").replace(/\s+/g, " ")
+        if (!text.includes("unrest/100")) throw new Error(`Breakdown missing unrest formula: ${text.slice(0, 280)}`)
+        if (!text.includes("1.3")) throw new Error("Breakdown missing Central Powers industry ×1.3")
+        if (!/per 4 strength/i.test(text)) throw new Error("Breakdown missing refit cost of 1 manpower per 4 strength")
+        const incomeMp = await panel.getAttribute("data-income-mp")
+        const incomeIp = await panel.getAttribute("data-income-ip")
+        const refitMp = await panel.getAttribute("data-refit-mp")
+        if (incomeMp == null || incomeIp == null || refitMp == null) {
+          throw new Error("Breakdown is missing engine income or refit attributes")
+        }
+        await page.locator("[data-testid=economy-industry]").click()
+        await panel.waitFor({ state: "visible" })
+        const focused = await panel.getAttribute("data-economy-focus")
+        if (focused !== "industry") throw new Error(`Expected industry focus, got ${focused}`)
+        await page.keyboard.press("Escape")
+        await panel.waitFor({ state: "hidden", timeout: 5_000 })
       },
     },
     {

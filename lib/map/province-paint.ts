@@ -1,3 +1,4 @@
+import { resourceYieldShade } from "@/lib/engine/economy"
 import { MAP_FACTION_FILL } from "@/lib/ui/map-target-style"
 import type { Faction } from "@/lib/types"
 
@@ -5,9 +6,19 @@ export type ProvincePaintFields = {
   controller: Faction
   supply: number
   unrest: number
+  /** Effective manpower + industry from `provinceResourceYield`. Resources lens only. */
+  resourceYield?: number
 }
 
-export type PaintOverlayMode = "none" | "supply" | "unrest"
+export type PaintOverlayMode = "none" | "supply" | "unrest" | "resources"
+
+/** Resources lens ramp. 0 is barren, 100 is the richest base yield on the map. */
+export const RESOURCE_RAMP = {
+  low: "#3a342c",
+  mid: "#a67c3d",
+  high: "#f3e2a8",
+  pivot: 50,
+} as const
 
 export type TargetPaintRole = "none" | "move" | "attack" | "reach"
 
@@ -26,6 +37,15 @@ export const LIFT_REACH = 0.28
 export function baseFill(province: ProvincePaintFields, mode: PaintOverlayMode): string {
   if (mode === "supply") return rampHex(province.supply, "#7a2e2a", "#c6a15a", "#2d6a45", 45)
   if (mode === "unrest") return rampHex(province.unrest, "#3e5348", "#d4a24c", "#8e2430", 50)
+  if (mode === "resources") {
+    return rampHex(
+      resourceYieldShade(province.resourceYield ?? 0),
+      RESOURCE_RAMP.low,
+      RESOURCE_RAMP.mid,
+      RESOURCE_RAMP.high,
+      RESOURCE_RAMP.pivot,
+    )
+  }
   return MAP_FACTION_FILL[province.controller]
 }
 

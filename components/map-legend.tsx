@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { maxBaseResourceYield } from "@/lib/engine/economy"
+import { RESOURCE_RAMP, type PaintOverlayMode } from "@/lib/map/province-paint"
 import { RAIL_STYLE } from "@/lib/map/rail-lines"
 
-type Overlay = "none" | "supply" | "unrest"
+type Overlay = PaintOverlayMode
 
 export function MapLegend({
   showRails,
@@ -109,6 +111,7 @@ export function MapLegend({
       )}
       {overlay === "supply" && <SupplyScale />}
       {overlay === "unrest" && <UnrestScale />}
+      {overlay === "resources" && <ResourceScale />}
     </>
   )
 
@@ -148,6 +151,29 @@ function SupplyScale() {
       />
       <p className="mt-1 text-[10px] leading-snug text-[#5c5144]">
         Under 30 a province yields nothing and its formations cannot advance. Recruiting needs 60.
+      </p>
+    </div>
+  )
+}
+
+function ResourceScale() {
+  const max = maxBaseResourceYield()
+  const mid = max / 2
+  return (
+    <div className="border-t border-[#3d342b]/25 px-2.5 py-2" data-testid="overlay-scale">
+      <p className="font-semibold text-[#3d342b]">Resources</p>
+      <Ramp
+        gradient={`linear-gradient(to right, ${RESOURCE_RAMP.low} 0%, ${RESOURCE_RAMP.mid} 50%, ${RESOURCE_RAMP.high} 100%)`}
+        tickAt={50}
+        marks={[
+          { at: "left", label: "0", title: "Yield 0. Supply under 30, or no base yield" },
+          { at: "50%", label: String(mid), title: "Half of the richest base yield on the map" },
+          { at: "right", label: String(max), title: "Richest base yield, manpower plus industry" },
+        ]}
+      />
+      <p className="mt-1 text-[10px] leading-snug text-[#5c5144]">
+        Shade is effective yield: base × (1 − unrest/100), halved if occupied, and 0 if supply is under 30.
+        National multipliers are not in the colour.
       </p>
     </div>
   )

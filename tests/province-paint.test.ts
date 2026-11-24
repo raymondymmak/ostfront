@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import { createInitialState } from "@/lib/data/scenario"
+import { maxBaseResourceYield, provinceResourceYield } from "@/lib/engine/economy"
 import {
   LIFT_REACH,
   LIFT_TARGET,
+  RESOURCE_RAMP,
   baseFill,
   liftFill,
   provincePaintProperties,
@@ -24,6 +27,11 @@ describe("province paint", () => {
     expect(baseFill({ ...central, supply: 0 }, "supply")).toMatch(/^#[0-9a-f]{6}$/i)
     expect(baseFill({ ...central, supply: 100 }, "supply")).toMatch(/^#[0-9a-f]{6}$/i)
     expect(baseFill({ ...central, unrest: 50 }, "unrest")).toMatch(/^#[0-9a-f]{6}$/i)
+    expect(baseFill({ ...central, resourceYield: 0 }, "resources")).toBe(RESOURCE_RAMP.low)
+    expect(baseFill({ ...central, resourceYield: maxBaseResourceYield() }, "resources")).toBe(RESOURCE_RAMP.high)
+    expect(baseFill({ ...central, resourceYield: 0 }, "resources")).not.toBe(
+      baseFill({ ...central, resourceYield: maxBaseResourceYield() }, "resources"),
+    )
     const paint = provincePaintProperties({ ...central, supply: 40 }, "supply", "move")
     expect(paint.lift).not.toBe(paint.fill)
     expect(paint.liftSoft).not.toBe(paint.fill)
@@ -50,6 +58,34 @@ describe("province paint", () => {
 
   it("reach uses a lifted control color", () => {
     expect(reachFill(central)).toBe(liftFill(MAP_FACTION_FILL.central, LIFT_REACH))
+  })
+
+  it("shades a fed province richer than one under supply 30", () => {
+    const state = createInitialState()
+    const silesia = state.provinces.find((province) => province.id === "oberschlesien")!
+    const starved = { ...silesia, supply: 0 }
+    const rich = baseFill(
+      {
+        controller: silesia.controller,
+        supply: silesia.supply,
+        unrest: silesia.unrest,
+        resourceYield: provinceResourceYield(silesia),
+      },
+      "resources",
+    )
+    const poor = baseFill(
+      {
+        controller: starved.controller,
+        supply: starved.supply,
+        unrest: starved.unrest,
+        resourceYield: provinceResourceYield(starved),
+      },
+      "resources",
+    )
+    expect(provinceResourceYield(starved)).toBe(0)
+    expect(provinceResourceYield(silesia)).toBeGreaterThan(0)
+    expect(rich).not.toBe(poor)
+    expect(poor).toBe(RESOURCE_RAMP.low)
   })
 
   it("assigns move, attack, and reach roles; non-targets stay none", () => {

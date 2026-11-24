@@ -1,11 +1,14 @@
 "use client"
 
-type Overlay = "none" | "supply" | "unrest"
+import type { PaintOverlayMode } from "@/lib/map/province-paint"
+
+type Overlay = PaintOverlayMode
 
 const MODES = [
   ["none", "Control", "Colour provinces by who holds them"],
   ["supply", "Supply", "Colour by supply. Under 30, formations cannot advance"],
   ["unrest", "Unrest", "Colour by unrest. At 85, formations lose strength"],
+  ["resources", "Resources", "Colour by manpower and industry yield. Under supply 30, a province yields nothing"],
 ] as const
 
 export function MapMode({

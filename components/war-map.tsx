@@ -20,13 +20,14 @@ import {
   geometryValid,
   type ProvinceGeometry,
 } from "@/lib/data/geometry"
+import { provinceResourceYield } from "@/lib/engine/economy"
 import { listedStrength } from "@/lib/engine/echelon"
 import {
   MAP_GLYPHS_URL,
   provinceCounterCollection,
   provinceLabelCollection,
 } from "@/lib/map/province-label-layers"
-import { provincePaintProperties } from "@/lib/map/province-paint"
+import { provincePaintProperties, type PaintOverlayMode } from "@/lib/map/province-paint"
 import {
   LESSON_TARGET_OUTLINE_LAYER,
   applyLessonFocusLayers,
@@ -53,7 +54,7 @@ export type MapProvince = Province & {
   vp?: number
 }
 
-type Overlay = "none" | "supply" | "unrest"
+type Overlay = PaintOverlayMode
 
 type MapInput = {
   provinces: MapProvince[]
@@ -599,7 +600,7 @@ function syncMap(
   const paintInput = targetIds
     ? { move: targetIds.move, attack: targetIds.attack, canOrder: targetIds.canOrder }
     : undefined
-  const nextDataKey = `${snapshot.overlay}:${snapshot.provinces.map((p) => `${p.id}:${p.controller}:${p.supply}:${p.unrest}:${listedStrength(p.units)}`).join("|")}`
+  const nextDataKey = `${snapshot.overlay}:${snapshot.provinces.map((p) => `${p.id}:${p.owner}:${p.controller}:${p.supply}:${p.unrest}:${listedStrength(p.units)}`).join("|")}`
   const dataChanged = nextDataKey !== provinceDataKey.current
   const features: GeoJSON.Feature[] = []
   const bounds = new maplibregl.LngLatBounds()
@@ -612,7 +613,11 @@ function syncMap(
     const strength = listedStrength(province.units)
     eachCoord(province.polygon, (coord) => bounds.extend(coord))
     // Base fills/lifts only — highlight role is feature-state (fade without setData).
-    const paint = provincePaintProperties(province, snapshot.overlay, "none")
+    const paint = provincePaintProperties(
+      { ...province, resourceYield: provinceResourceYield(province) },
+      snapshot.overlay,
+      "none",
+    )
     features.push({
       type: "Feature",
       id: province.id,

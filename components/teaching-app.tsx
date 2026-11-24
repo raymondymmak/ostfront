@@ -30,6 +30,7 @@ import { toggleSelection } from "@/lib/ui/selection"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { spendable } from "@/lib/engine/economy"
+import type { PaintOverlayMode } from "@/lib/map/province-paint"
 import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { CoachHint } from "@/lib/teach/coach"
 import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lessons"
@@ -89,7 +90,7 @@ export function TeachingApp() {
   const [beliefRecall, setBeliefRecall] = useState<{ summary: string; question: string } | null>(null)
   const [state, setState] = useState<GameState | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
+  const [overlay, setOverlay] = useState<PaintOverlayMode>("none")
   const [orderMode, setOrderMode] = useState(true)
   const [queue, setQueue] = useState<QueuedOrder[]>([])
   const [hintLevel, setHintLevel] = useState(0)
