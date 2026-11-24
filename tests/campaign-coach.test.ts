@@ -549,13 +549,16 @@ describe("campaign coach", () => {
   })
 
   it("opens odds-only replies with a question and names the plan", () => {
-    const shaped = shapeCoachReply("About 2.8:1 if the Russians don't reinforce.", null, { queuedAttacks: true })
+    const shaped = shapeCoachReply("About 2.8:1 if the Russians don't reinforce.", null)
     const sentences = splitCoachSentences(shaped.reply)
-    expect(sentences[0]).toMatch(/\?$/)
+    expect(sentences[0]).toMatch(/What does that figure change in your decision\?/)
     expect(sentences[0]).not.toMatch(/^\s*about\s+\d/i)
     expect(shaped.reply).toMatch(/2\.8:1/)
-    expect(shaped.reply).toMatch(/queued plan/i)
+    expect(shaped.reply).not.toMatch(/on the queued plan/i)
     expect(sentences.length).toBeLessThanOrEqual(3)
+    const planned = shapeCoachReply("About 2.8:1 if the Russians don't reinforce.", null, { queuedAttacks: true })
+    expect(splitCoachSentences(planned.reply)[0]).toMatch(/\?/)
+    expect(planned.reply).toMatch(/on the queued plan/i)
   })
 
   it("does not relabel chronicle battle odds as a queued plan", () => {
@@ -572,6 +575,11 @@ describe("campaign coach", () => {
     const contact = capCoachReply("Kraków into Kielce is the strongest contact at about 4.2:1 if the Russians don't reinforce.")
     expect(contact).not.toMatch(/on the queued plan/i)
     expect(contact).toMatch(/about 4\.2:1/)
+    expect(splitCoachSentences(contact)[0]).toMatch(/What does that figure change in your decision\?/)
+    const bareBattle = capCoachReply("Our assault failed at 0.7:1 (roll 1); we lost 61, they lost 23.")
+    expect(splitCoachSentences(bareBattle)[0]).toMatch(/What does that figure change in your decision\?/)
+    expect(bareBattle).toMatch(/0\.7:1 \(roll 1\)/)
+    expect(bareBattle).not.toMatch(/on the queued plan/i)
   })
 
   it("turns a clerk command into a tradeoff question", () => {

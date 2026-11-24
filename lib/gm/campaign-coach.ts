@@ -609,8 +609,8 @@ function annotateOddsAssumption(sentence: string, queuedAttacks: boolean): strin
 }
 
 /**
- * Odds replies open with a question. "On the queued plan" and the plan lead-in
- * apply only when the player has a queued attack — never to chronicle battle odds.
+ * Every odds reply opens with a question. "On the queued plan" is added only when
+ * a queued attack exists and the sentence is not a chronicle battle line.
  */
 export function ensureOddsQuestionFirst(reply: string, queuedAttacks = false): string {
   const sentences = splitCoachSentences(reply).map((sentence) => annotateOddsAssumption(sentence, queuedAttacks))
@@ -626,8 +626,11 @@ export function ensureOddsQuestionFirst(reply: string, queuedAttacks = false): s
     return [question, ...sentences.filter((_, index) => index !== questionAt)].join(" ").trim()
   }
   const chronicle = sentences.some(isChronicleOddsSentence)
-  if (!queuedAttacks || chronicle) return joined
-  return [`What does that ratio change in your plan?`, ...sentences].join(" ").trim()
+  const lead =
+    queuedAttacks && !chronicle
+      ? "What does that ratio change in your plan?"
+      : "What does that figure change in your decision?"
+  return [lead, ...sentences].join(" ").trim()
 }
 
 const ODDS_FIGURE =
