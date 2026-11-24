@@ -531,7 +531,7 @@ function buildSteps(cli, targets) {
         await page.locator("[data-testid=objectives]").waitFor({ state: "visible" })
         await page.locator("[data-testid=treasury]").waitFor({ state: "visible" })
         await page.locator("[data-testid=grade]").waitFor({ state: "visible" })
-        const hud = page.locator("header")
+        const hud = page.locator("[data-testid=table-hud]")
         await expectText(hud, "Strength")
         await expectText(hud, "VP")
         const hudText = await hud.innerText()
