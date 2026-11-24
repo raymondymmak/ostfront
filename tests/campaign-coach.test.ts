@@ -991,6 +991,19 @@ describe("campaign coach guards", () => {
     ).toBe(true)
   })
 
+  it("ignores generic direction words in reachability parsing", () => {
+    const map = staffMap(createInitialState())
+    const eastern = resolveReachabilityEndpoints(
+      map,
+      "Can Lublin reach the eastern front from Warsaw?",
+      "lublin",
+    )
+    expect(eastern.targetId).not.toBe("eastern_slovakia")
+    const west = resolveReachabilityEndpoints(map, "Can Lublin reach Warsaw from the west?", "lublin")
+    expect(west.fromId).toBe("lublin")
+    expect(west.fromId).not.toBe("gdynia")
+  })
+
   it("does not conflate Upper and Lower Silesia on shared tokens", () => {
     const map = staffMap(createInitialState())
     const question = "Is Upper Silesia reachable from Lublin?"

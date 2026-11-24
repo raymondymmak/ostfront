@@ -1365,6 +1365,25 @@ function mentionTexts(question: string): string[] {
   return lower === folded ? [lower] : [lower, folded]
 }
 
+/** Too generic to resolve a province on token fallback alone (need a full label). */
+const GENERIC_LABEL_TOKENS = new Set([
+  "central",
+  "eastern",
+  "east",
+  "greater",
+  "inner",
+  "lesser",
+  "lower",
+  "north",
+  "northern",
+  "outer",
+  "south",
+  "southern",
+  "upper",
+  "west",
+  "western",
+])
+
 function boundaryPattern(phrase: string): RegExp {
   const body = escapeRegExp(phrase).replace(/\s+/g, "\\s+")
   return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "iu")
@@ -1415,9 +1434,10 @@ function tokenFallbackMentionedInQuestion(question: string, map: GameState, labe
     .split(/[\s-]+/)
     .filter((part) => part.length > 2)
   const candidates = tokens.length > 0 ? tokens : [label.toLowerCase()]
-  return candidates.some(
-    (token) => !tokenConsumedByFullLabel(question, map, token) && tokenMentionedInQuestion(question, token),
-  )
+  return candidates.some((token) => {
+    if (GENERIC_LABEL_TOKENS.has(token)) return false
+    return !tokenConsumedByFullLabel(question, map, token) && tokenMentionedInQuestion(question, token)
+  })
 }
 
 function provinceLabels(province: GameState["provinces"][number]): string[] {
