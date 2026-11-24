@@ -964,6 +964,33 @@ describe("campaign coach guards", () => {
     expect(endpoints.targetId).toBe("lodz")
   })
 
+  it("matches Łódź with native spelling and word boundaries", () => {
+    const map = staffMap(createInitialState())
+    const endpoints = resolveReachabilityEndpoints(map, "Is Łódź reachable from Lublin?", null)
+    expect(endpoints.fromId).toBe("lublin")
+    expect(endpoints.targetId).toBe("lodz")
+  })
+
+  it("matches a partial multi-word province label (Masuren)", () => {
+    const map = staffMap(createInitialState())
+    const mentioned = collectMentionedProvinceIds(map, "Is Masuren reachable from Warsaw?")
+    expect(mentioned).toContain("ermland_masuren")
+    expect(mentioned).toContain("warszawa")
+    expect(mentioned).not.toContain("niederschlesien")
+    const endpoints = resolveReachabilityEndpoints(map, "Is Masuren reachable from Warsaw?", null)
+    expect(endpoints.fromId).toBe("warszawa")
+    expect(endpoints.targetId).toBe("ermland_masuren")
+  })
+
+  it("allows bare Silesia token when no fuller province name is given", () => {
+    const map = staffMap(createInitialState())
+    const mentioned = collectMentionedProvinceIds(map, "Can we reach Silesia from Krakow?")
+    expect(mentioned).toContain("krakow")
+    expect(
+      mentioned.some((id) => id === "niederschlesien" || id === "oberschlesien" || id === "czeske_slezsko"),
+    ).toBe(true)
+  })
+
   it("does not conflate Upper and Lower Silesia on shared tokens", () => {
     const map = staffMap(createInitialState())
     const question = "Is Upper Silesia reachable from Lublin?"

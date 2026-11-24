@@ -1348,7 +1348,11 @@ function inputSelectedFrom(selected: string): string | null {
 }
 
 function foldDiacritics(raw: string): string {
-  return raw.normalize("NFD").replace(/\p{M}/gu, "")
+  return raw
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/Ł/g, "L")
+    .replace(/ł/g, "l")
 }
 
 function escapeRegExp(raw: string): string {
@@ -1363,7 +1367,7 @@ function mentionTexts(question: string): string[] {
 
 function boundaryPattern(phrase: string): RegExp {
   const body = escapeRegExp(phrase).replace(/\s+/g, "\\s+")
-  return new RegExp(`\\b${body}\\b`, "i")
+  return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "iu")
 }
 
 function fullLabelMentionedInQuestion(question: string, label: string): boolean {
@@ -1389,14 +1393,31 @@ function tokenMentionedInQuestion(question: string, token: string): boolean {
   return false
 }
 
-function labelMentionedInQuestion(question: string, label: string): boolean {
-  if (fullLabelMentionedInQuestion(question, label)) return true
+/** Token appears inside another province's full phrase already matched in this question. */
+function tokenConsumedByFullLabel(question: string, map: GameState, token: string): boolean {
+  const lowerToken = token.toLowerCase()
+  for (const province of map.provinces) {
+    for (const label of provinceLabels(province)) {
+      if (!fullLabelMentionedInQuestion(question, label)) continue
+      const words = label
+        .toLowerCase()
+        .split(/[\s-]+/)
+        .filter((part) => part.length > 2)
+      if (words.length > 1 && words.includes(lowerToken)) return true
+    }
+  }
+  return false
+}
+
+function tokenFallbackMentionedInQuestion(question: string, map: GameState, label: string): boolean {
   const tokens = label
     .toLowerCase()
     .split(/[\s-]+/)
     .filter((part) => part.length > 2)
-  if (tokens.length <= 1) return tokenMentionedInQuestion(question, tokens[0] ?? label)
-  return tokens.every((token) => tokenMentionedInQuestion(question, token))
+  const candidates = tokens.length > 0 ? tokens : [label.toLowerCase()]
+  return candidates.some(
+    (token) => !tokenConsumedByFullLabel(question, map, token) && tokenMentionedInQuestion(question, token),
+  )
 }
 
 function provinceLabels(province: GameState["provinces"][number]): string[] {
@@ -1412,16 +1433,16 @@ export function collectMentionedProvinceIds(map: GameState, question: string): s
       fullMatch.push(province.id)
     }
   }
-  const uniqueFull = [...new Set(fullMatch)]
-  if (uniqueFull.length > 0) return uniqueFull
+  const uniqueFull = new Set(fullMatch)
 
   const tokenMatch: string[] = []
   for (const province of map.provinces) {
-    if (provinceLabels(province).some((label) => labelMentionedInQuestion(question, label))) {
+    if (uniqueFull.has(province.id)) continue
+    if (provinceLabels(province).some((label) => tokenFallbackMentionedInQuestion(question, map, label))) {
       tokenMatch.push(province.id)
     }
   }
-  return [...new Set(tokenMatch)]
+  return [...new Set([...uniqueFull, ...tokenMatch])]
 }
 
 function provinceIdFromLooseLabel(map: GameState, raw: string): string | null {
@@ -1440,7 +1461,7 @@ function provinceIdFromLooseLabel(map: GameState, raw: string): string | null {
     }
   }
   for (const province of map.provinces) {
-    if (provinceLabels(province).some((label) => labelMentionedInQuestion(needle, label))) {
+    if (provinceLabels(province).some((label) => tokenFallbackMentionedInQuestion(needle, map, label))) {
       return province.id
     }
   }
