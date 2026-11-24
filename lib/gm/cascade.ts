@@ -2,6 +2,7 @@ import { findUnit, resolveTurn } from "@/lib/engine/turn"
 import type { InterpretedOrders } from "@/lib/gm/interpret"
 import type { GmDebug, GmModelEnv } from "@/lib/gm/debug"
 import { llmAiTurn, resolveLlmModels, type LlmFailure, type LlmModels } from "@/lib/gm/llm"
+import { resolveProviderChain, targetFromProvider, type LlmProvider } from "@/lib/gm/providers"
 import { logGmCall } from "@/lib/gm/route-log"
 import { scoreTurn, type TurnTier } from "@/lib/gm/tier"
 import { callTimeoutMs, resolveGmBudgetMs, resolveLlmTimeoutMs } from "@/lib/gm/timeouts"
@@ -48,22 +49,73 @@ export async function fetchGmWithCascade(
   orders: PlayerOrder[],
   interpreted: InterpretedOrders,
 ): Promise<CascadeOutcome> {
-  const models = resolveLlmModels()
-  const plan = planCascade(state, orders, models)
+  const providers = resolveProviderChain()
   const callCap = resolveLlmTimeoutMs()
-  const budget = resolveGmBudgetMs()
-  const deadline = Date.now() + budget
+  const deadline = Date.now() + resolveGmBudgetMs()
+  let last: Extract<CascadeOutcome, { ok: false }> | null = null
+
+  for (let index = 0; index < providers.length; index += 1) {
+    const provider = providers[index]!
+    const another = index < providers.length - 1
+    const remaining = Math.max(1, deadline - Date.now())
+    const slice = another ? Math.floor(remaining / 2) : remaining
+    const providerDeadline = Date.now() + slice
+    const outcome = await fetchProviderCascade(
+      state,
+      orders,
+      interpreted,
+      provider,
+      providerDeadline,
+      callCap,
+    )
+    if (outcome.ok) return outcome
+    last = outcome
+  }
+
+  return (
+    last ?? {
+      ok: false,
+      warning: "The game master could not be reached.",
+      debug: {
+        path: "llm",
+        reason: "No LLM provider is configured",
+        elapsedMs: 0,
+        model: "none",
+        modelEnv: "LLM_MODEL",
+        provider: "openrouter",
+        httpStatus: null,
+        content: "n/a",
+        fallback: "staff-simulation",
+      },
+    }
+  )
+}
+
+async function fetchProviderCascade(
+  state: GameState,
+  orders: PlayerOrder[],
+  interpreted: InterpretedOrders,
+  provider: LlmProvider,
+  deadline: number,
+  callCap: number,
+): Promise<CascadeOutcome> {
+  const models: LlmModels = { cheap: provider.model, strong: provider.strongModel }
+  const plan = planCascade(state, orders, models)
+  const target = targetFromProvider(provider)
+  const budget = Math.max(1, deadline - Date.now())
 
   const firstTimeout = callTimeoutMs(budget, plan.mayEscalate, callCap)
   const first = await llmAiTurn(state, orders, {
     model: plan.primaryModel,
     timeoutMs: firstTimeout,
     budgetDeadline: deadline,
+    target,
   })
 
   logGmCall({
     tag: "ostfront.gm.call",
     tier: plan.tier,
+    provider: provider.id,
     model: plan.primaryModel,
     latencyMs: first.latencyMs,
     outcome: first.ok ? "ok" : outcomeFromFailure(first),
@@ -85,6 +137,7 @@ export async function fetchGmWithCascade(
         logGmCall({
           tag: "ostfront.gm.call",
           tier: plan.tier,
+          provider: provider.id,
           model: plan.escalationModel,
           latencyMs: 0,
           outcome: "escalated_skip",
@@ -102,10 +155,12 @@ export async function fetchGmWithCascade(
         model: plan.escalationModel,
         timeoutMs: secondTimeout,
         budgetDeadline: deadline,
+        target,
       })
       logGmCall({
         tag: "ostfront.gm.call",
         tier: plan.tier,
+        provider: provider.id,
         model: plan.escalationModel,
         latencyMs: second.latencyMs,
         outcome: second.ok ? "ok" : outcomeFromFailure(second),
@@ -122,6 +177,7 @@ export async function fetchGmWithCascade(
         path: "cascade",
         model: plan.escalationModel,
         modelEnv: "LLM_MODEL_STRONG",
+        provider: provider.id,
         elapsedMs: first.latencyMs + second.latencyMs,
         reason: `${second.abortReason} (after rejections)`,
       })
@@ -139,7 +195,8 @@ export async function fetchGmWithCascade(
       return failureOutcome("Game master validation failed and there was no time to retry.", first, {
         path: "cascade",
         model: plan.primaryModel,
-        modelEnv: modelEnvFor(plan.primaryModel, models),
+        modelEnv: modelEnvFor(plan.primaryModel, provider),
+        provider: provider.id,
         elapsedMs: first.latencyMs,
         reason: `time budget exhausted (${first.abortReason})`,
       })
@@ -148,10 +205,12 @@ export async function fetchGmWithCascade(
       model: plan.escalationModel,
       timeoutMs: secondTimeout,
       budgetDeadline: deadline,
+      target,
     })
     logGmCall({
       tag: "ostfront.gm.call",
       tier: plan.tier,
+      provider: provider.id,
       model: plan.escalationModel,
       latencyMs: second.latencyMs,
       outcome: second.ok ? "ok" : outcomeFromFailure(second),
@@ -165,6 +224,7 @@ export async function fetchGmWithCascade(
       path: "cascade",
       model: plan.escalationModel,
       modelEnv: "LLM_MODEL_STRONG",
+      provider: provider.id,
       elapsedMs: first.latencyMs + second.latencyMs,
       reason: `${second.abortReason} (after ${first.kind})`,
     })
@@ -173,7 +233,8 @@ export async function fetchGmWithCascade(
   return failureOutcome(`${playerFault(first)}.`, first, {
     path: "llm",
     model: plan.primaryModel,
-    modelEnv: modelEnvFor(plan.primaryModel, models),
+    modelEnv: modelEnvFor(plan.primaryModel, provider),
+    provider: provider.id,
     elapsedMs: first.latencyMs,
   })
 }
@@ -215,8 +276,9 @@ export function buildStaffTurn(
   }
 }
 
-function modelEnvFor(model: string, models: LlmModels): GmModelEnv {
-  return models.strong !== null && model === models.strong ? "LLM_MODEL_STRONG" : "LLM_MODEL"
+function modelEnvFor(model: string, provider: LlmProvider): GmModelEnv {
+  if (provider.id === "openai") return "OPENAI_MODEL"
+  return provider.strongModel !== null && model === provider.strongModel ? "LLM_MODEL_STRONG" : "LLM_MODEL"
 }
 
 function faultLabel(result: LlmFailure): string {
@@ -242,6 +304,7 @@ function failureOutcome(
     path: GmDebug["path"]
     model: string
     modelEnv: GmModelEnv
+    provider: LlmProvider["id"]
     elapsedMs: number
     reason?: string
   },
@@ -255,6 +318,7 @@ function failureOutcome(
       elapsedMs: extra.elapsedMs,
       model: extra.model,
       modelEnv: extra.modelEnv,
+      provider: extra.provider,
       httpStatus: result.httpStatus,
       content: result.content,
       fallback: "staff-simulation",

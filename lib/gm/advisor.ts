@@ -22,7 +22,7 @@ import { normalizeName } from "@/lib/format"
 import { labelFor, nameOf, queueMark, rankAdvisorCards, sameOrder, unitsOf } from "@/lib/gm/advisor-cards"
 import type { AdvisorCard, AdvisorChatMessage, AdvisorOrder, AdvisorResponse } from "@/lib/gm/advisor-types"
 import { leaveDepotGarrison } from "@/lib/orders"
-import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
+import { extractTopLevelJson, llmChatChain, llmConfigured, stripNullFields } from "@/lib/gm/llm"
 import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
 import type { Faction, GameState, PlayerOrder, Province, Unit, UnitKind } from "@/lib/types"
 
@@ -260,9 +260,7 @@ export async function advise(input: {
   if (fixtureEnabled()) {
     judged = classifyAdvisorJson(JSON.stringify({ reply: brief.reply, suggestions: brief.orders }))
   } else {
-    const models = resolveLlmModels()
-    const chat = await llmChat({
-      model: models.cheap,
+    const chat = await llmChatChain({
       system: SYSTEM,
       user: prompt,
       timeoutMs: ADVISOR_TIMEOUT_MS,
@@ -270,11 +268,18 @@ export async function advise(input: {
       temperature: 0.3,
       gameTurn: input.state.turn,
       gameDate: input.state.date,
+      kind: "advisor",
+      accept: (content) => {
+        const judged = classifyAdvisorJson(content)
+        if (judged.parsed) return { ok: true }
+        return { ok: false, outcome: judged.outcome === "invalid_json" ? "invalid_json" : "schema", error: judged.error ?? "invalid advisor JSON" }
+      },
     })
     console.log(
       JSON.stringify({
         tag: "ostfront.advisor.call",
-        model: models.cheap,
+        provider: chat.provider,
+        model: chat.model,
         latencyMs: chat.latencyMs,
         outcome: chat.ok ? "ok" : chat.kind,
       }),
@@ -286,7 +291,8 @@ export async function advise(input: {
         attempt: chat.exchange.attempt,
         gameTurn: input.state.turn,
         gameDate: input.state.date,
-        model: models.cheap,
+        provider: chat.provider,
+        model: chat.model,
         latencyMs: chat.exchange.latencyMs,
         httpStatus: chat.exchange.httpStatus,
         finishReason: chat.exchange.finishReason,
@@ -297,7 +303,7 @@ export async function advise(input: {
         fellBack: judged.outcome !== "ok",
       })
     } else {
-      failure = chat.kind === "unconfigured" ? "http" : chat.kind
+      failure = chat.kind === "empty" || chat.kind === "timeout" ? chat.kind : "http"
     }
   }
 
@@ -1615,7 +1621,7 @@ function classifyAdvisorJson(text: string): AdvisorJson {
   if (!extracted.value || typeof extracted.value !== "object" || Array.isArray(extracted.value)) {
     return { parsed: null, outcome: "schema", error: "Advisor JSON was not an object" }
   }
-  const record = extracted.value as { reply?: unknown; suggestions?: unknown; orders?: unknown }
+  const record = stripNullFields(extracted.value) as { reply?: unknown; suggestions?: unknown; orders?: unknown }
   const reply = typeof record.reply === "string" ? record.reply.trim() : ""
   const suggestions = Array.isArray(record.suggestions)
     ? record.suggestions

@@ -21,6 +21,7 @@ function failed(partial: Partial<LlmFailure> & Pick<LlmFailure, "kind" | "latenc
 describe("cascade planning", () => {
   beforeEach(() => {
     delete process.env.LLM_MODEL_STRONG
+    delete process.env.OPENAI_API_KEY
     process.env.LLM_MODEL = "cheap-model"
   })
 
@@ -69,6 +70,7 @@ describe("cascade planning", () => {
 describe("fetchGmWithCascade", () => {
   beforeEach(() => {
     vi.resetModules()
+    delete process.env.OPENAI_API_KEY
     process.env.LLM_API_KEY = "test-key"
     process.env.LLM_MODEL = "cheap-model"
     delete process.env.LLM_MODEL_STRONG
@@ -150,7 +152,7 @@ describe("fetchGmWithCascade", () => {
       "The game master could not be reached (timeout). The staff simulation took the turn.",
     )
     expect(record.gmDebug).toBe(
-      "debug: path llm · abort: The operation was aborted due to timeout · 14002ms · model cheap-model (LLM_MODEL) · http none · content n/a · fallback staff simulation",
+      "debug: path llm · abort: The operation was aborted due to timeout · 14002ms · model cheap-model (LLM_MODEL) · provider openrouter · http none · content n/a · fallback staff simulation",
     )
   })
 
@@ -226,7 +228,7 @@ describe("fetchGmWithCascade", () => {
       "Game master could not produce valid JSON. The staff simulation took the turn.",
     )
     expect(record.gmDebug).toBe(
-      "debug: path cascade · abort: The operation was aborted due to timeout (after zod) · 10100ms · model strong-model (LLM_MODEL_STRONG) · http none · content n/a · fallback staff simulation",
+      "debug: path cascade · abort: The operation was aborted due to timeout (after zod) · 10100ms · model strong-model (LLM_MODEL_STRONG) · provider openrouter · http none · content n/a · fallback staff simulation",
     )
   })
 

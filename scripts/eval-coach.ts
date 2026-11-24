@@ -3,7 +3,7 @@
  *
  *   npm run eval:coach -- --offline
  *   npm run eval:coach -- --json /tmp/coach-eval.json
- *   npm run eval:coach                 # live when LLM_API_KEY is set; else offline
+ *   npm run eval:coach                 # live when OPENAI_API_KEY or LLM_API_KEY is set; else offline
  *
  * Layer 1 (always): deterministic hard-rule checks.
  * Layer 2 (live only): pedagogy rubric via the configured LLM / EVAL_JUDGE_MODEL.
@@ -59,7 +59,7 @@ async function main() {
   if (offline) {
     console.log("Mode: offline (forced) — Layer 1 only\n")
   } else if (!llmConfigured()) {
-    console.log("Mode: offline (LLM_API_KEY unset) — Layer 1 only\n")
+    console.log("Mode: offline (no OpenAI or OpenRouter key) — Layer 1 only\n")
   } else {
     console.log("Mode: live — Layer 1 + pedagogy rubric\n")
   }

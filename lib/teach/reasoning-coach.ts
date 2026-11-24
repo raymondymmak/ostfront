@@ -1,5 +1,6 @@
 import { z } from "zod"
-import { extractTopLevelJson, llmChat, llmConfigured, resolveLlmModels } from "@/lib/gm/llm"
+import { extractTopLevelJson, llmChatChain, llmConfigured, stripNullFields } from "@/lib/gm/llm"
+import { TEACH_COACH_JSON_SCHEMA } from "@/lib/gm/providers"
 import type { LessonDispatch } from "@/lib/teach/dispatch"
 import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { LearnerBeliefRecord } from "@/lib/teach/belief"
@@ -90,10 +91,9 @@ export async function coachReasoning(input: {
   )
 
   if (!llmConfigured()) {
-    return { ...rules, source: "fallback", fallbackReason: "LLM_API_KEY is not set" }
+    return { ...rules, source: "fallback", fallbackReason: "OPENAI_API_KEY and LLM_API_KEY are not set" }
   }
 
-  const models = resolveLlmModels()
   const user = buildCoachUserMessage(
     input.dispatch,
     trimmed,
@@ -102,8 +102,7 @@ export async function coachReasoning(input: {
     input.mechanical,
     input.priorBelief ?? null,
   )
-  const llm = await llmChat({
-    model: models.cheap,
+  const llm = await llmChatChain({
     system: COACH_SYSTEM,
     user,
     timeoutMs: COACH_TIMEOUT_MS,
@@ -111,6 +110,17 @@ export async function coachReasoning(input: {
     temperature: 0.35,
     gameTurn: 0,
     gameDate: "Teaching drill",
+    kind: "advisor",
+    jsonSchema: { name: "teach_coach", schema: TEACH_COACH_JSON_SCHEMA },
+    accept: (content) => {
+      const extracted = extractTopLevelJson(content)
+      if (!extracted.ok) return { ok: false, outcome: "invalid_json", error: extracted.error }
+      const parsed = CoachJsonSchema.safeParse(stripNullFields(extracted.value))
+      if (!parsed.success) {
+        return { ok: false, outcome: "schema", error: parsed.error.issues[0]?.message ?? "schema" }
+      }
+      return { ok: true }
+    },
   })
 
   if (!llm.ok) {
@@ -128,7 +138,7 @@ export async function coachReasoning(input: {
 
   let parsed: z.infer<typeof CoachJsonSchema>
   try {
-    parsed = CoachJsonSchema.parse(extracted.value)
+    parsed = CoachJsonSchema.parse(stripNullFields(extracted.value))
   } catch {
     return { ...rules, source: "fallback", fallbackReason: "Coach JSON did not match schema" }
   }

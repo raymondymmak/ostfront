@@ -3,6 +3,7 @@ import type { TurnTier } from "@/lib/gm/tier"
 export type GmCallLog = {
   tag: "ostfront.gm.call"
   tier: TurnTier
+  provider: "openai" | "openrouter"
   model: string
   latencyMs: number
   outcome:

@@ -20,6 +20,8 @@ export type LlmLogInput = {
   attempt: number
   gameTurn?: number | null
   gameDate?: string | null
+  /** Which configured endpoint produced this attempt. */
+  provider?: "openai" | "openrouter"
   model: string
   latencyMs: number
   httpStatus?: number | null
@@ -39,6 +41,7 @@ export type LlmLogRecord = {
   attempt: number
   gameTurn: number | null
   gameDate: string | null
+  provider: "openai" | "openrouter"
   model: string
   env: string | null
   latencyMs: number
@@ -52,7 +55,7 @@ export type LlmLogRecord = {
 }
 
 const SECRET =
-  /Bearer\s+\S+|sk-[A-Za-z0-9_-]{6,}|vercel_blob_rw_[A-Za-z0-9_]+|\bLLM_API_KEY\s*[=:]\s*\S+/gi
+  /Bearer\s+\S+|sk-[A-Za-z0-9_-]{6,}|vercel_blob_rw_[A-Za-z0-9_]+|\b(?:LLM_API_KEY|OPENAI_API_KEY)\s*[=:]\s*\S+/gi
 
 /**
  * One JSON object per model call.
@@ -93,6 +96,7 @@ export function buildLlmLogRecord(input: LlmLogInput): { pathname: string; recor
     attempt: input.attempt,
     gameTurn: input.gameTurn ?? null,
     gameDate: input.gameDate ?? null,
+    provider: input.provider ?? "openrouter",
     model: input.model,
     env: process.env.VERCEL_ENV?.trim() || null,
     latencyMs: Number.isFinite(input.latencyMs) ? Math.max(0, Math.round(input.latencyMs)) : 0,
@@ -123,6 +127,7 @@ export function scheduleLlmResponseLog(input: LlmLogInput): void {
     kind: input.kind,
     attempt: input.attempt,
     outcome: input.outcome,
+    provider: input.provider ?? "openrouter",
     model: input.model,
     latencyMs: Number.isFinite(input.latencyMs) ? Math.round(input.latencyMs) : 0,
     fellBack: input.fellBack,
@@ -181,8 +186,10 @@ function redactSecrets(text: string | null): string | null {
   let out = text.replace(SECRET, "[redacted]")
   const token = process.env.BLOB_READ_WRITE_TOKEN?.trim()
   const apiKey = process.env.LLM_API_KEY?.trim()
+  const openaiKey = process.env.OPENAI_API_KEY?.trim()
   if (token && token.length >= 8) out = out.split(token).join("[redacted]")
   if (apiKey && apiKey.length >= 8) out = out.split(apiKey).join("[redacted]")
+  if (openaiKey && openaiKey.length >= 8) out = out.split(openaiKey).join("[redacted]")
   return out
 }
 

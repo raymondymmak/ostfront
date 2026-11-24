@@ -28,6 +28,7 @@ const baseInput = {
   attempt: 1,
   gameTurn: 4,
   gameDate: "2 May 1915",
+  provider: "openrouter" as const,
   model: "z-ai/glm-5.3-flash",
   latencyMs: 17342.2,
   httpStatus: 200,
@@ -77,6 +78,8 @@ describe("LLM response log", () => {
     expect(record.attempt).toBe(1)
     expect(record.gameTurn).toBe(4)
     expect(record.gameDate).toBe("2 May 1915")
+    expect(record.provider).toBe("openrouter")
+    expect(record.model).toBe("z-ai/glm-5.3-flash")
     expect(record.latencyMs).toBe(17342)
     expect(record.httpStatus).toBe(200)
     expect(record.finishReason).toBe("length")
