@@ -26,6 +26,7 @@ import {
   queuedAttackOddsByTarget,
   renderQueuedResolutionOdds,
   resolveReachabilityEndpoints,
+  collectMentionedProvinceIds,
   keepOneOddsFigure,
   latestChronicleEvidence,
   renderChronicle,
@@ -951,6 +952,16 @@ describe("campaign coach guards", () => {
     )
     expect(endpoints.fromId).toBe("lublin")
     expect(endpoints.targetId).toBe("warszawa")
+  })
+
+  it("matches ASCII Lodz to Łódź via id, alias, and diacritic fold", () => {
+    const map = staffMap(createInitialState())
+    expect(collectMentionedProvinceIds(map, "Is Lodz reachable from Lublin?")).toEqual(
+      expect.arrayContaining(["lodz", "lublin"]),
+    )
+    const endpoints = resolveReachabilityEndpoints(map, "Is Lodz reachable from Lublin?", null)
+    expect(endpoints.fromId).toBe("lublin")
+    expect(endpoints.targetId).toBe("lodz")
   })
 
   it("rejects queued attacks below supply 30 instead of quoting odds", async () => {

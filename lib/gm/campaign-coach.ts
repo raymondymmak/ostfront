@@ -1347,14 +1347,52 @@ function inputSelectedFrom(selected: string): string | null {
   return selected.split(/\s+/)[0] ?? null
 }
 
-function provinceIdFromLooseLabel(map: GameState, raw: string): string | null {
-  const needle = raw.trim().toLowerCase()
-  if (!needle) return null
-  if (needle.includes("warsaw") || needle.includes("warszawa")) return "warszawa"
+function foldDiacritics(raw: string): string {
+  return raw.normalize("NFD").replace(/\p{M}/gu, "")
+}
+
+function labelMentionedInQuestion(question: string, label: string): boolean {
+  const lower = question.toLowerCase()
+  const foldedQuestion = foldDiacritics(question).toLowerCase()
+  const normalized = label.toLowerCase()
+  const foldedLabel = foldDiacritics(label).toLowerCase()
+  if (lower.includes(normalized) || foldedQuestion.includes(foldedLabel)) return true
+  const tokens = normalized.split(/[\s-]+/).filter((part) => part.length > 2)
+  return tokens.some((token) => lower.includes(token) || foldedQuestion.includes(foldDiacritics(token)))
+}
+
+/** Catalog names, ids, and aliases (ASCII fold) mentioned in player text. */
+export function collectMentionedProvinceIds(map: GameState, question: string): string[] {
+  const mentioned: string[] = []
   for (const province of map.provinces) {
-    const name = province.name.toLowerCase()
-    if (needle === province.id || needle === name || name.includes(needle) || needle.includes(name)) {
+    const catalog = CATALOG_BY_ID[province.id]
+    const labels = new Set<string>([province.id, province.name, ...(catalog?.aliases ?? [])])
+    for (const label of labels) {
+      if (labelMentionedInQuestion(question, label)) {
+        mentioned.push(province.id)
+        break
+      }
+    }
+  }
+  return [...new Set(mentioned)]
+}
+
+function provinceIdFromLooseLabel(map: GameState, raw: string): string | null {
+  const needle = raw.trim()
+  if (!needle) return null
+  const mentioned = collectMentionedProvinceIds(map, needle)
+  if (mentioned.length === 1) return mentioned[0]!
+  if (mentioned.length > 1) {
+    const foldedNeedle = foldDiacritics(needle).toLowerCase()
+    const exact = mentioned.find((id) => id === needle.toLowerCase() || foldDiacritics(provinceLabel(id)).toLowerCase() === foldedNeedle)
+    if (exact) return exact
+  }
+  for (const province of map.provinces) {
+    if (labelMentionedInQuestion(needle, province.id) || labelMentionedInQuestion(needle, province.name)) {
       return province.id
+    }
+    for (const alias of CATALOG_BY_ID[province.id]?.aliases ?? []) {
+      if (labelMentionedInQuestion(needle, alias)) return province.id
     }
   }
   return null
@@ -1373,25 +1411,20 @@ export function resolveReachabilityEndpoints(
     fromId = provinceIdFromLooseLabel(map, fromMatch[1]) ?? fromId
   }
   let targetId: string | null = null
-  const destMatch = lower.match(/\b(?:to|into|reach|attack)\s+([^,?]+?)(?:\s*\?|$|,|\s+this)/i)
+  const isReachable = lower.match(/\bis\s+([^?]+?)\s+reachable\b/i)
+  if (isReachable?.[1]) {
+    targetId = provinceIdFromLooseLabel(map, isReachable[1])
+  }
+  const destMatch = lower.match(/\b(?:to|into|reach(?:able)?|attack)\s+([^,?]+?)(?:\s+from|\s*\?|$|,|\s+this)/i)
   if (destMatch?.[1]) {
-    targetId = provinceIdFromLooseLabel(map, destMatch[1])
+    targetId = provinceIdFromLooseLabel(map, destMatch[1]) ?? targetId
   }
   if (!targetId) {
-    const mentioned: string[] = []
-    if (/warsaw|warszawa/.test(lower)) mentioned.push("warszawa")
-    for (const province of map.provinces) {
-      if (lower.includes(province.name.toLowerCase())) mentioned.push(province.id)
-    }
-    const unique = [...new Set(mentioned)]
+    const unique = collectMentionedProvinceIds(map, question)
     targetId = unique.find((id) => id !== fromId) ?? unique[0] ?? null
   }
   if (targetId === fromId) {
-    const alt = [...new Set(
-      map.provinces
-        .filter((province) => lower.includes(province.name.toLowerCase()))
-        .map((province) => province.id),
-    )].find((id) => id !== fromId)
+    const alt = collectMentionedProvinceIds(map, question).find((id) => id !== fromId)
     if (alt) targetId = alt
   }
   return { fromId, targetId }
