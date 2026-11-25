@@ -46,6 +46,7 @@ import type { CoachHighlight } from "@/lib/gm/campaign-coach"
 import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import type { ChipDrop } from "@/lib/ui/drag-order"
 import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import {
   isNeighborOrderTarget,
@@ -364,6 +365,12 @@ export function GameApp() {
       if (item?.width === size.width && item?.height === size.height) return current
       return resizeWindow(current, id, { width: size.width, height: size.height })
     })
+  }
+
+  function onChipDrop(drop: ChipDrop) {
+    if (finished) return
+    setQueue(drop.queue)
+    setHint(drop.reason)
   }
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
@@ -802,6 +809,7 @@ export function GameApp() {
             }
             onSelect={selectProvince}
             onDraw={addArrow}
+            onChipDrop={finished ? undefined : onChipDrop}
             onOverlay={setOverlay}
           />
           <ChronicleDrawer

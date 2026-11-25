@@ -4,7 +4,7 @@ Authoritative mechanics for the Gorlice–Tarnów scenario (2 May–11 July 1915
 
 ## What you do
 
-You give orders for your own formations: move along a friendly border, attack into an enemy province, fortify, or recruit. A typed directive, a map arrow, or a neighbor button all become the same orders. A unit may receive one order per turn, and a unit in a province with supply below 30 cannot advance or attack. Entering an enemy province is always an attack.
+You give orders for your own formations: move along a friendly border, attack into an enemy province, fortify, or recruit. A typed directive, a map arrow, a neighbor button, or a formation chip dragged onto a neighbouring province all become the same orders. Chips appear when the map is zoomed in. A drop on the same province, on a province that does not share a border, or from a province below supply 30 shows invalid and is not queued. The rules engine still accepts or rejects the order when the fortnight resolves. A unit may receive one order per turn, and a unit in a province with supply below 30 cannot advance or attack. Entering an enemy province is always an attack.
 
 Russia is played by Stavka, a rule-based staff. The rules engine is the source of truth. It accepts or rejects every proposal, then resolves the fortnight as one simultaneous turn. Stavka writes the Russian orders and the chronicle of the fortnight from the map as it stands when the fortnight opens. It does not see the Central Powers' orders. If a model key is set, the model may replace up to two diplomacy sentences. It does not order units, and it does not decide battles. With no key, the game plays the same way.
 

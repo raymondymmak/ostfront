@@ -35,6 +35,7 @@ import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { CoachHint } from "@/lib/teach/coach"
 import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lessons"
 import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import type { ChipDrop } from "@/lib/ui/drag-order"
 import {
   isNeighborOrderTarget,
   legalTargets,
@@ -318,6 +319,12 @@ export function TeachingApp() {
   )
   const budget = state ? spendable(state, "central", attacking) : { mp: 0, ip: 0 }
   const selected = state?.provinces.find((province) => province.id === selectedId) ?? null
+
+  function onChipDrop(drop: ChipDrop) {
+    if (!state || feedback) return
+    setQueue(drop.queue)
+    setHint(drop.reason)
+  }
 
   function addArrow(fromId: string, toId: string, commitAll = false) {
     if (!state || feedback) return
@@ -672,6 +679,7 @@ export function TeachingApp() {
             onShowRails={setShowRails}
             onSelect={(id) => setSelectedId((current) => toggleSelection(current, id))}
             onDraw={addArrow}
+            onChipDrop={feedback ? undefined : onChipDrop}
             onOverlay={setOverlay}
           />
           {desktopShell &&

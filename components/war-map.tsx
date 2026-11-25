@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import * as maplibregl from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
+import { ArmyChips } from "@/components/army-chips"
 import { SvgMap } from "@/components/svg-map"
 import { MapLegend } from "@/components/map-legend"
 import { MapMode } from "@/components/map-mode"
@@ -44,6 +45,7 @@ import {
 import { installWarMapLayers } from "@/lib/map/war-map-layers"
 import { cursorTipPosition, hoverBeyondBase } from "@/lib/ui/map-hover"
 import { railFeatureCollection, type RailEnd } from "@/lib/map/rail-lines"
+import type { ChipDrop } from "@/lib/ui/drag-order"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Province } from "@/lib/types"
 
@@ -64,6 +66,8 @@ type MapInput = {
   orderMode: boolean
   onSelect: (id: string) => void
   onDraw: (from: string, to: string, commitAll?: boolean) => void
+  /** One formation chip dropped on a province. The reducer already built the queue. */
+  onChipDrop?: (drop: ChipDrop) => void
 }
 
 /** Props the game screen passes. Map mode and the rail toggle live on the map. */
@@ -100,6 +104,7 @@ export function WarMap({
   orderMode,
   onSelect,
   onDraw,
+  onChipDrop,
   onOverlay,
   showMapLegend = true,
   showRails: showRailsProp,
@@ -122,6 +127,7 @@ export function WarMap({
   const loadedRef = useRef(false)
   const fittedRef = useRef(false)
   const [mapReady, setMapReady] = useState(false)
+  const [liveMap, setLiveMap] = useState<maplibregl.Map | null>(null)
   const targetIdsRef = useRef(targetIds)
   const lessonFocusRef = useRef(lessonFocus)
   const provinceDataKeyRef = useRef<string>("")
@@ -383,6 +389,7 @@ export function WarMap({
 
       loadedRef.current = true
       setMapReady(true)
+      setLiveMap(map)
       syncMap(map, propsRef.current, fittedRef, targetIdsRef.current, provinceDataKeyRef, highlightKeyRef)
       // Lesson focus may have been set before the map finished loading — apply now.
       applyLessonFocusLayers(
@@ -410,6 +417,7 @@ export function WarMap({
       observer.disconnect()
       loadedRef.current = false
       setMapReady(false)
+      setLiveMap(null)
       fittedRef.current = false
       if (typeof window !== "undefined") {
         delete (window as Window & { __ostfrontMap?: maplibregl.Map }).__ostfrontMap
@@ -425,6 +433,7 @@ export function WarMap({
     mapRef.current = null
     loadedRef.current = false
     setMapReady(false)
+    setLiveMap(null)
   }, [failed])
 
   useEffect(() => {
@@ -541,6 +550,14 @@ export function WarMap({
       ) : (
         <div className="map-stage absolute inset-0">
           <div ref={containerRef} className="h-full w-full" />
+          <ArmyChips
+            map={liveMap}
+            provinces={provinces}
+            orders={orders}
+            enabled={Boolean(onChipDrop)}
+            frame={frameRef}
+            onChipDrop={onChipDrop}
+          />
         </div>
       )}
       {hoverTip && !failed && (

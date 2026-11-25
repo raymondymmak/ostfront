@@ -55,6 +55,7 @@ Stack: Next.js App Router, React client components for the game shell, server ro
 | `lib/map/lesson-highlight.ts` | `/teach` brass focus fill + target/source outlines; pulse respects `prefers-reduced-motion` |
 | `lib/map/rail-lines.ts` + `shared-border.ts` | Rail paths via shared-border midpoints, not anchor-to-anchor chords |
 | `lib/ui/legal-targets.ts` | `reach` + `canOrder`; Russian provinces get reach hints without orders; `neighborTargetIds` / `isNeighborOrderTarget` gate map-arrow drops (UI only — engine still validates) |
+| `lib/ui/drag-order.ts` | Pure chip-drag reducer. Chips (`components/army-chips.tsx`) show at zoom ≥ 7.4. A legal drop queues one Central Powers formation; an illegal drop returns the same queue. Edge pan is UI only. The engine still accepts or rejects the order at resolve |
 | `lib/ui/selection.ts` | Click-toggle and Escape deselect in `game-app.tsx` / `teaching-app.tsx` (no startup auto-select; Province starts empty until the player clicks) |
 | `lib/ui/teach-windows.ts` | Desktop `/teach` floating window ids (Lesson, Orders, Province, Legend) and z-order helpers |
 | `public/fonts/` | Self-hosted MapLibre glyph PBFs (Noto Serif incl. ★/◆ ranges, Open Sans) |
