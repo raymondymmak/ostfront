@@ -974,18 +974,24 @@ function buildSteps(cli, targets) {
         await fortify.waitFor({ state: "visible", timeout: 10_000 })
         if (await fortify.isDisabled()) {
           const label = ((await fortify.textContent()) ?? "").trim()
-          if (/Fortify queued/i.test(label)) {
-            await assertQueuedFortifyKrakow(page)
-            return
+          if (!/Fortify queued/i.test(label)) {
+            const reason =
+              (await province.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
+              "Fortify button disabled on Kraków province panel."
+            throw new Error(reason)
           }
-          const reason =
-            (await province.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
-            "Fortify button disabled on Kraków province panel."
-          throw new Error(reason)
+        } else {
+          await fortify.scrollIntoViewIfNeeded()
+          await fortify.click()
         }
-        await fortify.scrollIntoViewIfNeeded()
-        await fortify.click()
         await assertQueuedFortifyKrakow(page)
+        // A queued dig-in binds the garrison, so later neighbour marches would be refused.
+        await page
+          .locator("[data-testid=queued-orders] li")
+          .filter({ hasText: /Fortify/i })
+          .filter({ hasText: /Kraków/i })
+          .getByRole("button", { name: "Remove" })
+          .click()
       },
     },
     {

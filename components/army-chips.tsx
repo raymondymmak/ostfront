@@ -21,6 +21,7 @@ import type { GameState } from "@/lib/types"
 type ArmyChipsProps = {
   map: maplibregl.Map | null
   provinces: MapProvince[]
+  treasury: GameState["treasury"]
   orders: QueuedOrder[]
   /** When false, chips still show but do not accept a drag. */
   enabled: boolean
@@ -38,15 +39,16 @@ type Ghost = {
   pan: PanDir[]
 }
 
-function asState(provinces: MapProvince[]): GameState {
-  return { provinces } as unknown as GameState
+function asState(provinces: MapProvince[], treasury: GameState["treasury"]): GameState {
+  return { provinces, treasury } as unknown as GameState
 }
 
-export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }: ArmyChipsProps) {
+export function ArmyChips({ map, provinces, treasury, orders, enabled, frame, onChipDrop }: ArmyChipsProps) {
   const [shown, setShown] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [ghost, setGhost] = useState<Ghost | null>(null)
   const provincesRef = useRef(provinces)
+  const treasuryRef = useRef(treasury)
   const ordersRef = useRef(orders)
   const dragRef = useRef<ChipPointer | null>(null)
   const pointerIdRef = useRef<number | null>(null)
@@ -60,6 +62,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
 
   useLayoutEffect(() => {
     provincesRef.current = provinces
+    treasuryRef.current = treasury
     ordersRef.current = orders
     dropRef.current = onChipDrop
     frameRef.current = frame
@@ -216,7 +219,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
           const hoverId = apiRef.current.hoverAt(drag.x, drag.y)
           if (hoverId !== drag.hoverId) {
             const view = reduceChipDrag(
-              asState(provincesRef.current),
+              asState(provincesRef.current, treasuryRef.current),
               ordersRef.current,
               drag,
               { type: "move", x: drag.x, y: drag.y, width: drag.width, height: drag.height, hoverId },
@@ -240,7 +243,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
       const point = apiRef.current.canvasPoint(event)
       if (!drag || !point) return
       const view = reduceChipDrag(
-        asState(provincesRef.current),
+        asState(provincesRef.current, treasuryRef.current),
         ordersRef.current,
         drag,
         { type: "move", ...point, hoverId: apiRef.current.hoverAt(point.x, point.y) },
@@ -256,7 +259,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
       const hoverId = point ? apiRef.current.hoverAt(point.x, point.y) : drag.hoverId
       const located = point
         ? reduceChipDrag(
-            asState(provincesRef.current),
+            asState(provincesRef.current, treasuryRef.current),
             ordersRef.current,
             drag,
             { type: "move", ...point, hoverId },
@@ -264,7 +267,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
           )
         : { drag }
       const view = reduceChipDrag(
-        asState(provincesRef.current),
+        asState(provincesRef.current, treasuryRef.current),
         ordersRef.current,
         located.drag,
         { type: "drop" },
@@ -281,7 +284,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
       if (!ownsDragPointer(pointerIdRef.current, event.pointerId, "end")) return
       const drag = dragRef.current
       if (!drag) return
-      const view = reduceChipDrag(asState(provincesRef.current), ordersRef.current, drag, { type: "cancel" }, () => "")
+      const view = reduceChipDrag(asState(provincesRef.current, treasuryRef.current), ordersRef.current, drag, { type: "cancel" }, () => "")
       dragRef.current = null
       pointerIdRef.current = null
       setDraggingId(null)
@@ -311,7 +314,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
     pointerIdRef.current = event.pointerId
     metaRef.current = { name: chip.name, strength: chip.strength }
     const view = reduceChipDrag(
-      asState(provincesRef.current),
+      asState(provincesRef.current, treasuryRef.current),
       ordersRef.current,
       null,
       { type: "start", unitId: chip.unitId, fromId: chip.provinceId, ...point },

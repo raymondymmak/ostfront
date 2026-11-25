@@ -203,6 +203,25 @@ describe("reduceChipDrag", () => {
     expect(reduceChipDrag(state, queue, orphan, movedAway, ids()).valid).toBe(false)
   })
 
+  it("hovers a queued dig-in when treasury is passed beside the provinces", () => {
+    const provinces = structuredClone(createInitialState().provinces)
+    const krakow = provinces.find((province) => province.id === "krakow")
+    if (!krakow) throw new Error("krakow missing")
+    krakow.supply = 60
+    krakow.fort = 0
+    krakow.fortPending = 0
+    const treasury = { central: { mp: 40, ip: 8 }, russia: { mp: 0, ip: 0 } }
+    const bare = { provinces } as GameState
+    expect(bare.treasury).toBeUndefined()
+    const queue: QueuedOrder[] = [{ id: "dig", kind: "fortify", from: "krakow", unitIds: [] }]
+    expect(() => drop(bare, queue, "g-kra-11", "krakow", "katowice")).toThrow(TypeError)
+    const board = { provinces, treasury } as GameState
+    const result = drop(board, queue, "g-kra-11", "krakow", "katowice")
+    expect(result.moved.reason).toBe("Digging in")
+    expect(result.dropped.queued).toBe(false)
+    expect(result.dropped.queue).toBe(queue)
+  })
+
   it("is what the map chips and both shells call", () => {
     const chips = readFileSync("components/army-chips.tsx", "utf8")
     expect(chips).toContain("reduceChipDrag")
@@ -210,7 +229,10 @@ describe("reduceChipDrag", () => {
     expect(chips).toContain("pointerIdRef")
     expect(chips).toContain('data-testid="army-chip"')
     expect(chips).toContain("panBy")
+    expect(chips).toContain("treasuryRef")
+    expect(chips).toContain("asState(provincesRef.current, treasuryRef.current)")
     const map = readFileSync("components/war-map.tsx", "utf8")
+    expect(map).toContain("treasury={treasury}")
     expect(map).toContain("marchPreviewLine")
     expect(map).toContain("previewMarch")
     const game = readFileSync("components/game-app.tsx", "utf8")

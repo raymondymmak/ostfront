@@ -600,6 +600,7 @@ export function WarMap({
           <ArmyChips
             map={liveMap}
             provinces={provinces}
+            treasury={treasury}
             orders={orders}
             enabled={Boolean(onChipDrop)}
             frame={frameRef}
