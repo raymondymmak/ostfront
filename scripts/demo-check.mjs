@@ -1050,13 +1050,15 @@ function buildSteps(cli, targets) {
       },
     },
     {
-      id: "14-directive",
-      name: "Type directive preview",
+      id: "14-no-directive",
+      name: "Orders panel has no directive box",
       async run({ page }) {
         await restoreTrayTab(page, "tab-orders")
-        const field = page.locator("[data-testid=directive]")
-        await field.fill("Fortify Kraków.")
-        await expectText(page.locator("aside"), "Will entrench Kraków")
+        const orders = page.locator("[data-testid=orders-window]").or(page.locator("aside")).first()
+        await orders.getByRole("heading", { name: "Orders" }).waitFor({ state: "visible", timeout: 10_000 })
+        if (await page.locator("[data-testid=directive]").count()) {
+          throw new Error("The directive box is still on the Orders panel.")
+        }
       },
     },
     {

@@ -14,7 +14,7 @@ In early 1915 the Eastern Front had bogged down. Germany and Austria-Hungary con
 
 1. **Start.** A full-screen briefing opens (not the live map): pick difficulty, read the one-line goal, tap **Begin**. **More** holds the full 1915 text if you want it.
 2. **Select a province.** Click the map or pick a formation from the Orders list. The Province panel shows supply, neighbors, and who holds the ground.
-3. **Give orders.** Each formation gets **one** order this fortnight. You can draw an arrow on the map, use **Move** / **Attack** on a neighbor, type a short directive, or ask the Chief of Staff for suggestions (see glossary).
+3. **Give orders.** Each formation gets **one** order this fortnight. You can draw an arrow on the map, use **Move** / **Attack** on a neighbor, or ask the Chief of Staff for suggestions (see glossary).
 4. **Queue and review.** Queued orders appear in the Orders panel. Attack lines can show estimated odds—they are a **forecast**, not a promise (see below).
 5. **End turn.** When you are ready, close the fortnight. Russia’s Stavka issues its orders at the same time, from the same starting map. The engine resolves marches and battles together, then updates supply, income, and victory points.
 6. **Read the log.** Use **Log** (bottom-left of the map) for the latest fortnight’s routine lines; **Details** holds the full chronicle. News cards highlight the biggest moments when a fortnight closes.

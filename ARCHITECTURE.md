@@ -84,7 +84,7 @@ ADR 010 (campaign), ADR 011 (`/teach`), ADR 012 (document tray), ADR 013 (slim H
 
 In `components/game-app.tsx`, `endTurn`:
 
-1. Builds `PlayerOrder[]` from the queue (`queuedToPlayerOrders`) plus optional text directive.
+1. Builds `PlayerOrder[]` from the queue (`queuedToPlayerOrders`). The Orders panel has no text field. The turn route still accepts a `text` order when one is posted.
 2. Requires `game.gameId` (from `POST /api/new-game`); otherwise shows an error.
 3. `fetch("/api/turn", { method: "POST", body: { gameId, expectedTurn: game.state.turn, orders } })`.
 4. On success: merges `payload.state` and `payload.record` into React state, clears queue, flashes control changes, and runs `selectNewsEvents(prev, next, record)` to queue HOI4-style news cards (`NewsCardQueue`).

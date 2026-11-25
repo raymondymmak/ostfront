@@ -7,7 +7,6 @@ import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, findProvince, type EngagementPreview } from "@/lib/engine/turn"
 import { ordersLocked } from "@/lib/finale"
-import { interpretOrders } from "@/lib/gm/interpret"
 import { combinedQueueLines, formatQueuedOrderLine, type QueuedOrder } from "@/lib/orders"
 import { snapshotQueuedOrder } from "@/lib/queue-snapshot"
 import type { GameState } from "@/lib/types"
@@ -15,8 +14,6 @@ import { OddsBar } from "@/components/odds-bar"
 
 type OrderPanelProps = {
   state: GameState
-  directive: string
-  onDirective: (value: string) => void
   queue: QueuedOrder[]
   onQueue: (queue: QueuedOrder[]) => void
   orderMode: boolean
@@ -34,8 +31,6 @@ type OrderPanelProps = {
 
 export function OrderPanel({
   state,
-  directive,
-  onDirective,
   queue,
   onQueue,
   orderMode,
@@ -49,10 +44,6 @@ export function OrderPanel({
   hideEndTurn = false,
 }: OrderPanelProps) {
   const closed = ordersLockedProp ?? ordersLocked(Boolean(state.result))
-  const parsed =
-    !closed && directive.trim()
-      ? interpretOrders(state, [{ type: "text", text: directive }])
-      : { proposals: [], notes: [] }
   const forces = state.provinces.flatMap((province) =>
     province.units
       .filter((unit) => unit.faction === "central")
@@ -82,7 +73,7 @@ export function OrderPanel({
         <p className="text-sm text-muted-foreground">
           {closed
             ? "Orders are closed. Pan and zoom the map, open a province, or read the chronicle."
-            : "Drag between provinces, click a neighbor, or write an order. Ctrl+Enter closes the fortnight."}
+            : "Drag between provinces or click a neighbor. Ctrl+Enter closes the fortnight."}
         </p>
         {hint && (
           <p
@@ -93,34 +84,6 @@ export function OrderPanel({
             {hint}
           </p>
         )}
-        <label className="text-xs tracking-wide text-muted-foreground uppercase" htmlFor="directive">
-          Directive
-        </label>
-        <textarea
-          id="directive"
-          data-testid="directive"
-          value={directive}
-          disabled={closed}
-          onChange={(event) => {
-            if (closed) return
-            onDirective(event.target.value)
-          }}
-          placeholder={closed ? "Orders are closed." : "Attack Lemberg. Fortify Kraków."}
-          rows={3}
-          className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        {parsed.proposals.length > 0 && (
-          <ul className="text-sm text-muted-foreground">
-            {parsed.proposals.map((proposal, index) => (
-              <li key={index}>{describeProposal(state, proposal, parsed.proposals)}</li>
-            ))}
-          </ul>
-        )}
-        {parsed.notes.map((note) => (
-          <p key={note} className="text-sm text-destructive">
-            {note}
-          </p>
-        ))}
         <Separator />
         <h3 className="text-xs tracking-wide text-muted-foreground uppercase">Queued arrows</h3>
         {combinedQueueLines(state, queue).map((line) => (
@@ -282,43 +245,4 @@ function joinAnd(names: string[]): string {
   if (names.length <= 1) return names[0] ?? ""
   if (names.length === 2) return `${names[0]} and ${names[1]}`
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
-}
-
-function describeProposal(
-  state: GameState,
-  proposal: ReturnType<typeof interpretOrders>["proposals"][number],
-  proposals: ReturnType<typeof interpretOrders>["proposals"],
-): string {
-  if (proposal.type === "fortify") {
-    return `Will entrench ${findProvince(state, proposal.province)?.name ?? proposal.province}.`
-  }
-  if (proposal.type === "move") {
-    const located = state.provinces
-      .flatMap((province) => province.units)
-      .find((unit) => unit.id === proposal.unit)
-    return `Will move ${located?.name ?? proposal.unit} to ${
-      findProvince(state, proposal.to)?.name ?? proposal.to
-    }.`
-  }
-  if (proposal.type === "attack") {
-    const mates = proposals.filter(
-      (item) => item.type === "attack" && item.target === proposal.target,
-    )
-    const odds =
-      mates.length > 1
-        ? combinedEngagementOdds(
-            state,
-            proposal.target,
-            mates.map((item) =>
-              item.type === "attack" ? { fromId: item.from, unitIds: item.units } : { fromId: "", unitIds: [] },
-            ),
-          )
-        : engagementOdds(state, proposal.from, proposal.target, proposal.units)
-    const ratio = !odds ? "unknown odds" : odds.empty ? "undefended" : `${odds.ratio.toFixed(2)} : 1`
-    const shape = odds && odds.origins > 1 ? (odds.origins === 2 ? "two-pronged " : "concentric ") : ""
-    return `Will attack ${findProvince(state, proposal.target)?.name ?? proposal.target} from ${
-      findProvince(state, proposal.from)?.name ?? proposal.from
-    } (${shape}${ratio} before the dice, against the garrison as it stands).`
-  }
-  return "Staff note."
 }
