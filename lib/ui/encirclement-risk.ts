@@ -1,10 +1,9 @@
 import { independentFormations } from "@/lib/engine/echelon"
 import { findProvince } from "@/lib/engine/turn"
 import type { GameState } from "@/lib/types"
-import type { QueuedOrder } from "@/lib/orders"
 
 /** Central-held provinces with units and a single friendly neighbor exit, flanked by Russia. */
-export function centralEncirclementRiskIds(map: GameState, _queue: QueuedOrder[]): string[] {
+export function centralEncirclementRiskIds(map: GameState): string[] {
   const risks: string[] = []
   for (const province of map.provinces) {
     if (province.controller !== "central") continue

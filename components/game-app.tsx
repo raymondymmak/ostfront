@@ -221,10 +221,7 @@ export function GameApp() {
     return legalTargets(game.state, selected.id, queue)
   }, [finished, selected, game.state, queue])
 
-  const encirclementRiskIds = useMemo(
-    () => centralEncirclementRiskIds(game.state, queue),
-    [game.state, queue],
-  )
+  const encirclementRiskIds = useMemo(() => centralEncirclementRiskIds(game.state), [game.state])
 
   const selectProvince = useCallback((id: string) => {
     setSelectedId((current) => toggleSelection(current, id))

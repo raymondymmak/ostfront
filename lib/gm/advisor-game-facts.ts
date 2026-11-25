@@ -45,7 +45,7 @@ export function renderAdvisorGameFacts(
     lines.push(`Queued march(es) would empty depot(s): ${depotEmpty.join(", ")}.`)
   }
 
-  const encircle = centralEncirclementRiskIds(map, queue).map((id) => provinceLabel(id))
+  const encircle = centralEncirclementRiskIds(map).map((id) => provinceLabel(id))
   if (encircle.length) {
     lines.push(`Encirclement risk (thin friendly exits): ${encircle.join(", ")}.`)
   }

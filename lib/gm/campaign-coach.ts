@@ -11,13 +11,7 @@ import {
   type CoachHarnessJson,
   type CoachHarnessStance,
 } from "@/lib/gm/advisor-harness"
-import {
-  buildSituation,
-  finishAdvisorReply,
-  scrubAdvisorReply,
-  staffMap,
-  type Situation,
-} from "@/lib/gm/advisor"
+import { buildSituation, staffMap, type Situation } from "@/lib/gm/advisor"
 import { assessManeuvers } from "@/lib/engine/simultaneous"
 import {
   combinedEngagementOdds,
