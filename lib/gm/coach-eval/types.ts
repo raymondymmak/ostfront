@@ -39,15 +39,9 @@ export type CoachEvalScenario = {
 }
 
 export type HardRuleId =
-  | "sentence_budget"
-  | "ends_clean"
-  | "question_first"
-  | "no_banned_jargon"
-  | "no_dangling_clause"
   | "no_filed_claims"
   | "no_order_prescription"
   | "grounded_odds"
-  | "grounded_provinces"
   | "battle_fortnight"
   | "must_contain"
   | "must_not_contain"

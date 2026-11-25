@@ -1,4 +1,5 @@
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
+import { lowSupplyMarchWarning, mergeOrderWarnings } from "@/lib/ui/order-warnings"
 import { assessManeuvers } from "@/lib/engine/simultaneous"
 import { findProvince, maneuverReservations } from "@/lib/engine/turn"
 import { leaveDepotGarrison, type QueuedOrder } from "@/lib/orders"
@@ -54,7 +55,10 @@ export function previewMarch(
       ok: true,
       kind: proposal.type,
       unitIds: [unit.id],
-      warning: depotWarning(from, [unit.id], claimed, "order"),
+      warning: mergeOrderWarnings(
+        depotWarning(from, [unit.id], claimed, "order"),
+        lowSupplyMarchWarning(from),
+      ),
     }
   }
 
@@ -82,7 +86,7 @@ export function previewMarch(
     ok: true,
     kind: to.controller === "central" ? "move" : "attack",
     unitIds: ids,
-    warning: depotWarning(from, ids, claimed, "arrow"),
+    warning: mergeOrderWarnings(depotWarning(from, ids, claimed, "arrow"), lowSupplyMarchWarning(from)),
   }
 }
 

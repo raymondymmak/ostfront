@@ -45,6 +45,7 @@ const STARTERS = [
 type ChatTurn = AdvisorChatMessage & {
   followUp?: string | null
   highlights?: CoachHighlight[]
+  stance?: string | null
 }
 
 type AdvisorPanelProps = {
@@ -209,6 +210,7 @@ export function AdvisorPanel({
             content: payload.reply as string,
             followUp: payload.followUp ?? null,
             highlights,
+            stance: typeof payload.stance === "string" ? payload.stance : null,
           },
         ].slice(-HISTORY_KEEP),
       )
@@ -268,6 +270,7 @@ export function AdvisorPanel({
                 message.role === "user" ? "text-sm text-ink/75" : "text-sm leading-6 whitespace-pre-wrap"
               }
               data-testid={message.role === "advisor" ? "advisor-reply" : undefined}
+              data-coach-stance={message.role === "advisor" ? message.stance ?? undefined : undefined}
             >
               {message.role === "user" ? `You: ${message.content}` : message.content}
             </p>

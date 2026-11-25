@@ -78,6 +78,7 @@ export async function POST(request: Request) {
     console.error("[ostfront] /api/advisor failed", error)
     return Response.json({
       reply: "I could not read the staff wire. The map is unchanged.",
+      stance: "brief",
       source: "fallback",
       unavailable: true,
       followUp: null,

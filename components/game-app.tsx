@@ -46,6 +46,7 @@ import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { ChipDrop } from "@/lib/ui/drag-order"
+import { centralEncirclementRiskIds } from "@/lib/ui/encirclement-risk"
 import { legalTargets, mapProvinceHoverNote, previewMarch } from "@/lib/ui/legal-targets"
 import { toggleSelection } from "@/lib/ui/selection"
 import {
@@ -219,6 +220,11 @@ export function GameApp() {
     if (finished || !selected) return null
     return legalTargets(game.state, selected.id, queue)
   }, [finished, selected, game.state, queue])
+
+  const encirclementRiskIds = useMemo(
+    () => centralEncirclementRiskIds(game.state, queue),
+    [game.state, queue],
+  )
 
   const selectProvince = useCallback((id: string) => {
     setSelectedId((current) => toggleSelection(current, id))
@@ -721,6 +727,7 @@ export function GameApp() {
             orders={queue}
             flashIds={flash}
             coachHighlightIds={coachHighlightIds}
+            encirclementRiskIds={encirclementRiskIds}
             orderMode={orderMode && !finished}
             showMapLegend={!desktopShell}
             showRails={showRails}

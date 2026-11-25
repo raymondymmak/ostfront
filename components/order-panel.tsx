@@ -3,12 +3,12 @@
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { RECRUIT } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, findProvince, type EngagementPreview } from "@/lib/engine/turn"
 import { ordersLocked } from "@/lib/finale"
 import { combinedQueueLines, formatQueuedOrderLine, type QueuedOrder } from "@/lib/orders"
 import { snapshotQueuedOrder } from "@/lib/queue-snapshot"
+import { queuedOrderRiskNotes } from "@/lib/ui/order-warnings"
 import type { GameState } from "@/lib/types"
 import { OddsBar } from "@/components/odds-bar"
 
@@ -127,11 +127,15 @@ export function OrderPanel({
                     ) : null}
                   </>
                 )}
-                {emptiesDepot(state, order) && (
-                  <p className="mt-1 text-xs text-destructive" data-testid="depot-warning">
-                    This order empties the {from?.name ?? "depot"} depot. Leave a garrison unless you mean to abandon it.
+                {queuedOrderRiskNotes(state, order).map((note) => (
+                  <p
+                    key={note}
+                    className="mt-1 text-xs text-destructive"
+                    data-testid={note.toLowerCase().includes("depot") ? "depot-warning" : "supply-warning"}
+                  >
+                    {note}
                   </p>
-                )}
+                ))}
                 {order.kind === "recruit" && order.unitKind && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     {RECRUIT[order.unitKind].mp} manpower, {RECRUIT[order.unitKind].ip} industry. Arrives when the fortnight closes
@@ -215,15 +219,6 @@ export function OrderPanel({
       </div>
     </ScrollArea>
   )
-}
-
-function emptiesDepot(state: GameState, order: QueuedOrder): boolean {
-  if (order.kind === "fortify" || order.kind === "recruit" || order.kind === "cancelRecruit") return false
-  const from = findProvince(state, order.from)
-  if (!from || from.depot !== "central") return false
-  const held = independentFormations(from.units.filter((unit) => unit.faction === "central"))
-  const departing = new Set(partyOf(from.units, order.unitIds).map((unit) => unit.id))
-  return held.length > 0 && held.every((unit) => departing.has(unit.id))
 }
 
 function queuedAttackOdds(

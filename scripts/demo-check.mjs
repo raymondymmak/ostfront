@@ -1367,6 +1367,22 @@ function buildSteps(cli, targets) {
         if (await page.locator("[data-testid=advisor-accept]").count()) {
           throw new Error("Coach must not expose Accept.")
         }
+        const stance = await reply.getAttribute("data-coach-stance")
+        if (stance !== "probe" && stance !== "warn" && stance !== "confirm" && stance !== "brief") {
+          throw new Error(`Coach harness stance missing or invalid: ${stance ?? "(none)"}`)
+        }
+      },
+    },
+    {
+      id: "16b-order-warnings",
+      name: "Map encirclement risk flag and order hint",
+      async run({ page }) {
+        const map = page.locator("[data-testid=war-map]")
+        await map.waitFor({ state: "visible" })
+        const riskAttr = await map.getAttribute("data-encirclement-risk")
+        if (riskAttr == null) throw new Error("Missing data-encirclement-risk on war-map.")
+        await restoreTrayTab(page, "tab-orders")
+        await page.locator("[data-testid=queued-orders]").waitFor({ state: "visible" })
       },
     },
     {

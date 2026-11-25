@@ -107,6 +107,7 @@ describe("campaign coach", () => {
       queuedOrders: [],
     })
     expect(result.reply.length).toBeGreaterThan(10)
+    expect(result.stance).toMatch(/^(probe|warn|confirm|brief)$/)
     expect(result).not.toHaveProperty("suggestions")
     expect(JSON.stringify(result)).not.toMatch(/"type":"(attack|move|fortify|recruit)"/)
   })

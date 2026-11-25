@@ -1,8 +1,19 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
+import { scenarioSpec } from "@/lib/data/objectives"
+import { formatDate } from "@/lib/format"
+import { renderAdvisorGameFacts } from "@/lib/gm/advisor-game-facts"
+import {
+  COACH_HARNESS_SYSTEM,
+  finalizeHarnessReply,
+  harnessHighlights,
+  inferHarnessStance,
+  parseCoachHarnessJson,
+  type CoachHarnessJson,
+  type CoachHarnessStance,
+} from "@/lib/gm/advisor-harness"
 import {
   buildSituation,
   finishAdvisorReply,
-  renderSituation,
   scrubAdvisorReply,
   staffMap,
   type Situation,
@@ -18,13 +29,12 @@ import {
 import { playerOrdersToQueued } from "@/lib/orders"
 import { legalTargets } from "@/lib/ui/legal-targets"
 import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
-import { extractTopLevelJson, llmChatChain, llmConfigured, stripNullFields } from "@/lib/gm/llm"
+import { llmChatChain, llmConfigured } from "@/lib/gm/llm"
 import { CAMPAIGN_COACH_JSON_SCHEMA } from "@/lib/gm/providers"
 import { scheduleLlmResponseLog } from "@/lib/gm/llm-log"
 import { provinceLabel } from "@/lib/news/battle"
 import { routineLog } from "@/lib/news/routine-copy"
 import type { BattleFacts, GameState, PlayerOrder, TurnRecord } from "@/lib/types"
-import { z } from "zod"
 
 const COACH_TIMEOUT_MS = 20_000
 /** Browser abort for `/api/advisor` — longer than the coach LLM call, shorter than a hung UI. */
@@ -57,6 +67,7 @@ export type CoachHighlight = { provinceId?: string; uiId?: string }
 
 export type CampaignCoachResponse = {
   reply: string
+  stance: CoachHarnessStance
   source: "llm" | "rules" | "fallback"
   unavailable: boolean
   followUp: string | null
@@ -66,57 +77,50 @@ export type CampaignCoachResponse = {
   suggestions?: never
 }
 
-const CoachJsonSchema = z
-  .object({
-    // Schema stays permissive; capCoachReply / capCoachHighlights enforce Socratic limits.
-    reply: z.string().min(1).max(800),
-    followUp: z.string().max(400).nullable().optional(),
-    highlights: z
-      .array(
-        z.object({
-          provinceId: z.string().optional(),
-          uiId: z.string().optional(),
-        }),
-      )
-      .max(6)
-      .optional(),
-  })
-  .strict()
+function coachAllowedOddsTrimmed(map: GameState, queued: PlayerOrder[]): string[] {
+  const trimmed: string[] = []
+  const pushRatio = (ratio: number) => {
+    if (!Number.isFinite(ratio)) return
+    trimmed.push((Math.round(ratio * 10) / 10).toFixed(1).replace(/\.0$/, ""))
+  }
+  const attacks = queued.filter(
+    (order): order is Extract<PlayerOrder, { type: "attack" }> => order.type === "attack",
+  )
+  const byTarget = new Map<string, Extract<PlayerOrder, { type: "attack" }>[]>()
+  for (const order of attacks) {
+    const list = byTarget.get(order.target) ?? []
+    list.push(order)
+    byTarget.set(order.target, list)
+  }
+  for (const order of attacks) {
+    const preview = engagementOdds(map, order.from, order.target, order.unitIds)
+    if (preview) pushRatio(preview.ratio)
+  }
+  for (const [targetId, orders] of byTarget) {
+    if (orders.length < 2) continue
+    const preview = combinedEngagementOdds(
+      map,
+      targetId,
+      orders.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
+    )
+    if (preview) pushRatio(preview.ratio)
+  }
+  for (const contact of buildSituation(map, queued).contacts) {
+    pushRatio(contact.ratio)
+  }
+  return [...new Set(trimmed)]
+}
 
-const COACH_SYSTEM = `You are General Erich von Falkenhayn, Chief of the General Staff, coaching the player who commands the Central Powers in the Gorlice–Tarnów offensive (2 May–11 July 1915). Speak like a sharp, concise Chief of Staff — not a quiz template or legal waiver.
-
-You do NOT issue orders. You never return suggestions, Accept cards, or order JSON. You speak only in reply to the player's latest question.
-
-You know only the DISPATCH in the user message: engine map facts, QUEUE_CONFLICTS (if any), the player's selected province (if any), their queued arrows, and CHRONICLE records of fortnights already resolved (including BattleFacts). You do not know Stavka's hidden plan. If a fact is not in the DISPATCH, say calmly you do not see it on the dispatch — never scold, and never say "staff figures".
-
-Voice and wording:
-- At most 2–3 short sentences. Every reply that quotes odds opens with a question — never with the ratio ("About 2.8:1…"). Then one operational fact. No em-dash parentheticals. No "The map shows…" prefix — state the fact directly ("Lemberg is still held by three Russian formations…").
-- Vary challenge phrasing every turn. Never reuse the same skeleton back-to-back (especially avoid repeating "Do you accept…?"). Prefer natural staff questions such as "If Kraków ties up on Lublin, who takes Lemberg before 13 June?" or "How do you crack Lublin's two forts and still swing south in time?".
-- When the player sticks to their plan across turns (e.g. "yes" / "we'll deal with Warsaw first"), acknowledge briefly and probe the next concrete risk in THEIR chosen plan — do not restate the same objection.
-- Objectives come from OHL ("OHL's 13 June objective" / "our 13 June objective") — never "the objective the map sets".
-- Forts: say "a fort" / "two forts" — never raw labels like "fort 1" or "fort 2".
-- Rails marked cut in the DISPATCH mean the line crosses the front into enemy-held ground (one end is Russian), not a destroyed rail behind friendly lines. Do not invent destroyed track as the reason columns cannot swing back.
-
-Socratic content:
-- Tailor the question to the latest ask and the real blind spot (queue conflict, empty flank, low supply, chronicle result, illegal axis).
-- If QUEUE_CONFLICTS is non-empty, diagnose that conflict first.
-- Return exactly one highlight matching that evidence (one provinceId or one uiId).
-- Post-battle: ask what outcome they expected; compare to the chronicle if they already predicted. Never say "the dice".
-- Odds: quote exactly ONE ratio from QUEUED_RESOLUTION_ODDS (if attacks are queued) or one DISPATCH contact. Round to one decimal (or a whole number). Name the assumption in the same sentence: "on this queued column" for one prong, or "two-pronged/concentric on the queued plan" when several prongs are combined. Name "if the Russians don't reinforce" the first time you quote odds in the conversation, or when Russian reserves adjacent to the target could respond; after the player has seen that caveat once, you may omit it. Never quote two ratios. Never write comparison sentences that need a second figure ("when Kielce offers…", "while X stands at…"). If you would need two figures, omit the comparison and keep one fact.
-- Clerk refusal: if asked to file, cancel, or pick an order, say you do not file orders and ask about the tradeoff. Never prescribe a concrete order ("cancel the fortify", "attack Kielce", "move the corps").
-- Never say "before the dice", "combined-odds board", or other internal UI names.
-- Pushback: stay Socratic and cite ONE concrete overlooked fact (supply, forts, empty neighbor, reinforcement risk).
-- Never claim an order was filed, noted, or queued.
-- Battle review: name the chronicle fortnight of the most recent battle; if none exist, say so plainly.
-
-Accuracy: odds, strengths, and battle results only from the DISPATCH / CHRONICLE / QUEUED_RESOLUTION_ODDS.
-
-Optional followUp is one short question or null (prefer the intent question in "reply").
-
-Return one JSON object and no markdown:
-{"reply":"Which job should that Kraków garrison keep: digging in, or marching on Kielce? Your queue both fortifies Kraków and attacks from it.","followUp":null,"highlights":[{"provinceId":"krakow"}]}
-
-Do not include a suggestions key. Do not include order objects.`
+function rulesToHarness(
+  map: GameState,
+  rules: { reply: string; highlights: CoachHighlight[] },
+  allowedOdds: string[],
+): { stance: CoachHarnessStance; reply: string; highlights: CoachHighlight[] } {
+  const highlights = rules.highlights.slice(0, 1)
+  const stance = inferHarnessStance(rules.reply, highlights)
+  const finalized = finalizeHarnessReply(map, stance, rules.reply, allowedOdds)
+  return { stance: finalized.stance, reply: finalized.reply, highlights }
+}
 
 export async function coachCampaign(input: {
   state: GameState
@@ -129,71 +133,60 @@ export async function coachCampaign(input: {
   const map = staffMap(input.state)
   const situation = buildSituation(map, queued)
   const chronicle = renderChronicle(input.log)
-  const selected = renderSelected(map, input.selectedProvinceId)
-  const rules = rulesCoach(map, situation, selected, input.log, input.messages, queued)
+  const rules = rulesCoach(
+    map,
+    situation,
+    renderSelected(map, input.selectedProvinceId),
+    input.log,
+    input.messages,
+    queued,
+  )
   const ordersClosed = situation.over
 
-  const queuedAttacks = queued.some((order) => order.type === "attack")
+  const gameFacts = renderAdvisorGameFacts(map, queued, input.selectedProvinceId)
+  const queueConflicts = detectQueuedOrderConflicts(map, queued)
+  const allowedOdds = coachAllowedOddsTrimmed(map, queued)
 
   if (!llmConfigured() && !fixtureEnabled()) {
-    const shaped = shapeCoachReply(rules.reply, rules.followUp, { queuedAttacks })
+    const harnessed = rulesToHarness(map, rules, allowedOdds)
     return {
-      reply: finishAdvisorReply(shaped.reply),
+      reply: harnessed.reply,
+      stance: harnessed.stance,
       source: "fallback",
       unavailable: true,
-      followUp: shaped.followUp,
-      highlights: capCoachHighlights(rules.highlights),
+      followUp: null,
+      highlights: harnessed.highlights,
       ordersClosed,
     }
   }
 
-  const queuedOdds = renderQueuedResolutionOdds(map, queued, input.messages)
-  const queueConflicts = detectQueuedOrderConflicts(map, queued)
-  const legalSlice = renderCoachLegalTargets(map, queued, input.selectedProvinceId)
-  // DISPATCH contacts still use advisor formatOdds ("before the dice"); scrub so the model cannot copy it.
-  const dispatch = scrubCoachOddsLanguage(renderSituation(situation)).replace(
-    /(\S+)–(\S+) cut\b/g,
-    "$1–$2 crosses the front (enemy holds one end; not a destroyed friendly rail)",
-  )
   const prompt = [
-    dispatch,
+    "GAME_FACTS",
+    gameFacts.join("\n"),
     "",
     "QUEUE_CONFLICTS",
     queueConflicts.length ? queueConflicts.map((item) => item.detail).join("\n") : "None.",
     "",
-    "QUEUED_RESOLUTION_ODDS",
-    queuedOdds,
-    "",
-    "LEGAL_TARGETS",
-    legalSlice,
-    "",
-    "SELECTED",
-    selected,
-    "",
     "CHRONICLE",
     chronicle,
-    "",
-    "ALLOWED_UI_IDS",
-    CAMPAIGN_COACH_UI_IDS.join(", "),
     "",
     "CONVERSATION",
     renderConversation(input.messages),
     "",
-    "Answer the latest question. Use the dispatch, LEGAL_TARGETS, QUEUE_CONFLICTS, QUEUED_RESOLUTION_ODDS, and chronicle only. LEGAL_TARGETS matches the map arrow legality (orderable attack/move vs reach-only neighbors). If QUEUED_RESOLUTION_ODDS shows REJECTED, cite that reason instead of odds. Never quote attack odds for provinces you already hold. Diagnose the real blind spot (conflict, flank, supply, chronicle). Rails marked as crossing the front are not destroyed friendly track. Do not issue or claim to file orders, and do not command a concrete cancel/attack/fortify — ask the tradeoff instead. Vary your challenge phrasing; odds replies must open with a question, never the ratio; quote at most one odds figure (one decimal) and name whether it is this queued column or the combined queued plan; use the Russian-reinforcement caveat on first odds in the thread or when adjacent reserves matter; never write a double-odds when/while comparison; never say fort 1/fort 2 or The map shows.",
+    "Answer the latest player message using GAME_FACTS and CHRONICLE only. Do not invent odds or file orders.",
   ].join("\n")
 
-  let failure: "empty" | "http" | "timeout" | null = null
-  let parsed: z.infer<typeof CoachJsonSchema> | null = null
+  let parsedHarness: CoachHarnessJson | null = fixtureEnabled()
+    ? {
+        stance: inferHarnessStance(rules.reply, rules.highlights),
+        reply: rules.reply,
+        highlightProvinceId: rules.highlights[0]?.provinceId ?? null,
+      }
+    : null
 
-  if (fixtureEnabled()) {
-    parsed = {
-      reply: rules.reply,
-      followUp: rules.followUp,
-      highlights: rules.highlights,
-    }
-  } else {
+  if (!fixtureEnabled()) {
     const chat = await llmChatChain({
-      system: COACH_SYSTEM,
+      system: COACH_HARNESS_SYSTEM,
       user: prompt,
       timeoutMs: COACH_TIMEOUT_MS,
       maxTokens: COACH_MAX_TOKENS,
@@ -203,12 +196,19 @@ export async function coachCampaign(input: {
       kind: "advisor",
       jsonSchema: { name: "campaign_coach", schema: CAMPAIGN_COACH_JSON_SCHEMA },
       accept: (content) => {
-        const judged = classifyCoachJson(content)
+        const judged = parseCoachHarnessJson(content)
         if (judged.parsed) return { ok: true }
+        console.log(
+          JSON.stringify({
+            tag: "ostfront.coach.harness_misfire",
+            code: judged.outcome,
+            detail: judged.error ?? "invalid harness JSON",
+          }),
+        )
         return {
           ok: false,
           outcome: judged.outcome === "parse" ? "invalid_json" : "schema",
-          error: judged.error ?? "invalid coach JSON",
+          error: judged.error ?? "invalid harness JSON",
         }
       },
     })
@@ -222,8 +222,8 @@ export async function coachCampaign(input: {
       }),
     )
     if (chat.ok) {
-      const judged = classifyCoachJson(chat.content)
-      parsed = judged.parsed
+      const judged = parseCoachHarnessJson(chat.content)
+      parsedHarness = judged.parsed
       scheduleLlmResponseLog({
         kind: "advisor",
         attempt: chat.exchange.attempt,
@@ -240,49 +240,43 @@ export async function coachCampaign(input: {
         error: judged.error,
         fellBack: judged.outcome !== "ok",
       })
-      if (!parsed) failure = "empty"
-    } else {
-      failure = chat.kind === "unconfigured" || chat.kind === "invalid_json" ? "http" : chat.kind
     }
   }
 
-  if (!parsed) {
-    void failure
-    const shaped = shapeCoachReply(rules.reply, rules.followUp, { queuedAttacks })
+  if (!parsedHarness) {
+    const harnessed = rulesToHarness(map, rules, allowedOdds)
     return {
-      reply: finishAdvisorReply(shaped.reply),
+      reply: harnessed.reply,
+      stance: harnessed.stance,
       source: "rules",
       unavailable: false,
-      followUp: shaped.followUp,
-      highlights: capCoachHighlights(rules.highlights),
+      followUp: null,
+      highlights: harnessed.highlights,
       ordersClosed,
     }
   }
 
-  const reply = scrubAdvisorReply(parsed.reply, map)
-  let shaped = shapeCoachReply(
-    reply || rules.reply,
-    parsed.followUp?.trim() ? parsed.followUp.trim().slice(0, 160) : null,
-    { queuedAttacks },
-  )
-  // If scrubbing gutted every sentence, fall back to the rules path rather than an empty LLM reply.
-  if (!shaped.reply.trim()) {
-    shaped = shapeCoachReply(rules.reply, rules.followUp, { queuedAttacks })
+  const highlights = harnessHighlights(parsedHarness)
+  const finalized = finalizeHarnessReply(map, parsedHarness.stance, parsedHarness.reply, allowedOdds)
+  if (!finalized.reply.trim()) {
+    const harnessed = rulesToHarness(map, rules, allowedOdds)
     return {
-      reply: finishAdvisorReply(shaped.reply),
+      reply: harnessed.reply,
+      stance: harnessed.stance,
       source: "rules",
       unavailable: false,
-      followUp: shaped.followUp,
-      highlights: capCoachHighlights(rules.highlights),
+      followUp: null,
+      highlights: harnessed.highlights,
       ordersClosed,
     }
   }
   return {
-    reply: finishAdvisorReply(shaped.reply),
-    source: "llm",
+    reply: finalized.reply,
+    stance: finalized.stance,
+    source: fixtureEnabled() ? "rules" : "llm",
     unavailable: false,
-    followUp: shaped.followUp,
-    highlights: capCoachHighlights(parsed.highlights ?? rules.highlights),
+    followUp: null,
+    highlights: highlights.length ? highlights : capCoachHighlights(rules.highlights),
     ordersClosed,
   }
 }
@@ -1692,6 +1686,33 @@ function rulesCoach(
 ): { reply: string; followUp: string | null; highlights: CoachHighlight[] } {
   const latest = [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
   const lower = latest.toLowerCase()
+  if (/which fortnight|when does the campaign|campaign end|11 july/i.test(lower)) {
+    const spec = scenarioSpec(map.scenario)
+    const endDate = formatDate(spec.length - 1)
+    return {
+      reply: `This is fortnight ${situation.fortnight} of ${situation.length}; the campaign ends ${endDate}.`,
+      followUp: null,
+      highlights: [],
+    }
+  }
+  if (/reach-only|order anything from krak|legal.*krak/i.test(lower)) {
+    const queue = playerOrdersToQueued(queued)
+    const targets = legalTargets(map, "krakow", queue)
+    const atk = targets.attack.map((id) => provinceLabel(id)).join(", ")
+    const reachOnly = targets.reach.attack
+      .filter((id) => !targets.attack.includes(id))
+      .map((id) => provinceLabel(id))
+      .join(", ")
+    const bits = [
+      atk ? `orderable attack: ${atk}` : null,
+      reachOnly ? `reach-only attack neighbors: ${reachOnly}` : null,
+    ].filter(Boolean)
+    return {
+      reply: `From Kraków the engine lists ${bits.join("; ") || "no legal arrows this fortnight"}.`,
+      followUp: null,
+      highlights: [{ provinceId: "krakow" }],
+    }
+  }
   const wantsReview = /battle|fought|last fortnight|chronicle|review|how did|losses|result/.test(lower)
   const hasIntent = playerStatedIntent(messages)
   const prediction = extractPlayerPrediction(messages)
@@ -1897,18 +1918,3 @@ function fixtureEnabled(): boolean {
   return process.env.NODE_ENV !== "production" && process.env.OSTFRONT_ADVISOR_FIXTURE === "1"
 }
 
-function classifyCoachJson(text: string): {
-  outcome: "ok" | "parse" | "schema"
-  error?: string
-  parsed: z.infer<typeof CoachJsonSchema> | null
-} {
-  const extracted = extractTopLevelJson(text)
-  if (!extracted.ok) return { outcome: "parse", error: extracted.error, parsed: null }
-  const raw = stripNullFields(extracted.value)
-  if (raw && typeof raw === "object" && !Array.isArray(raw) && "suggestions" in raw) {
-    return { outcome: "schema", error: "suggestions_forbidden", parsed: null }
-  }
-  const parsed = CoachJsonSchema.safeParse(raw)
-  if (!parsed.success) return { outcome: "schema", error: parsed.error.issues[0]?.message, parsed: null }
-  return { outcome: "ok", parsed: parsed.data }
-}
