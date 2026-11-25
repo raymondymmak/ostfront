@@ -8,6 +8,7 @@ import {
   ARMY_CHIP_MIN_ZOOM,
   armyChips,
   edgePanDirections,
+  ownsDragPointer,
   reduceChipDrag,
   type ArmyChip,
   type ChipDragView,
@@ -48,6 +49,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
   const provincesRef = useRef(provinces)
   const ordersRef = useRef(orders)
   const dragRef = useRef<ChipPointer | null>(null)
+  const pointerIdRef = useRef<number | null>(null)
   const clientRef = useRef({ x: 0, y: 0 })
   const metaRef = useRef({ name: "", strength: 0 })
   const nodes = useRef(new Map<string, HTMLButtonElement>())
@@ -207,6 +209,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
   useEffect(() => {
     if (!dragging) return
     const onMove = (event: PointerEvent) => {
+      if (!ownsDragPointer(pointerIdRef.current, event.pointerId, "move")) return
       const drag = dragRef.current
       const point = apiRef.current.canvasPoint(event)
       if (!drag || !point) return
@@ -220,6 +223,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
       apiRef.current.showView(view, event.clientX, event.clientY)
     }
     const onUp = (event: PointerEvent) => {
+      if (!ownsDragPointer(pointerIdRef.current, event.pointerId, "end")) return
       const drag = dragRef.current
       if (!drag) return
       const point = apiRef.current.canvasPoint(event)
@@ -241,16 +245,19 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
         () => crypto.randomUUID(),
       )
       dragRef.current = null
+      pointerIdRef.current = null
       setDraggingId(null)
       setGhost(null)
       apiRef.current.writeAttrs({ ...view, drag: null })
       dropRef.current?.({ queue: view.queue, queued: view.queued, reason: view.reason })
     }
-    const onCancel = () => {
+    const onCancel = (event: PointerEvent) => {
+      if (!ownsDragPointer(pointerIdRef.current, event.pointerId, "end")) return
       const drag = dragRef.current
       if (!drag) return
       const view = reduceChipDrag(asState(provincesRef.current), ordersRef.current, drag, { type: "cancel" }, () => "")
       dragRef.current = null
+      pointerIdRef.current = null
       setDraggingId(null)
       setGhost(null)
       apiRef.current.writeAttrs(view)
@@ -272,8 +279,10 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
     if (!enabled || !chip.draggable || event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
+    if (!ownsDragPointer(pointerIdRef.current, event.pointerId, "start")) return
     const point = canvasPoint(event)
     if (!point) return
+    pointerIdRef.current = event.pointerId
     metaRef.current = { name: chip.name, strength: chip.strength }
     const view = reduceChipDrag(
       asState(provincesRef.current),

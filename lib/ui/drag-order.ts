@@ -14,6 +14,16 @@ import type { Faction, GameState, Province } from "@/lib/types"
  */
 export const ARMY_CHIP_MIN_ZOOM = 7.4
 export const DRAG_EDGE_PX = 48
+
+/** One pointer owns the drag. A second finger cannot start, move, or commit it. */
+export function ownsDragPointer(
+  activeId: number | null,
+  pointerId: number,
+  phase: "start" | "move" | "end",
+): boolean {
+  if (phase === "start") return activeId == null
+  return activeId === pointerId
+}
 const CHIP_ORIGIN_PX = 16
 const CHIP_PITCH_PX = 26
 

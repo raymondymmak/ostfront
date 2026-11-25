@@ -9,7 +9,7 @@ Map arrows and neighbor buttons queue every unassigned formation in the province
 
 ## Decision
 
-At zoom 7.4 and above, `components/army-chips.tsx` draws one chip per independent formation on the MapLibre map. Dragging a Central Powers chip calls `reduceChipDrag` in `lib/ui/drag-order.ts`. That reducer is the only thing that changes the queue: a legal neighbour becomes one move or attack for that formation, and an illegal drop returns the same queue array. The pointer near a map edge sets a pan direction; the map pans while the drag lasts. `legalTargets` remains the UI mirror. `resolveTurn` still accepts or rejects the order.
+At zoom 7.4 and above, `components/army-chips.tsx` draws one chip per independent formation on the MapLibre map. Dragging a Central Powers chip calls `reduceChipDrag` in `lib/ui/drag-order.ts`. The pointer that starts the drag is the only one that can move or release it (`ownsDragPointer`); a second finger cannot start another chip or commit the first. That reducer is the only thing that changes the queue: a legal neighbour becomes one move or attack for that formation, and an illegal drop returns the same queue array. The pointer near a map edge sets a pan direction; the map pans while the drag lasts. `legalTargets` remains the UI mirror. `resolveTurn` still accepts or rejects the order.
 
 The directive box stays. Chips are not drawn on the WebGL-failure SVG fallback.
 

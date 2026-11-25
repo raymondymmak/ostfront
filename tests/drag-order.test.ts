@@ -6,6 +6,7 @@ import {
   ARMY_CHIP_MIN_ZOOM,
   armyChips,
   edgePanDirections,
+  ownsDragPointer,
   reduceChipDrag,
   type ChipDragAction,
   type ChipPointer,
@@ -71,6 +72,18 @@ describe("army chips", () => {
     expect(result.dropped.queued).toBe(false)
     expect(result.dropped.queue).toEqual([])
     expect(result.dropped.reason).toMatch(/another command/)
+  })
+})
+
+describe("ownsDragPointer", () => {
+  it("keeps the drag on the finger that started it", () => {
+    expect(ownsDragPointer(null, 1, "start")).toBe(true)
+    expect(ownsDragPointer(1, 2, "start")).toBe(false)
+    expect(ownsDragPointer(1, 1, "move")).toBe(true)
+    expect(ownsDragPointer(1, 2, "move")).toBe(false)
+    expect(ownsDragPointer(1, 1, "end")).toBe(true)
+    expect(ownsDragPointer(1, 2, "end")).toBe(false)
+    expect(ownsDragPointer(null, 2, "end")).toBe(false)
   })
 })
 
@@ -191,6 +204,8 @@ describe("reduceChipDrag", () => {
   it("is what the map chips and both shells call", () => {
     const chips = readFileSync("components/army-chips.tsx", "utf8")
     expect(chips).toContain("reduceChipDrag")
+    expect(chips).toContain("ownsDragPointer")
+    expect(chips).toContain("pointerIdRef")
     expect(chips).toContain('data-testid="army-chip"')
     expect(chips).toContain("panBy")
     const game = readFileSync("components/game-app.tsx", "utf8")
