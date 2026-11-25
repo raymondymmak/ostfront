@@ -589,7 +589,7 @@ export function WarMap({
       className="map-drag-layer relative h-full min-h-0 w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
-      data-encirclement-risk={encirclementRiskIds.join(",") || undefined}
+      data-encirclement-risk={encirclementRiskIds.join(",")}
       data-lesson-highlights={lessonFocusAttribute(lessonFocus)}
       data-lesson-focus={lessonFocusActive(lessonFocus) ? "true" : undefined}
       data-map-targets={
