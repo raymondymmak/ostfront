@@ -187,5 +187,6 @@ describe("rail lines", () => {
     expect(legend).toContain("cannot advance")
     expect(legend).toContain("overlay === \"supply\"")
     expect(legend).toContain("overlay === \"unrest\"")
+    expect(legend).toContain("overlay === \"resources\"")
   })
 })

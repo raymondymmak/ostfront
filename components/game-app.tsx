@@ -35,6 +35,7 @@ import { NewsCardQueue } from "@/components/news-card"
 import { objectiveValue } from "@/lib/data/objectives"
 import { independentFormations } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
+import type { PaintOverlayMode } from "@/lib/map/province-paint"
 import {
   FINAL_POSITIONS_LABEL,
   SEE_RESULT_LABEL,
@@ -49,6 +50,7 @@ import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import {
   isNeighborOrderTarget,
   legalTargetHoverNote,
+  mapProvinceHoverNote,
   legalTargets,
   nonAdjacentArrowHint,
 } from "@/lib/ui/legal-targets"
@@ -101,7 +103,7 @@ export function GameApp() {
   const resultOpen = shellResultOpen(shell)
   const [difficulty, setDifficulty] = useState<Difficulty>("normal")
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [overlay, setOverlay] = useState<"none" | "supply" | "unrest">("none")
+  const [overlay, setOverlay] = useState<PaintOverlayMode>("none")
   const [orderMode, setOrderMode] = useState(false)
   const [directive, setDirective] = useState("")
   const [queue, setQueue] = useState<QueuedOrder[]>([])
@@ -682,6 +684,7 @@ export function GameApp() {
         armReset={armReset}
         onReset={reset}
         tableShell={desktopShell}
+        refitSkipIds={[...attacking]}
       />
       {!desktopShell && ohlOpen && (
         <div
@@ -792,7 +795,7 @@ export function GameApp() {
             targetHoverNote={
               mapTargets
                 ? (id, base) => {
-                    const extra = legalTargetHoverNote(mapTargets, id)
+                    const extra = mapProvinceHoverNote(mapTargets, id)
                     return extra ? `${base}\n${extra}` : base
                   }
                 : undefined

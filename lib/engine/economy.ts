@@ -20,8 +20,17 @@ export const FORTIFY_IP_COST = 2
 export const HEAL_POINTS = 8
 export const POINTS_PER_MP = 4
 export const HEAL_SUPPLY = 50
+/** Below this, a province yields no manpower or industry. */
+export const INCOME_SUPPLY_FLOOR = 30
+/** Applied to summed Central Powers industry, then rounded once with manpower. */
+export const CENTRAL_INDUSTRY_MULTIPLIER = 1.3
 const MORALE_GAIN = 5
 const MORALE_TARGET = 80
+
+export const INCOME_FORMULA =
+  "Base yield × (1 − unrest/100), halved if occupied, and 0 if supply is under 30."
+
+export const REFIT_FORMULA = "Reinforcing damaged armies costs 1 manpower per 4 strength."
 
 /** Scales Russian income only. Easy is short of shells and men; Hard is not. */
 export const DIFFICULTY_INCOME: Record<Difficulty, number> = {
@@ -57,10 +66,167 @@ export function recruitmentYard(province: Province, faction: Faction): boolean {
 }
 
 export function provinceIncome(province: Province): { mp: number; ip: number } {
-  const base = YIELD_BY_ID[province.id]
-  if (!base || province.supply < 30) return { mp: 0, ip: 0 }
-  const scale = (1 - province.unrest / 100) * (province.controller === province.owner ? 1 : 0.5)
-  return { mp: base.mp * scale, ip: base.ip * scale }
+  const detail = provinceIncomeDetail(province)
+  return { mp: detail.mp, ip: detail.ip }
+}
+
+export type ProvinceIncomeDetail = {
+  id: string
+  name: string
+  baseMp: number
+  baseIp: number
+  supply: number
+  unrest: number
+  occupied: boolean
+  starved: boolean
+  /** 0 when supply is under 30; otherwise (1 − unrest/100) × (occupied ? 0.5 : 1). */
+  factor: number
+  mp: number
+  ip: number
+}
+
+/** Local yield before national multipliers. Same arithmetic as `provinceIncome`. */
+export function provinceIncomeDetail(province: Province): ProvinceIncomeDetail {
+  const base = YIELD_BY_ID[province.id] ?? { mp: 0, ip: 0 }
+  const occupied = province.controller !== province.owner
+  const starved = !YIELD_BY_ID[province.id] || province.supply < INCOME_SUPPLY_FLOOR
+  const factor = starved ? 0 : (1 - province.unrest / 100) * (occupied ? 0.5 : 1)
+  return {
+    id: province.id,
+    name: province.name,
+    baseMp: base.mp,
+    baseIp: base.ip,
+    supply: province.supply,
+    unrest: province.unrest,
+    occupied,
+    starved,
+    factor,
+    mp: base.mp * factor,
+    ip: base.ip * factor,
+  }
+}
+
+/** Effective manpower + industry on one province. National multipliers are not included. */
+export function provinceResourceYield(province: Province): number {
+  const income = provinceIncomeDetail(province)
+  return income.mp + income.ip
+}
+
+/** Richest base yield on the map (manpower + industry), before supply and unrest. */
+export function maxBaseResourceYield(): number {
+  let max = 0
+  for (const yieldOf of Object.values(YIELD_BY_ID)) {
+    max = Math.max(max, yieldOf.mp + yieldOf.ip)
+  }
+  return max
+}
+
+/** 0–100 shade for the Resources lens. 100 is `maxBaseResourceYield()`. */
+export function resourceYieldShade(yieldSum: number, max = maxBaseResourceYield()): number {
+  if (max <= 0) return 0
+  return Math.max(0, Math.min(100, (yieldSum / max) * 100))
+}
+
+export type FactionIncomeExplanation = {
+  faction: Faction
+  /** Held provinces, in map order (same addition order as `projectIncome`). */
+  provinces: ProvinceIncomeDetail[]
+  rawMp: number
+  rawIp: number
+  manpowerMultiplier: number
+  industryMultiplier: number
+  difficultyMultiplier: number
+  income: Purse
+}
+
+/** How `projectIncome` reaches its rounded purse for one faction. */
+export function explainIncome(state: GameState, faction: Faction): FactionIncomeExplanation {
+  const provinces: ProvinceIncomeDetail[] = []
+  let rawMp = 0
+  let rawIp = 0
+  for (const province of state.provinces) {
+    if (province.controller !== faction) continue
+    const detail = provinceIncomeDetail(province)
+    provinces.push(detail)
+    rawMp += detail.mp
+    rawIp += detail.ip
+  }
+  const central = faction === "central"
+  return {
+    faction,
+    provinces,
+    rawMp,
+    rawIp,
+    manpowerMultiplier: central ? 1 : RUSSIAN_MP_SCALE,
+    industryMultiplier: central ? CENTRAL_INDUSTRY_MULTIPLIER : RUSSIAN_IP_SCALE,
+    difficultyMultiplier: central ? 1 : DIFFICULTY_INCOME[state.difficulty ?? "normal"],
+    income: projectIncome(state, faction),
+  }
+}
+
+export function formatEconomyNumber(value: number): string {
+  if (!Number.isFinite(value)) return "0"
+  const rounded = Math.round(value * 100) / 100
+  return String(rounded)
+}
+
+/** Terse HUD line. The yield rule itself is `INCOME_FORMULA`, not repeated on each province. */
+export function describeProvinceIncome(detail: ProvinceIncomeDetail): string {
+  if (detail.starved) {
+    return `${detail.name}: 0 (supply ${formatEconomyNumber(detail.supply)} < ${INCOME_SUPPLY_FLOOR})`
+  }
+  return `${detail.name}: ${formatEconomyNumber(detail.mp)} MP, ${formatEconomyNumber(detail.ip)} IND`
+}
+
+export function describeIncomeTotals(explanation: FactionIncomeExplanation): string {
+  const raw = `Held provinces sum to ${formatEconomyNumber(explanation.rawMp)} manpower and ${formatEconomyNumber(explanation.rawIp)} industry.`
+  if (explanation.faction === "central") {
+    return `${raw} Industry × ${CENTRAL_INDUSTRY_MULTIPLIER} rounds to ${explanation.income.ip}. Manpower rounds to ${explanation.income.mp}.`
+  }
+  return `${raw} Russian manpower × ${explanation.manpowerMultiplier} and industry × ${explanation.industryMultiplier}, then × ${explanation.difficultyMultiplier} for difficulty, round to ${explanation.income.mp} manpower and ${explanation.income.ip} industry.`
+}
+
+export type RefitLine = {
+  unitId: string
+  name: string
+  provinceId: string
+  provinceName: string
+  need: number
+  mp: number
+}
+
+export type RefitBill = {
+  mp: number
+  lines: RefitLine[]
+}
+
+/** Formations the treasury will refit, at 1 manpower per `POINTS_PER_MP` strength. */
+export function explainRefit(
+  state: GameState,
+  faction: Faction,
+  skip: ReadonlySet<string>,
+): RefitBill {
+  const lines: RefitLine[] = []
+  const provinces = [...state.provinces].sort((a, b) => a.id.localeCompare(b.id))
+  for (const province of provinces) {
+    if (province.controller !== faction || province.supply < HEAL_SUPPLY) continue
+    const units = fightingUnits(province.units).sort((a, b) => a.id.localeCompare(b.id))
+    for (const unit of units) {
+      if (unit.faction !== faction || skip.has(unit.id)) continue
+      const max = unit.maxStrength ?? unit.strength
+      const need = Math.max(0, Math.min(HEAL_POINTS, max - unit.strength))
+      if (need <= 0) continue
+      lines.push({
+        unitId: unit.id,
+        name: unit.name,
+        provinceId: province.id,
+        provinceName: province.name,
+        need,
+        mp: Math.ceil(need / POINTS_PER_MP),
+      })
+    }
+  }
+  return { mp: lines.reduce((sum, line) => sum + line.mp, 0), lines }
 }
 
 /** National multipliers, then the Russian difficulty modifier. Rounded once. */
@@ -73,7 +239,7 @@ export function projectIncome(state: GameState, faction: Faction): Purse {
     mp += yieldOf.mp
     ip += yieldOf.ip
   }
-  if (faction === "central") ip *= 1.3
+  if (faction === "central") ip *= CENTRAL_INDUSTRY_MULTIPLIER
   else {
     mp *= RUSSIAN_MP_SCALE
     ip *= RUSSIAN_IP_SCALE
@@ -93,17 +259,7 @@ export function reinforcementCost(
   faction: Faction,
   skip: ReadonlySet<string>,
 ): number {
-  let mp = 0
-  for (const province of state.provinces) {
-    if (province.controller !== faction || province.supply < HEAL_SUPPLY) continue
-    for (const unit of fightingUnits(province.units)) {
-      if (unit.faction !== faction || skip.has(unit.id)) continue
-      const max = unit.maxStrength ?? unit.strength
-      const need = Math.max(0, Math.min(HEAL_POINTS, max - unit.strength))
-      if (need > 0) mp += Math.ceil(need / POINTS_PER_MP)
-    }
-  }
-  return mp
+  return explainRefit(state, faction, skip).mp
 }
 
 /**
@@ -157,7 +313,7 @@ export function reinforceFaction(
   }
   if (healed.length) {
     notes.push(
-      `${healed.length} ${faction === "central" ? "Central Powers" : "Russian"} formation${healed.length === 1 ? "" : "s"} refit in supply.`,
+      `${healed.length} ${faction === "central" ? "Central Powers" : "Russian"} formation${healed.length === 1 ? "" : "s"} receive reinforcements in supply.`,
     )
   }
   return notes

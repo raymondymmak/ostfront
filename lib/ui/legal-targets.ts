@@ -16,6 +16,7 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
     attack: [],
     reach: { move: [], attack: [] },
     canOrder: false,
+    originNote: null,
     blocked: [],
     depotWarn: [],
   }
@@ -34,22 +35,20 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
     from.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
   )
   if (!available.length) {
+    const originNote = `${from.name} has no unassigned formation.`
     return {
       ...base,
-      blocked: from.neighbors.map((id) => ({
-        id,
-        reason: `${from.name} has no unassigned formation.`,
-      })),
+      originNote,
+      blocked: from.neighbors.map((id) => ({ id, reason: originNote })),
     }
   }
 
   if (from.supply < 30) {
+    const originNote = `${from.name} is below supply 30. The engine will refuse the advance.`
     return {
       ...base,
-      blocked: from.neighbors.map((id) => ({
-        id,
-        reason: `${from.name} is below supply 30. The engine will refuse the advance.`,
-      })),
+      originNote,
+      blocked: from.neighbors.map((id) => ({ id, reason: originNote })),
     }
   }
 
@@ -88,12 +87,25 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
     }
   }
 
-  return { from: provinceId, move, attack, reach, canOrder, blocked, depotWarn }
+  return { from: provinceId, move, attack, reach, canOrder, blocked, depotWarn, originNote: null }
 }
 
+/** Drop-hint text, including an origin refusal repeated onto a neighbor arrow. */
 export function legalTargetHoverNote(targets: LegalTargets, provinceId: string): string | null {
   const blocked = targets.blocked.find((item) => item.id === provinceId)
   if (blocked) return blocked.reason
+  const warn = targets.depotWarn.find((item) => item.id === provinceId)
+  return warn?.reason ?? null
+}
+
+/**
+ * Map tooltip for the province under the pointer.
+ * A note about the origin (supply, no formation) appears only on that province.
+ */
+export function mapProvinceHoverNote(targets: LegalTargets, provinceId: string): string | null {
+  if (provinceId === targets.from) return targets.originNote
+  const blocked = targets.blocked.find((item) => item.id === provinceId)
+  if (blocked && blocked.reason !== targets.originNote) return blocked.reason
   const warn = targets.depotWarn.find((item) => item.id === provinceId)
   return warn?.reason ?? null
 }

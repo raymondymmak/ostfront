@@ -50,7 +50,7 @@ Stack: Next.js App Router, React client components for the game shell, server ro
 | --- | --- |
 | `lib/map/province-label-layers.ts` | GeoJSON for `province-labels` / `province-counters`, glyph URL, counter pill image |
 | `lib/map/war-map-layers.ts` | Layer stack: rail casing+track above borders (under labels/counters), symbol labels above selection outline, feature-state `role` fills |
-| `lib/map/province-paint.ts` | Shared fill/lift/`roleFor` for MapLibre and `components/svg-map.tsx` fallback |
+| `lib/map/province-paint.ts` | Shared fill/lift/`roleFor` for MapLibre and `components/svg-map.tsx` fallback. Overlay `resources` shades `provinceResourceYield` (local mp+ip; national multipliers stay off the colour) |
 | `lib/map/target-highlight.ts` | Feature-state roles + `target-fill` opacity pulse (snap + MapLibre paint transition) so selection switches fade like first select |
 | `lib/map/lesson-highlight.ts` | `/teach` brass focus fill + target/source outlines; pulse respects `prefers-reduced-motion` |
 | `lib/map/rail-lines.ts` + `shared-border.ts` | Rail paths via shared-border midpoints, not anchor-to-anchor chords |
@@ -248,8 +248,12 @@ Numbers below are from source, not paraphrase.
 
 ### Economy highlights (`lib/engine/economy.ts`)
 
+- Province yield: base × (1 − unrest/100), ×0.5 when `controller !== owner`, and **0** when supply is under **30** (`INCOME_SUPPLY_FLOOR`). The HUD breakdown prints that rule once, then a terse line per held province (`1 MP, 1 IND`, or `0 (supply 27 < 30)`).
+- Central Powers industry × **1.3** (`CENTRAL_INDUSTRY_MULTIPLIER`), then one round (`projectIncome` / `explainIncome`). Russian manpower ×1.12, industry ×0.55, then `DIFFICULTY_INCOME` (easy 0.62, normal 0.82, hard 1.18).
+- Reinforcements: up to **8** strength at **1 manpower per 4** (`POINTS_PER_MP`) for formations in supply ≥ **50** that are not attacking (`explainRefit`). The HUD states that cost in one sentence and does not print the bill. Industry’s breakdown also shows ×1.3; manpower’s does not.
+- Resources map lens (`PaintOverlayMode` `"resources"`, `[data-testid=map-mode-resources]`) shades that local yield. It does not apply the national multipliers and does not print MP/IND labels. The province panel shows the same terse yield for the selected province (`[data-testid=province-yield]`).
+- Map hover notes that describe the order origin (supply under 30, no unassigned formation) appear only on that province (`mapProvinceHoverNote` in `lib/ui/legal-targets.ts`). Neighbor arrows still carry the refusal in the orders hint via `legalTargetHoverNote`.
 - Recruit costs and arrivals in `RECRUIT` table (infantry 6 mp / 3 ip, etc.).
-- Russian income scale: easy 0.62, normal 0.82, hard 1.18 (`DIFFICULTY_INCOME`).
 - Yards: controller match, supply ≥ **60**, depot or own urban city (`recruitmentYard`).
 
 ### Victory (`lib/data/objectives.ts`, `lib/engine/victory.ts`)

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { freshGame } from "@/lib/storage"
-import { legalTargetHoverNote, legalTargets } from "@/lib/ui/legal-targets"
+import { legalTargetHoverNote, legalTargets, mapProvinceHoverNote } from "@/lib/ui/legal-targets"
 import { cursorHoverText, cursorTipPosition, provinceHoverBase, provinceHoverNote } from "@/lib/ui/map-hover"
 
 function mapTargetHoverNote(targets: ReturnType<typeof legalTargets>) {
   return (id: string, base: string) => {
-    const extra = legalTargetHoverNote(targets, id)
+    const extra = mapProvinceHoverNote(targets, id)
     return extra ? `${base}\n${extra}` : base
   }
 }
@@ -20,17 +20,21 @@ describe("svg map province hover", () => {
     const targets = legalTargets(game.state, "krakow", [])
     const hoverNote = mapTargetHoverNote(targets)
 
-    const tip = provinceHoverNote(kielce, hoverNote)
-    expect(tip).toContain(provinceHoverBase(kielce))
-    expect(tip).toContain("supply 30")
-    const cursor = cursorHoverText(kielce, hoverNote)
-    expect(cursor).toMatch(/supply 30/)
-    expect(cursor).not.toContain(kielce.name)
-    expect(cursor).not.toContain("Total unit strength")
+    const neighborTip = provinceHoverNote(kielce, hoverNote)
+    expect(neighborTip).toBe(provinceHoverBase(kielce))
+    expect(neighborTip).not.toMatch(/supply 30/)
+    expect(cursorHoverText(kielce, hoverNote)).toBeNull()
+
+    const selfTip = provinceHoverNote(krakow, hoverNote)
+    expect(selfTip).toContain("supply 30")
+    expect(selfTip).toContain("Kraków")
+    const selfCursor = cursorHoverText(krakow, hoverNote)
+    expect(selfCursor).toMatch(/supply 30/)
+    expect(selfCursor).not.toContain("Total unit strength")
     expect(legalTargetHoverNote(targets, "kielce")).toMatch(/supply 30/)
   })
 
-  it("includes depot-warn and no-formation reasons for neighbors", () => {
+  it("keeps a no-formation refusal on the origin, not on a neighbor", () => {
     const game = freshGame()
     const krakow = game.state.provinces.find((item) => item.id === "krakow")
     if (!krakow) throw new Error("krakow missing")
@@ -50,11 +54,12 @@ describe("svg map province hover", () => {
     const hoverNote = mapTargetHoverNote(targets)
     const kielce = game.state.provinces.find((item) => item.id === "kielce")
     if (!kielce) throw new Error("kielce missing")
-    const tip = provinceHoverNote(kielce, hoverNote)
-    expect(tip).toMatch(/no unassigned formation/)
-    const cursor = cursorHoverText(kielce, hoverNote)
-    expect(cursor).toMatch(/no unassigned formation/)
-    expect(cursor).not.toContain("Total unit strength")
+    expect(provinceHoverNote(kielce, hoverNote)).not.toMatch(/no unassigned formation/)
+    expect(cursorHoverText(kielce, hoverNote)).toBeNull()
+    const self = cursorHoverText(krakow, hoverNote)
+    expect(self).toMatch(/no unassigned formation/)
+    expect(self).toContain("Kraków")
+    expect(self).not.toContain("Total unit strength")
   })
 
   it("places the cursor tip inside the map frame", () => {

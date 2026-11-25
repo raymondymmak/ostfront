@@ -1,8 +1,8 @@
 "use client"
 
+import { EconomyReadout } from "@/components/economy-readout"
 import { HudOptionsMenu } from "@/components/hud-options-menu"
 import { listedStrength } from "@/lib/engine/echelon"
-import { projectIncome } from "@/lib/engine/economy"
 import { standing } from "@/lib/engine/victory"
 import { statusLabel } from "@/lib/finale"
 import { scenarioSpec } from "@/lib/data/objectives"
@@ -18,6 +18,8 @@ type HudProps = {
   teachGoal?: string
   /** Desktop general's-table: parchment chrome (window toggles live in the document tray). */
   tableShell?: boolean
+  /** Unit ids ordered to attack. Left out of the manpower refit bill. */
+  refitSkipIds?: readonly string[]
 }
 
 export function Hud({
@@ -27,14 +29,13 @@ export function Hud({
   teachMode,
   teachGoal,
   tableShell: _tableShell = false,
+  refitSkipIds,
 }: HudProps) {
   void _tableShell
   const central = strength(state, "central")
   const russia = strength(state, "russia")
   const spec = scenarioSpec(state.scenario)
   const board = standing(state)
-  const income = projectIncome(state, "central")
-  const purse = state.treasury.central
   const shown = statusLabel(Boolean(state.result), state.result?.grade ?? board.grade)
   const total = central + russia
   const centralShare = total === 0 ? 0 : (central / total) * 100
@@ -99,15 +100,7 @@ export function Hud({
                 <span aria-hidden="true" className="hidden lg:inline">
                   ·
                 </span>
-                <span data-testid="treasury">
-                  Manpower{" "}
-                  <span title="Manpower in the treasury">{purse.mp}</span>{" "}
-                  <span title="Manpower income this fortnight">(+{income.mp})</span>
-                  <span aria-hidden="true"> · </span>
-                  Industry{" "}
-                  <span title="Industry in the treasury">{purse.ip}</span>{" "}
-                  <span title="Industry income this fortnight">(+{income.ip})</span>
-                </span>
+                <EconomyReadout state={state} refitSkipIds={refitSkipIds} />
                 <span aria-hidden="true" className="hidden lg:inline">
                   ·
                 </span>

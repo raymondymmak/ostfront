@@ -161,6 +161,25 @@ async function openApplication(page, targets) {
   }
 }
 
+function assertEconomyBreakdown(text, { industryMultiplier }) {
+  if (!text.includes("unrest/100")) throw new Error(`Breakdown missing unrest formula: ${text.slice(0, 280)}`)
+  if (!/halved if occupied/i.test(text)) throw new Error("Breakdown missing occupied-yield rule")
+  if (!/under 30/i.test(text)) throw new Error("Breakdown missing supply floor")
+  if (!/Reinforcing damaged armies costs 1 manpower per 4 strength/i.test(text)) {
+    throw new Error("Breakdown missing reinforcements cost")
+  }
+  if (!text.includes("Austrian Silesia: 1 MP, 1 IND")) {
+    throw new Error(`Breakdown missing a terse province line: ${text.slice(0, 360)}`)
+  }
+  if (/this fortnight/i.test(text)) throw new Error("Breakdown still shows this fortnight's income")
+  if (/treasury already/i.test(text)) throw new Error("Breakdown still shows the treasury stock")
+  if (/round/i.test(text)) throw new Error("Breakdown still mentions rounding")
+  if (/refit/i.test(text)) throw new Error("Breakdown still says refit")
+  const showsMultiplier = /×\s*1\.3/.test(text)
+  if (industryMultiplier && !showsMultiplier) throw new Error("Industry breakdown missing Central Powers ×1.3")
+  if (!industryMultiplier && showsMultiplier) throw new Error("Manpower breakdown must not mention ×1.3")
+}
+
 async function projectOnMap(page, lon, lat) {
   return page.evaluate(
     ([longitude, latitude]) => {
@@ -576,7 +595,7 @@ function buildSteps(cli, targets) {
     },
     {
       id: "06-map-modes",
-      name: "Map modes Control / Supply / Unrest",
+      name: "Map modes Control / Supply / Unrest / Resources",
       async run({ page }) {
         // Overlay scale lives in the Legend paper — restore it after map-click stows.
         await restoreTrayTab(page, "legend-toggle")
@@ -585,8 +604,41 @@ function buildSteps(cli, targets) {
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible", timeout: 5_000 })
         await page.locator("[data-testid=map-mode-unrest]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "visible" })
+        await page.locator("[data-testid=map-mode-resources]").click()
+        const scale = page.locator("[data-testid=overlay-scale]")
+        await scale.waitFor({ state: "visible" })
+        const scaleText = ((await scale.innerText()) ?? "").replace(/\s+/g, " ")
+        if (!/unrest\/100/i.test(scaleText)) {
+          throw new Error(`Resources scale missing yield formula: ${scaleText.slice(0, 240)}`)
+        }
         await page.locator("[data-testid=map-mode-none]").click()
         await page.locator("[data-testid=overlay-scale]").waitFor({ state: "hidden", timeout: 5_000 })
+      },
+    },
+    {
+      id: "06b-economy-breakdown",
+      name: "Manpower and industry breakdown",
+      async run({ page }) {
+        const manpower = page.locator("[data-testid=economy-manpower]")
+        await manpower.click()
+        const panel = page.locator("[data-testid=economy-breakdown]")
+        await panel.waitFor({ state: "visible", timeout: 5_000 })
+        const manpowerText = ((await panel.innerText()) ?? "").replace(/\s+/g, " ")
+        assertEconomyBreakdown(manpowerText, { industryMultiplier: false })
+        const incomeMp = await panel.getAttribute("data-income-mp")
+        const incomeIp = await panel.getAttribute("data-income-ip")
+        const refitMp = await panel.getAttribute("data-refit-mp")
+        if (incomeMp == null || incomeIp == null || refitMp == null) {
+          throw new Error("Breakdown is missing engine income or reinforcement attributes")
+        }
+        await page.locator("[data-testid=economy-industry]").click()
+        await panel.waitFor({ state: "visible" })
+        const focused = await panel.getAttribute("data-economy-focus")
+        if (focused !== "industry") throw new Error(`Expected industry focus, got ${focused}`)
+        const industryText = ((await panel.innerText()) ?? "").replace(/\s+/g, " ")
+        assertEconomyBreakdown(industryText, { industryMultiplier: true })
+        await page.keyboard.press("Escape")
+        await panel.waitFor({ state: "hidden", timeout: 5_000 })
       },
     },
     {
@@ -813,6 +865,12 @@ function buildSteps(cli, targets) {
       name: "Open Province tab and inspect Kraków",
       async run({ page }) {
         await selectKrakowOnMap(page)
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        await province.locator("[data-testid=province-yield]").waitFor({ state: "visible", timeout: 10_000 })
+        const yieldText = ((await province.locator("[data-testid=province-yield]").textContent()) ?? "").replace(/\s+/g, " ")
+        if (yieldText.trim() !== "2 MP, 2 IND") {
+          throw new Error(`Kraków province panel yield was "${yieldText.trim()}", expected "2 MP, 2 IND".`)
+        }
       },
     },
     {

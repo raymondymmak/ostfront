@@ -44,6 +44,7 @@ export const CAMPAIGN_COACH_UI_IDS = [
   "map-mode-supply",
   "map-mode-control",
   "map-mode-unrest",
+  "map-mode-resources",
   "attack-odds",
   "combined-odds",
   "queued-orders",
