@@ -183,5 +183,16 @@ describe("top bar and map chrome", () => {
     expect(actionsBlock).toMatch(/className="[^"]*\bw-full\b/)
     expect(difficultyBlock).not.toMatch(/max-w-/)
     expect(actionsBlock).not.toMatch(/max-w-/)
+    const mainOpen = campaignStart.indexOf("<main")
+    const mainBlock = campaignStart.slice(mainOpen, campaignStart.indexOf(">", mainOpen) + 1)
+    expect(mainBlock).toMatch(/overflow-y-auto/)
+    expect(mainBlock).toMatch(/overscroll-contain/)
+    expect(mainBlock).not.toMatch(/justify-center/)
+    const cardOpen = campaignStart.lastIndexOf("<div", campaignStart.indexOf('data-testid="campaign-start-card"'))
+    const cardBlock = campaignStart.slice(
+      cardOpen,
+      campaignStart.indexOf(">", campaignStart.indexOf('data-testid="campaign-start-card"')) + 1,
+    )
+    expect(cardBlock).toMatch(/\bmy-auto\b/)
   })
 })

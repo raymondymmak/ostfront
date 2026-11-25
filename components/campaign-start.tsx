@@ -90,9 +90,9 @@ export function CampaignStart({
         </svg>
       </div>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto pt-[calc(1.5rem+env(safe-area-inset-top,0px))] pr-[calc(1.25rem+env(safe-area-inset-right,0px))] pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pl-[calc(1.25rem+env(safe-area-inset-left,0px))] text-center sm:max-w-lg sm:pr-[calc(2rem+env(safe-area-inset-right,0px))] sm:pl-[calc(2rem+env(safe-area-inset-left,0px))] lg:max-h-dvh lg:pt-[calc(2rem+env(safe-area-inset-top,0px))] lg:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
+      <main className="relative z-10 mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain pt-[calc(1.5rem+env(safe-area-inset-top,0px))] pr-[calc(1.25rem+env(safe-area-inset-right,0px))] pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pl-[calc(1.25rem+env(safe-area-inset-left,0px))] text-center sm:max-w-lg sm:pr-[calc(2rem+env(safe-area-inset-right,0px))] sm:pl-[calc(2rem+env(safe-area-inset-left,0px))] lg:max-h-dvh lg:pt-[calc(2rem+env(safe-area-inset-top,0px))] lg:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
         <div
-          className="flex w-full flex-col items-stretch rounded-sm border border-leather/45 bg-paper/95 px-5 py-6 text-ink shadow-[0_16px_36px_rgba(20,14,8,0.35)] sm:px-8 sm:py-8"
+          className="my-auto flex w-full shrink-0 flex-col items-stretch rounded-sm border border-leather/45 bg-paper/95 px-5 py-6 text-ink shadow-[0_16px_36px_rgba(20,14,8,0.35)] sm:px-8 sm:py-8"
           data-testid="campaign-start-card"
         >
           <h1 className="font-display text-5xl font-normal italic leading-none tracking-wide text-primary sm:text-6xl md:text-7xl">

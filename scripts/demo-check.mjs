@@ -573,6 +573,43 @@ function buildSteps(cli, targets) {
           await page.setViewportSize(MOBILE_VIEWPORT)
           await page.waitForTimeout(200)
           await assertBriefingControlsCentered(page, 1)
+          await page.setViewportSize({ width: 360, height: 500 })
+          await page.waitForTimeout(200)
+          await page.getByRole("button", { name: "More briefing" }).click()
+          await page.locator("[data-testid=campaign-more-briefing]").waitFor({ state: "visible", timeout: 5_000 })
+          const reach = await page.evaluate(() => {
+            const main = document.querySelector("[data-testid=scenario-picker] main")
+            const heading = document.querySelector("[data-testid=campaign-start-card] h1")
+            const begin = document.querySelector("[data-testid=begin-scenario]")
+            if (!main || !heading || !begin) return { ok: false, reason: "missing start pieces" }
+            main.scrollTop = 0
+            const mainRect = main.getBoundingClientRect()
+            const headRect = heading.getBoundingClientRect()
+            if (headRect.top < mainRect.top - 1) {
+              return {
+                ok: false,
+                reason: `heading above the start scroll origin (${Math.round(headRect.top)} < ${Math.round(mainRect.top)})`,
+              }
+            }
+            main.scrollTop = main.scrollHeight
+            const beginRect = begin.getBoundingClientRect()
+            const after = main.getBoundingClientRect()
+            if (beginRect.bottom > after.bottom + 2) {
+              return {
+                ok: false,
+                reason: `Begin stays below the start panel (${Math.round(beginRect.bottom)} > ${Math.round(after.bottom)})`,
+              }
+            }
+            const doc = document.documentElement
+            const pageScroll = document.scrollingElement?.scrollTop ?? window.scrollY
+            if (pageScroll !== 0 || doc.scrollHeight > doc.clientHeight + 2) {
+              return { ok: false, reason: "start screen moved the page" }
+            }
+            return { ok: true, scrolled: main.scrollHeight > main.clientHeight + 2 }
+          })
+          if (!reach.ok) throw new Error(`Short-phone briefing: ${reach.reason}`)
+          if (!reach.scrolled) throw new Error("Short-phone briefing did not overflow the start panel")
+          await page.getByRole("button", { name: "Less briefing" }).click()
         } finally {
           await page.setViewportSize(DESKTOP_VIEWPORT)
           await page.waitForTimeout(200)

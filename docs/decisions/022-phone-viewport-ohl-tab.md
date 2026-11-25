@@ -15,4 +15,4 @@ Orders from OHL leaves the header strip. Below `lg` it is a phone-tray tab (`ohl
 
 ## Consequences
 
-demo-check fits 390×844 and 360×740 and touch-drags a formation chip without moving the document. The desktop OHL paper and its tray-file check are unchanged. ADR 010 and ADR 012 still describe the desktop papers.
+demo-check fits 390×844 and 360×740 and touch-drags a formation chip without moving the document. The start card uses auto margins: it stays centred when it fits, and when **More** briefing is taller than the phone the heading remains at the scroll origin. The desktop OHL paper and its tray-file check are unchanged. ADR 010 and ADR 012 still describe the desktop papers.
