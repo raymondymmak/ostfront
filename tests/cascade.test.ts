@@ -103,21 +103,27 @@ describe("fetchGmWithCascade", () => {
   })
 
   it("reserves half the budget when a strong model can retry", async () => {
-    process.env.LLM_MODEL_STRONG = "strong-model"
-    process.env.LLM_TIMEOUT_MS = "50000"
-    process.env.GM_BUDGET_MS = "90000"
-    const llm = await import("@/lib/gm/llm")
-    const spy = vi.spyOn(llm, "llmAiTurn").mockResolvedValue({
-      ok: true,
-      turn: { narration: "Staff notes.", proposals: [], events: [], diplomacy: [] },
-      latencyMs: 12,
-      zodIssueCount: 0,
-    })
-    const { fetchGmWithCascade } = await import("@/lib/gm/cascade")
-    await fetchGmWithCascade(createInitialState(), [], { proposals: [], notes: [] })
-    expect(spy.mock.calls[0]?.[2]).toMatchObject({ model: "cheap-model", timeoutMs: 45_000 })
-    expect(spy).toHaveBeenCalledTimes(1)
-    spy.mockRestore()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2024-06-01T00:00:00.000Z"))
+    try {
+      process.env.LLM_MODEL_STRONG = "strong-model"
+      process.env.LLM_TIMEOUT_MS = "50000"
+      process.env.GM_BUDGET_MS = "90000"
+      const llm = await import("@/lib/gm/llm")
+      const spy = vi.spyOn(llm, "llmAiTurn").mockResolvedValue({
+        ok: true,
+        turn: { narration: "Staff notes.", proposals: [], events: [], diplomacy: [] },
+        latencyMs: 12,
+        zodIssueCount: 0,
+      })
+      const { fetchGmWithCascade } = await import("@/lib/gm/cascade")
+      await fetchGmWithCascade(createInitialState(), [], { proposals: [], notes: [] })
+      expect(spy.mock.calls[0]?.[2]).toMatchObject({ model: "cheap-model", timeoutMs: 45_000 })
+      expect(spy).toHaveBeenCalledTimes(1)
+      spy.mockRestore()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("honors LLM_TIMEOUT_MS and GM_BUDGET_MS", async () => {
