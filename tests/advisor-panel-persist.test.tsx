@@ -167,12 +167,15 @@ describe("AdvisorPanel state retention", () => {
     expect(send().disabled).toBe(true)
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(26_000)
+      await vi.advanceTimersByTimeAsync(33_000)
       await Promise.resolve()
       await Promise.resolve()
     })
 
-    expect(host.querySelector('[data-testid="advisor-reply"]')?.textContent).toMatch(/timed out|Try again/i)
+    expect(host.querySelector('[data-testid="advisor-request-error"]')?.textContent).toMatch(
+      /didn't answer|Try again/i,
+    )
+    expect(host.querySelector('[data-testid="advisor-retry"]')).not.toBeNull()
     expect(send().disabled).toBe(true) // disabled while draft empty
     await act(async () => {
       const draft = host.querySelector('[data-testid="advisor-input"]') as HTMLTextAreaElement

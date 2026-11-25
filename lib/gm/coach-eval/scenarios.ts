@@ -1,4 +1,6 @@
 import { createInitialState } from "@/lib/data/scenario"
+import { formatDate } from "@/lib/format"
+import { renderAdvisorGameFacts } from "@/lib/gm/advisor-game-facts"
 import { buildSituation, staffMap } from "@/lib/gm/advisor"
 import { formatCoachOddsPhrase } from "@/lib/gm/campaign-coach"
 import {
@@ -337,6 +339,7 @@ function reachableWarsawFromLublin(): CoachEvalFixture {
   }
   lublin.controller = "central"
   lublin.supply = 100
+  lublin.supplyModifier = 40
   lublin.units = krakow.units.filter((unit) => unit.faction === "central").map((unit) => ({
     ...unit,
     province: "lublin",
@@ -349,7 +352,7 @@ function reachableWarsawFromLublin(): CoachEvalFixture {
     throw new Error(`expected orderable Warszawa from Lublin, got attack=${legal.attack.join(",")}`)
   }
   return {
-    state: map,
+    state,
     log: [],
     messages: [
       {
@@ -573,6 +576,117 @@ function oddsOpenQuestion(): CoachEvalFixture {
 }
 
 /** Refusal must not turn into "cancel the fortify" — ask the tradeoff instead. */
+/** Playtest-style: fifth fortnight of six, campaign ends 11 July (not 13 June). */
+function fortnightFiveOfSix(): CoachEvalFixture {
+  const state = cloneState(createInitialState("normal"))
+  state.turn = 4
+  state.date = formatDate(4)
+  const map = staffMap(state)
+  const factsLine = renderAdvisorGameFacts(map, [], null).join("\n").toLowerCase()
+  if (!factsLine.includes("fortnight 5 of 6") || !factsLine.includes("11 july")) {
+    throw new Error(`calendar facts unexpected: ${factsLine}`)
+  }
+  return {
+    state: map,
+    log: [],
+    messages: [{ role: "user", content: "Which fortnight is this and when does the campaign end?" }],
+    queuedOrders: [],
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: [],
+      mustContain: ["fortnight 5 of 6", "11 july"],
+      mustNotContain: ["fortnight 6 of 6", "13 june"],
+    },
+  }
+}
+
+/** Playtest-style: Kraków must not deny a legal axis when facts list orderable targets. */
+function krakowNeighborLegality(): CoachEvalFixture {
+  const state = createInitialState("normal")
+  const map = staffMap(state)
+  const legal = legalTargets(map, "krakow", [])
+  const facts = renderAdvisorGameFacts(map, [], "krakow").join("\n").toLowerCase()
+  if (!facts.includes("krak")) throw new Error("missing Kraków facts line")
+  const hasOrderable = legal.attack.length > 0 || legal.move.length > 0
+  return {
+    state: map,
+    log: [],
+    messages: [
+      {
+        role: "user",
+        content: "Can I order anything from Kraków this fortnight?",
+      },
+    ],
+    selectedProvinceId: "krakow",
+    queuedOrders: [],
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: hasOrderable ? ["orderable"] : ["no legal arrows"],
+      mustNotContain: ["reach-only", "cannot be ordered now"],
+    },
+  }
+}
+
+function queuedWarsawFactsGrounding(): CoachEvalFixture {
+  const state = cloneState(createInitialState("normal"))
+  const lublin = state.provinces.find((province) => province.id === "lublin")!
+  const krakow = state.provinces.find((province) => province.id === "krakow")!
+  lublin.controller = "central"
+  lublin.supply = 80
+  lublin.supplyModifier = 40
+  lublin.units = krakow.units.filter((unit) => unit.faction === "central").map((unit) => ({
+    ...unit,
+    province: "lublin",
+  }))
+  krakow.units = krakow.units.filter((unit) => unit.faction !== "central")
+  const map = staffMap(state)
+  const unitIds = centralUnitIds(map, "lublin")
+  const queued = [attackOrder("lublin", "warszawa", unitIds)]
+  const factsText = renderAdvisorGameFacts(map, queued, "lublin").join("\n").toLowerCase()
+  if (!factsText.includes("warsaw") || !factsText.includes("queued arrows")) {
+    throw new Error("fixture missing queued Warsaw facts")
+  }
+  return {
+    state,
+    log: [],
+    messages: [
+      {
+        role: "user",
+        content: "Is Warsaw reachable from Lublin or cannot be ordered now?",
+      },
+    ],
+    selectedProvinceId: "lublin",
+    queuedOrders: queued,
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: ["queued", "warsaw"],
+      mustNotContain: ["cannot be ordered now", "reach-only"],
+    },
+  }
+}
+
+function explainSelectedKrakow(): CoachEvalFixture {
+  const state = createInitialState()
+  const map = staffMap(state)
+  const factsBlob = renderAdvisorGameFacts(map, [], "krakow").join("\n").toLowerCase()
+  if (!factsBlob.includes("selected province")) throw new Error("missing selected province facts")
+  return {
+    state,
+    log: [],
+    messages: [{ role: "user", content: "Explain the selected province." }],
+    queuedOrders: [],
+    selectedProvinceId: "krakow",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: ["krak", "supply", "neighbor"],
+      mustNotContain: ["which province have you selected", "click a province"],
+    },
+  }
+}
+
 function clerkCancelOrder(): CoachEvalFixture {
   const state = createInitialState("normal")
   const map = staffMap(state)
@@ -699,6 +813,34 @@ export const COACH_EVAL_SCENARIOS: CoachEvalScenario[] = [
     blindSpot:
       "Player asks the coach to cancel a fortify and file the attack; the reply asks the tradeoff and does not command the cancel.",
     build: clerkCancelOrder,
+  },
+  {
+    id: "fortnight-five-of-six",
+    title: "Campaign calendar (fortnight 5 of 6)",
+    blindSpot:
+      "Coach must read fortnight 5 of 6 and campaign end 11 July from engine facts, not guess a sixth fortnight or 13 June end date.",
+    build: fortnightFiveOfSix,
+  },
+  {
+    id: "krakow-neighbor-legality",
+    title: "Kraków legal targets from GAME_FACTS",
+    blindSpot:
+      "Coach must not claim Kraków is reach-only when GAME_FACTS list orderable attack/move neighbors.",
+    build: krakowNeighborLegality,
+  },
+  {
+    id: "explain-selected-krakow",
+    title: "Explain selected province chip",
+    blindSpot:
+      "With Kraków selected, coach must read GAME_FACTS and explain the province — not ask which province is selected.",
+    build: explainSelectedKrakow,
+  },
+  {
+    id: "queued-warsaw-facts",
+    title: "Queued Warsaw must not read as unreachable",
+    blindSpot:
+      "GAME_FACTS list a queued Lublin→Warsaw arrow; coach must not deny Warsaw while it is already queued.",
+    build: queuedWarsawFactsGrounding,
   },
 ]
 

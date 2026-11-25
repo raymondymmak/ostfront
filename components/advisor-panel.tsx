@@ -36,15 +36,13 @@ function readHistory(): ChatTurn[] {
   }
 }
 
-const STARTERS = [
-  { id: "plan", label: "What do you make of my queued plan?" },
-  { id: "explain", label: "Explain the selected province." },
-  { id: "review", label: "Review the last battle from the chronicle." },
-] as const
+const STARTER_PLAN = { id: "plan", label: "What do you make of my queued plan?" } as const
+const STARTER_REVIEW = { id: "review", label: "Review the last battle from the chronicle." } as const
 
 type ChatTurn = AdvisorChatMessage & {
   followUp?: string | null
   highlights?: CoachHighlight[]
+  stance?: string | null
 }
 
 type AdvisorPanelProps = {
@@ -61,10 +59,13 @@ type AdvisorPanelProps = {
   embedded?: boolean
 }
 
+const ADVISOR_FAIL_BANNER =
+  "The chief of staff didn't answer, try again."
+
 function advisorErrorMessage(error: unknown, timedOut: boolean): string {
-  if (timedOut) return "The staff wire timed out. Try again."
+  if (timedOut) return ADVISOR_FAIL_BANNER
   if (error instanceof Error && error.message.trim()) return error.message
-  return "I could not reach the staff wire."
+  return ADVISOR_FAIL_BANNER
 }
 
 export function AdvisorPanel({
@@ -83,6 +84,8 @@ export function AdvisorPanel({
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [offline, setOffline] = useState(false)
+  const [requestError, setRequestError] = useState<string | null>(null)
+  const [retryQuestion, setRetryQuestion] = useState<string | null>(null)
   const thread = useRef<HTMLDivElement>(null)
   const seenEpoch = useRef<number | null>(null)
   const askSerial = useRef(0)
@@ -101,6 +104,8 @@ export function AdvisorPanel({
     setMessages([])
     setDraft("")
     setOffline(false)
+    setRequestError(null)
+    setRetryQuestion(null)
     onHighlights([])
     try {
       window.sessionStorage.removeItem(STORAGE_KEY)
@@ -159,6 +164,8 @@ export function AdvisorPanel({
     const history = [...prior, userTurn].slice(-HISTORY_SEND)
     setMessages((current) => [...current, userTurn].slice(-HISTORY_KEEP))
     setDraft("")
+    setRequestError(null)
+    setRetryQuestion(null)
 
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -201,6 +208,8 @@ export function AdvisorPanel({
       const highlights = Array.isArray(payload.highlights) ? payload.highlights : []
       onHighlights(highlights)
       setOffline(Boolean(payload.unavailable))
+      setRequestError(null)
+      setRetryQuestion(null)
       setMessages((current) =>
         [
           ...current,
@@ -209,6 +218,7 @@ export function AdvisorPanel({
             content: payload.reply as string,
             followUp: payload.followUp ?? null,
             highlights,
+            stance: typeof payload.stance === "string" ? payload.stance : null,
           },
         ].slice(-HISTORY_KEEP),
       )
@@ -217,15 +227,9 @@ export function AdvisorPanel({
       const timedOut = controller.signal.aborted
       setOffline(true)
       onHighlights([])
-      setMessages((current) =>
-        [
-          ...current,
-          {
-            role: "advisor" as const,
-            content: advisorErrorMessage(error, timedOut),
-          },
-        ].slice(-HISTORY_KEEP),
-      )
+      const failureText = advisorErrorMessage(error, timedOut)
+      setRequestError(failureText)
+      setRetryQuestion(question)
     } finally {
       window.clearTimeout(timeoutId)
       if (serial === askSerial.current) setBusy(false)
@@ -233,6 +237,21 @@ export function AdvisorPanel({
   }
 
   if (!open) return null
+
+  const selectedName = selectedProvinceId
+    ? (state.provinces.find((province) => province.id === selectedProvinceId)?.name ?? null)
+    : null
+  const starters = [
+    STARTER_PLAN,
+    {
+      id: "explain" as const,
+      label: selectedName
+        ? `Explain ${selectedName}.`
+        : "Select a province on the map first.",
+      disabled: !selectedProvinceId,
+    },
+    STARTER_REVIEW,
+  ]
 
   const shellClass = embedded
     ? "flex h-full max-h-full w-full flex-col overflow-hidden bg-transparent text-ink"
@@ -268,6 +287,7 @@ export function AdvisorPanel({
                 message.role === "user" ? "text-sm text-ink/75" : "text-sm leading-6 whitespace-pre-wrap"
               }
               data-testid={message.role === "advisor" ? "advisor-reply" : undefined}
+              data-coach-stance={message.role === "advisor" ? message.stance ?? undefined : undefined}
             >
               {message.role === "user" ? `You: ${message.content}` : message.content}
             </p>
@@ -290,14 +310,22 @@ export function AdvisorPanel({
         )}
         {messages.length === 0 && (
           <div className="flex flex-col gap-2">
-            {STARTERS.map((starter) => (
+            {starters.map((starter) => (
               <button
                 key={starter.id}
                 type="button"
-                disabled={busy}
+                disabled={busy || ("disabled" in starter && starter.disabled)}
                 data-testid={`advisor-starter-${starter.id}`}
+                data-province-selected={starter.id === "explain" && selectedProvinceId ? "true" : undefined}
                 className="rounded-md border border-leather/40 bg-paper px-2.5 py-2 text-left text-sm hover:bg-brass/15 disabled:opacity-50"
-                onClick={() => void ask(starter.label)}
+                onClick={() => {
+                  if ("disabled" in starter && starter.disabled) return
+                  void ask(
+                    starter.id === "explain" && selectedName
+                      ? "Explain the selected province."
+                      : starter.label,
+                  )
+                }}
               >
                 {starter.label}
               </button>
@@ -305,6 +333,27 @@ export function AdvisorPanel({
           </div>
         )}
       </div>
+      {requestError ? (
+        <div
+          className="mx-3 mb-1 flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2"
+          role="alert"
+          data-testid="advisor-request-error"
+        >
+          <p className="text-sm text-destructive">{requestError}</p>
+          {retryQuestion ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              data-testid="advisor-retry"
+              onClick={() => void ask(retryQuestion)}
+            >
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <form
         className="flex flex-col gap-2 border-t border-leather/30 p-3"
         onSubmit={(event) => {

@@ -77,6 +77,8 @@ type WarMapProps = MapInput & {
   flashIds: string[]
   /** Coach / teaching highlights anchored to province ids (not screen pixels). */
   coachHighlightIds?: string[]
+  /** Provinces flagged for thin-exit encirclement risk (engine heuristic). */
+  encirclementRiskIds?: string[]
   /** Persistent lesson focus (target + source provinces) for /teach. */
   lessonFocus?: LessonFocus
   targetIds?: { move: string[]; attack: string[]; canOrder: boolean }
@@ -101,6 +103,7 @@ export function WarMap({
   orders,
   flashIds,
   coachHighlightIds = [],
+  encirclementRiskIds = [],
   lessonFocus,
   targetIds,
   targetHoverNote,
@@ -557,6 +560,18 @@ export function WarMap({
 
   useEffect(() => {
     const map = mapRef.current
+    if (!map || !loadedRef.current) return
+    const riskSet = new Set(encirclementRiskIds)
+    for (const province of provinces) {
+      map.setFeatureState(
+        { source: "provinces", id: province.id },
+        { encirclementRisk: riskSet.has(province.id) },
+      )
+    }
+  }, [encirclementRiskIds, provinces])
+
+  useEffect(() => {
+    const map = mapRef.current
     if (!map || !mapReady || !loadedRef.current) return
     applyLessonFocusLayers(map as Parameters<typeof applyLessonFocusLayers>[0], lessonFocus)
     const targets = lessonFocus?.targets ?? []
@@ -574,6 +589,7 @@ export function WarMap({
       className="map-drag-layer relative h-full min-h-0 w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
+      data-encirclement-risk={encirclementRiskIds.join(",")}
       data-lesson-highlights={lessonFocusAttribute(lessonFocus)}
       data-lesson-focus={lessonFocusActive(lessonFocus) ? "true" : undefined}
       data-map-targets={

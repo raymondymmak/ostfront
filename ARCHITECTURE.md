@@ -170,28 +170,30 @@ Legacy Blob campaigns are not migrated.
 
 ## Advisor / campaign coach (`POST /api/advisor`)
 
-Phase **2E round 1** (ADR 015). `components/advisor-panel.tsx` sends `{ gameId, expectedTurn, messages, queuedOrders, selectedProvinceId? }` only — **no** client `GameState`. Route: `app/api/advisor/route.ts`.
+Phase **2G Sprint 1** advisor harness (ADR 019; clerk-no-orders still ADR 015). `components/advisor-panel.tsx` sends `{ gameId, expectedTurn, messages, queuedOrders, selectedProvinceId? }` only — **no** client `GameState`. Route: `app/api/advisor/route.ts`.
 
-Same turn guard as turn (body limit, rate, origin/token) **plus** campaign storage: `loadStoredCampaign` → 404 `unknown_game`; `expectedTurn` mismatch → 409 `stale_turn`; `withServerSeed` for the coach dispatch. Seed never returns to the client.
+Same turn guard as turn (body limit, rate, origin/token) **plus** campaign storage: `loadStoredCampaign` → 404 `unknown_game`; `expectedTurn` mismatch → 409 `stale_turn`; `withServerSeed` for engine facts. Seed never returns to the client.
 
 `lib/gm/campaign-coach.ts` `coachCampaign()`:
 
-- Builds the engine dispatch via `buildSituation` / `renderSituation` (`lib/gm/advisor.ts`) plus chronicle from `save.log` (`BattleFacts`, routine lines).
-- Optional LLM via the provider chain (OpenAI, then the `LLM_*` backup); else rules fallback. Schema **forbids** `suggestions` / order objects.
-- Returns `{ reply, followUp, highlights, source, unavailable, ordersClosed }`. Highlights are province / `uiId` pointers; `game-app` maps them to `WarMap` `coachHighlightIds`.
+- Injects **GAME_FACTS** (`lib/gm/advisor-game-facts.ts`: fortnight calendar, legal targets, supply/depot/encirclement risks) plus a **CHRONICLE** slice from `save.log` — not the full `renderSituation` board dump.
+- LLM via provider chain returns harness JSON `{ stance, reply, highlightProvinceId? }` (`lib/gm/advisor-harness.ts`; stances `probe|warn|confirm|brief`). Style gates and LLM retries are removed; misfires are logged; safety scrub blocks filed/prescribed orders and uninvented odds.
+- Returns `{ reply, stance, highlights, source, unavailable, ordersClosed, followUp: null }`. `warn` may set `highlightProvinceId` → `WarMap` `coachHighlightIds`; `[data-testid=advisor-reply]` exposes `data-coach-stance`.
+
+UI: `previewMarch` / queued orders surface depot and low-supply warnings; `WarMap` carries `data-encirclement-risk` from `lib/ui/encirclement-risk.ts`.
 
 Coach does **not** persist chat on the server (sessionStorage only).
 
-**Offline scenario eval** (`npm run eval:coach`, ADR 015): `lib/gm/coach-eval/` builds eight fixed `GameState` fixtures (including fortify+attack conflicts), runs `coachCampaign`, and applies Layer 1 deterministic hard-rule checks (sentence budget, question-first, no filed claims / banned jargon / dangling odds clauses, grounded odds & chronicle fortnight). Live mode (when `OPENAI_API_KEY` or `LLM_API_KEY` is set) adds a Layer 2 pedagogy rubric grader on the first provider (`EVAL_JUDGE_MODEL` optional). `tests/coach-eval.test.ts` keeps fixtures and Layer 1 in CI without external APIs. Coach post-processing drops whole comparison clauses when scrubbing a second odds figure; the advisor panel aborts hung `/api/advisor` fetches client-side.
+**Offline scenario eval** (`npm run eval:coach`): sixteen engine-grounded fixtures in `lib/gm/coach-eval/`; Layer 1 is **safety-only** (no filed claims, no order prescription, grounded odds). `tests/coach-eval.test.ts` + `tests/advisor-game-facts.test.ts` cover fixtures and facts in CI.
 
 ```mermaid
 flowchart LR
   A["advisor-panel"] -->|"POST gameId + messages + queue"| B["/api/advisor"]
   B --> S["loadStoredCampaign"]
   S --> C["coachCampaign"]
-  C --> D["engine dispatch + chronicle"]
-  C --> E["optional LLM"]
-  C --> F["coach JSON + highlights"]
+  C --> D["GAME_FACTS + chronicle"]
+  C --> E["optional LLM harness"]
+  C --> F["stance + reply + highlights"]
   F --> A
   F --> M["WarMap coachHighlightIds"]
 ```

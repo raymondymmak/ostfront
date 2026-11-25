@@ -106,26 +106,15 @@ export function failureShouldFailover(
   return true
 }
 
-/** Campaign coach JSON for OpenAI strict mode. Nullable fields are required. */
+/** Campaign advisor harness JSON for OpenAI strict mode (Phase 2G Sprint 1). */
 export const CAMPAIGN_COACH_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "followUp", "highlights"],
+  required: ["stance", "reply", "highlightProvinceId"],
   properties: {
+    stance: { type: "string", enum: ["probe", "warn", "confirm", "brief"] },
     reply: { type: "string" },
-    followUp: { type: ["string", "null"] },
-    highlights: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["provinceId", "uiId"],
-        properties: {
-          provinceId: { type: ["string", "null"] },
-          uiId: { type: ["string", "null"] },
-        },
-      },
-    },
+    highlightProvinceId: { type: ["string", "null"] },
   },
 } as const
 
@@ -141,6 +130,17 @@ export const TEACH_COACH_JSON_SCHEMA = {
       enum: ["aligned", "partial", "misconception", "unclear", "absent"],
     },
     followUp: { type: ["string", "null"] },
-    highlights: CAMPAIGN_COACH_JSON_SCHEMA.properties.highlights,
+    highlights: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["provinceId", "uiId"],
+        properties: {
+          provinceId: { type: ["string", "null"] },
+          uiId: { type: ["string", "null"] },
+        },
+      },
+    },
   },
 } as const

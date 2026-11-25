@@ -15,7 +15,7 @@ import { createInitialState } from "@/lib/data/scenario"
 
 describe("coach eval harness", () => {
   it("ships 14 engine-grounded scenarios", () => {
-    expect(COACH_EVAL_SCENARIOS).toHaveLength(14)
+    expect(COACH_EVAL_SCENARIOS).toHaveLength(18)
     const ids = COACH_EVAL_SCENARIOS.map((scenario) => scenario.id)
     expect(ids).toEqual([
       "under-supply-trap",
@@ -32,12 +32,16 @@ describe("coach eval harness", () => {
       "rejected-chronicle",
       "odds-open-question",
       "clerk-cancel-order",
+      "fortnight-five-of-six",
+      "krakow-neighbor-legality",
+      "explain-selected-krakow",
+      "queued-warsaw-facts",
     ])
   })
 
   it("builds fixtures that match live engine facts", () => {
     const built = buildAllCoachEvalFixtures()
-    expect(built).toHaveLength(14)
+    expect(built).toHaveLength(18)
 
     const under = built.find((item) => item.id === "under-supply-trap")!.fixture
     const underMap = staffMap(under.state)
@@ -132,40 +136,13 @@ describe("coach eval harness", () => {
     expect(hardRulesPassed(results)).toBe(true)
   })
 
-  it("hard-rule checker flags filed claims, dice jargon, dangling clauses, and ungrounded odds", () => {
+  it("hard-rule checker flags filed claims, prescriptions, and ungrounded odds", () => {
     const sound = COACH_EVAL_SCENARIOS.find((item) => item.id === "sound-plan")!.build()
     const filed = checkHardRules("Filed as noted. Kielce is yours.", sound.facts)
     expect(filed.find((item) => item.id === "no_filed_claims")?.pass).toBe(false)
 
-    const dice = checkHardRules(
-      "What do you expect at Kielce? About 7.6:1 before the dice.",
-      sound.facts,
-    )
-    expect(dice.find((item) => item.id === "no_banned_jargon")?.pass).toBe(false)
-
-    const jargon = checkHardRules(
-      "What outcome did you expect? Check the combined-odds board for the answer.",
-      sound.facts,
-    )
-    expect(jargon.find((item) => item.id === "no_banned_jargon")?.pass).toBe(false)
-
-    const dangling = checkHardRules(
-      "What do you need Kielce for this fortnight? Adding Katowice would raise it to.",
-      sound.facts,
-    )
-    expect(dangling.find((item) => item.id === "no_dangling_clause")?.pass).toBe(false)
-
-    const verbless = checkHardRules(
-      "Do you accept Lublin's two forts at about 2.2:1 when Kielce, taken by the same Kraków columns plus Katowice's Landwehr.",
-      sound.facts,
-    )
-    expect(verbless.find((item) => item.id === "no_dangling_clause")?.pass).toBe(false)
-
-    const missingMark = checkHardRules(
-      "Do you accept Lublin's two forts at about 2.2:1 if the Russians don't reinforce.",
-      sound.facts,
-    )
-    expect(missingMark.find((item) => item.id === "no_dangling_clause")?.pass).toBe(false)
+    const prescribed = checkHardRules("You should attack Kielce from Kraków this fortnight.", sound.facts)
+    expect(prescribed.find((item) => item.id === "no_order_prescription")?.pass).toBe(false)
 
     const badOdds = checkHardRules(
       "What do you expect at Kielce? About 99:1 if the Russians don't reinforce.",
@@ -179,7 +156,7 @@ describe("coach eval harness", () => {
     delete process.env.OSTFRONT_ADVISOR_FIXTURE
     const report = await runCoachEval({ offline: true, gradePedagogy: false })
     expect(report.mode).toBe("offline")
-    expect(report.scenarios).toHaveLength(14)
+    expect(report.scenarios).toHaveLength(18)
     expect(report.pedagogyPassCount).toBeNull()
     for (const scenario of report.scenarios) {
       expect(scenario.reply.length).toBeGreaterThan(10)
