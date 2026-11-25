@@ -20,6 +20,15 @@ type OhlOrdersWindowProps = {
   onTrayHover?: (over: boolean, clientX?: number) => void
 }
 
+/** Campaign goal line. Shared by the desktop paper and the phone OHL tab. */
+export function OhlOrdersBody({ scenario }: { scenario: ScenarioId }) {
+  return (
+    <p data-testid="campaign-goal" className="text-sm leading-snug text-ink">
+      {campaignGoalLine(scenario)}
+    </p>
+  )
+}
+
 /** Dismissible Orders from OHL — campaign goal line lives here on the desktop shell. */
 export function OhlOrdersWindow({
   scenario,
@@ -36,7 +45,6 @@ export function OhlOrdersWindow({
   onStow,
   onTrayHover,
 }: OhlOrdersWindowProps) {
-  const goal = campaignGoalLine(scenario)
   return (
     <FloatingWindow
       title="Orders from OHL"
@@ -58,9 +66,7 @@ export function OhlOrdersWindow({
       resizable={false}
     >
       <div className="px-3 py-2.5">
-        <p data-testid="campaign-goal" className="text-sm leading-snug text-ink">
-          {goal}
-        </p>
+        <OhlOrdersBody scenario={scenario} />
       </div>
     </FloatingWindow>
   )

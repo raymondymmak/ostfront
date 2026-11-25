@@ -194,6 +194,8 @@ export function WarMap({
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
     mapRef.current = map
+    map.getCanvas().style.touchAction = "none"
+    map.getCanvasContainer().style.touchAction = "none"
 
     map.on("error", (event) => {
       const message = event.error?.message ?? ""
@@ -353,6 +355,8 @@ export function WarMap({
         const id = idAt(point)
         if (!id) return false
         startId = id
+        // Hold map pan only for this arrow. A touch that misses a province still pans.
+        map.dragPan.disable()
         setArrowDrag("invalid")
         return true
       }
@@ -379,6 +383,7 @@ export function WarMap({
         const origin = startId
         startId = null
         clearPreview()
+        map.dragPan.enable()
         map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : ""
         if (!point) return
         const target = idAt(point)
@@ -398,6 +403,7 @@ export function WarMap({
         if (!startId) return
         startId = null
         clearPreview()
+        map.dragPan.enable()
         map.getCanvas().style.cursor = propsRef.current.orderMode ? "crosshair" : ""
       }
       // System gestures / app switches send touchcancel, not touchend — clear
@@ -505,8 +511,6 @@ export function WarMap({
     const map = mapRef.current
     if (!map || !loadedRef.current) return
     syncMap(map, propsRef.current, fittedRef, targetIds, provinceDataKeyRef, highlightKeyRef)
-    if (orderMode) map.dragPan.disable()
-    else map.dragPan.enable()
   }, [provinces, treasury, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote, targetIds])
 
   useEffect(() => {
@@ -567,7 +571,7 @@ export function WarMap({
   return (
     <div
       ref={frameRef}
-      className="relative h-full min-h-[280px] w-full overflow-hidden bg-[#6e8ea3]"
+      className="map-drag-layer relative h-full min-h-0 w-full overflow-hidden bg-[#6e8ea3]"
       data-testid="war-map"
       data-coach-highlights={coachHighlightIds.join(",") || undefined}
       data-lesson-highlights={lessonFocusAttribute(lessonFocus)}

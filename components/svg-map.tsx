@@ -175,12 +175,12 @@ export function SvgMap({
       <svg
         ref={svgRef}
         viewBox={view.box}
-        className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
+        className="map-drag-layer absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
         data-testid="svg-map"
         data-arrow-drag={arrowDrag ?? undefined}
         data-drag-block={blockedReason && hoverTargetId ? hoverTargetId : undefined}
         data-drag-reason={blockedReason ?? undefined}
-        style={{ touchAction: orderMode ? "none" : undefined }}
+        style={{ touchAction: "none" }}
         onPointerMove={onArrowPointerMove}
         onPointerUp={onArrowPointerUp}
         onPointerCancel={() => {

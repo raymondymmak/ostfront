@@ -407,7 +407,7 @@ export function FloatingWindow({
       </header>
       <div
         className={`min-h-0 flex-1 bg-[rgba(255,252,245,0.35)] ${
-          bodyScroll ? "overflow-x-hidden overflow-y-auto" : "flex flex-col overflow-hidden"
+          bodyScroll ? "overflow-x-hidden overflow-y-auto overscroll-contain" : "flex flex-col overflow-hidden"
         }`}
       >
         {children}

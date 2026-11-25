@@ -289,6 +289,7 @@ describe("document-tray", () => {
   it("keeps Chief of Staff on the phone strip in trayOrder and appends it to older saves", () => {
     expect(CAMPAIGN_PHONE_TRAY_ITEMS.map((item) => item.id)).toEqual([
       "orders",
+      "ohl",
       "province",
       "advisor",
     ])
@@ -300,13 +301,14 @@ describe("document-tray", () => {
     expect(normalized).toContain("advisor")
     expect(normalized.filter((id) => id === "advisor")).toHaveLength(1)
     const phoneOrdered = orderTrayItems(CAMPAIGN_PHONE_TRAY_ITEMS, normalized).map((item) => item.id)
-    expect(phoneOrdered).toEqual(["orders", "province", "advisor"])
+    expect(phoneOrdered).toEqual(["orders", "province", "ohl", "advisor"])
     // Custom order that parked advisor before province is honoured on the phone strip.
     const custom = ["orders", "advisor", "province", "log", "legend", "ohl"] as const
     expect(orderTrayItems(CAMPAIGN_PHONE_TRAY_ITEMS, [...custom]).map((item) => item.id)).toEqual([
       "orders",
       "advisor",
       "province",
+      "ohl",
     ])
   })
 

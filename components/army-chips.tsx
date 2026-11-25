@@ -275,6 +275,7 @@ export function ArmyChips({ map, provinces, treasury, orders, enabled, frame, on
       )
       dragRef.current = null
       pointerIdRef.current = null
+      mapRef.current?.dragPan.enable()
       setDraggingId(null)
       setGhost(null)
       apiRef.current.writeAttrs({ ...view, drag: null })
@@ -287,6 +288,7 @@ export function ArmyChips({ map, provinces, treasury, orders, enabled, frame, on
       const view = reduceChipDrag(asState(provincesRef.current, treasuryRef.current), ordersRef.current, drag, { type: "cancel" }, () => "")
       dragRef.current = null
       pointerIdRef.current = null
+      mapRef.current?.dragPan.enable()
       setDraggingId(null)
       setGhost(null)
       apiRef.current.writeAttrs(view)
@@ -311,6 +313,8 @@ export function ArmyChips({ map, provinces, treasury, orders, enabled, frame, on
     if (!ownsDragPointer(pointerIdRef.current, event.pointerId, "start")) return
     const point = canvasPoint(event)
     if (!point) return
+    // Army drag draws the arrow. Map pan stays available for touches that miss a chip.
+    mapRef.current?.dragPan.disable()
     pointerIdRef.current = event.pointerId
     metaRef.current = { name: chip.name, strength: chip.strength }
     const view = reduceChipDrag(
@@ -321,11 +325,12 @@ export function ArmyChips({ map, provinces, treasury, orders, enabled, frame, on
       () => "",
     )
     showView(view, event.clientX, event.clientY)
+    if (!view.drag) mapRef.current?.dragPan.enable()
   }
 
   return (
     <>
-      <div className="pointer-events-none absolute inset-0 z-10">
+      <div className="map-drag-layer pointer-events-none absolute inset-0 z-10" data-testid="map-drag-layer">
         {chips.map((chip) => (
           <button
             key={chip.unitId}
