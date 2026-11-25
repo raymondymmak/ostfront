@@ -9,7 +9,7 @@ import { ChronicleDrawer } from "@/components/chronicle-drawer"
 import { DocumentTray } from "@/components/document-tray"
 import { FloatingWindow } from "@/components/floating-window"
 import { MapLegend } from "@/components/map-legend"
-import { OhlOrdersWindow } from "@/components/ohl-orders-window"
+import { OhlOrdersBody, OhlOrdersWindow } from "@/components/ohl-orders-window"
 import { TimelinePanel } from "@/components/timeline-panel"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
@@ -46,7 +46,6 @@ import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
 import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { ChipDrop } from "@/lib/ui/drag-order"
-import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import { legalTargets, mapProvinceHoverNote, previewMarch } from "@/lib/ui/legal-targets"
 import { toggleSelection } from "@/lib/ui/selection"
 import {
@@ -647,7 +646,7 @@ export function GameApp() {
   return (
     <>
     <div
-      className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden"
+      className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)]"
       {...(blockChrome ? { inert: true } : {})}
     >
       <Hud
@@ -657,33 +656,6 @@ export function GameApp() {
         tableShell={desktopShell}
         refitSkipIds={[...attacking]}
       />
-      {!desktopShell && ohlOpen && (
-        <div
-          className="flex items-start justify-between gap-3 border-b border-leather/35 bg-paper-deep px-3 py-2 sm:px-4"
-          data-testid="ohl-orders-window"
-        >
-          <p data-testid="campaign-goal" className="text-xs font-medium leading-snug text-ink sm:text-sm">
-            {campaignGoalLine(game.state.scenario)}
-          </p>
-          <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={() => setWindowOpen("ohl", false)}>
-            Close
-          </Button>
-        </div>
-      )}
-      {!desktopShell && !ohlOpen && (
-        <div className="border-b border-leather/35 bg-paper px-3 py-1.5 sm:px-4">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="rounded-sm border-leather/40 bg-paper text-ink hover:bg-paper-deep"
-            data-testid="ohl-toggle"
-            onClick={() => setWindowOpen("ohl", true)}
-          >
-            Orders from OHL
-          </Button>
-        </div>
-      )}
       {busy && (
         <p
           className="border-b border-leather/35 bg-paper-deep px-4 py-2 text-sm text-ink"
@@ -733,12 +705,12 @@ export function GameApp() {
         </div>
       )}
       <div
-        className={`grid min-h-0 flex-1 ${desktopShell ? "" : "lg:grid-cols-[minmax(0,1fr)_23rem]"}`}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
         data-testid="game-shell"
       >
         <div
           ref={mapStageRef}
-          className="relative min-h-0 min-h-[min(58dvh,100%)] flex-1 overflow-hidden"
+          className="relative min-h-0 flex-1 overflow-hidden"
         >
           <WarMap
             provinces={provinces}
@@ -992,8 +964,8 @@ export function GameApp() {
           )}
         </div>
         {!desktopShell && (
-          <aside className="flex min-h-[28rem] flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l">
-            <Tabs value={sideTab} className="flex min-h-0 flex-1 flex-col gap-0">
+          <aside className="flex max-h-[min(42dvh,22rem)] min-h-[8.5rem] w-full shrink grow-0 basis-[min(42dvh,22rem)] flex-col overflow-hidden border-t border-border">
+            <Tabs value={sideTab} className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
               <DocumentTray
                 variant="phone"
                 items={orderedCampaignPhoneTrayItems}
@@ -1001,9 +973,16 @@ export function GameApp() {
                   orders: sideTab === "orders",
                   province: sideTab === "front",
                   advisor: sideTab === "advisor",
+                  ohl: sideTab === "ohl",
                 }}
                 activeId={
-                  sideTab === "front" ? "province" : sideTab === "advisor" ? "advisor" : "orders"
+                  sideTab === "front"
+                    ? "province"
+                    : sideTab === "advisor"
+                      ? "advisor"
+                      : sideTab === "ohl"
+                        ? "ohl"
+                        : "orders"
                 }
                 trayOrder={trayOrder}
                 onRestore={(id) => {
@@ -1013,20 +992,29 @@ export function GameApp() {
                   } else if (id === "advisor") {
                     setSideTab("advisor")
                     setWindowOpen("advisor", true)
+                  } else if (id === "ohl") {
+                    setSideTab("ohl")
+                    setWindowOpen("advisor", false)
                   } else {
                     setSideTab("orders")
                     setWindowOpen("advisor", false)
                   }
                 }}
-                className="order-last shrink-0 lg:order-none"
+                className="order-last shrink-0 overscroll-contain"
               />
-              <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto">
+              <TabsContent value="orders" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 {orderPanel}
               </TabsContent>
-              <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto">
+              <TabsContent value="front" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 {provincePanel}
               </TabsContent>
-              <TabsContent value="advisor" keepMounted className="min-h-0 flex-1 overflow-hidden">
+              <TabsContent value="ohl" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="flex flex-col gap-2 px-3 py-3" data-testid="ohl-orders-window">
+                  <h2 className="font-display text-xl leading-none">Orders from OHL</h2>
+                  <OhlOrdersBody scenario={game.state.scenario} />
+                </div>
+              </TabsContent>
+              <TabsContent value="advisor" keepMounted className="min-h-0 flex-1 overflow-hidden overscroll-contain">
                 <AdvisorPanel
                   open={sideTab === "advisor"}
                   embedded

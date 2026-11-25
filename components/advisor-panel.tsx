@@ -255,7 +255,7 @@ export function AdvisorPanel({
           </Button>
         )}
       </header>
-      <div ref={thread} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3" aria-live="polite">
+      <div ref={thread} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-3" aria-live="polite">
         {messages.length === 0 && (
           <p className="text-sm text-ink/80">
             Ask about your queued plan, a selected province, or a chronicle battle. I do not issue orders.

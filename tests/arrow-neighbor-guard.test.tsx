@@ -66,7 +66,10 @@ describe("arrow neighbor UI guard", () => {
     expect(svg).toContain("onPointerUp")
     expect(svg).toContain("elementFromPoint")
     expect(svg).toContain("releasePointerCapture")
-    expect(svg).toContain('touchAction: orderMode ? "none"')
+    expect(svg).toContain('touchAction: "none"')
+    expect(war).toContain("map.dragPan.disable()")
+    expect(war).not.toContain("if (orderMode) map.dragPan.disable()")
+    expect(war).toContain('touchAction = "none"')
     expect(svg).toContain("onPointerCancel")
     expect(svg).toContain("provinceIdAt")
 

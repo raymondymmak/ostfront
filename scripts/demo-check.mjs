@@ -16,6 +16,7 @@ const PRODUCTION_URL = "https://raymondymmak-ostfront.vercel.app"
 const OUT_DIR = "demo-check-output"
 const DESKTOP_VIEWPORT = { width: 1440, height: 900 }
 const MOBILE_VIEWPORT = { width: 390, height: 844 }
+const NARROW_VIEWPORT = { width: 360, height: 740 }
 const MAP_SETTLE_MS = 3200
 const TURN_TIMEOUT_MS = 140_000
 const ADVISOR_TIMEOUT_MS = 45_000
@@ -178,6 +179,75 @@ function assertEconomyBreakdown(text, { industryMultiplier }) {
   const showsMultiplier = /×\s*1\.3/.test(text)
   if (industryMultiplier && !showsMultiplier) throw new Error("Industry breakdown missing Central Powers ×1.3")
   if (!industryMultiplier && showsMultiplier) throw new Error("Manpower breakdown must not mention ×1.3")
+}
+
+async function assertPhoneFits(page, size) {
+  const fit = await page.evaluate(() => {
+    const doc = document.documentElement
+    const body = document.body
+    const map = document.querySelector("[data-testid=war-map]")
+    const shell = document.querySelector("[data-testid=game-shell]")
+    const shellBox = shell instanceof HTMLElement ? shell.getBoundingClientRect() : null
+    return {
+      scrollY: window.scrollY,
+      docTop: doc.scrollTop,
+      bodyTop: body.scrollTop,
+      scrollH: doc.scrollHeight,
+      clientH: doc.clientHeight,
+      innerH: window.innerHeight,
+      overflow: getComputedStyle(doc).overflowY,
+      bodyOverflow: getComputedStyle(body).overflowY,
+      overscroll: getComputedStyle(doc).overscrollBehaviorY,
+      touch: map instanceof HTMLElement ? getComputedStyle(map).touchAction : "",
+      shellBottom: shellBox ? shellBox.bottom : -1,
+    }
+  })
+  if (fit.scrollY !== 0 || fit.docTop !== 0 || fit.bodyTop !== 0) {
+    throw new Error(`${size.width}×${size.height} page scrolled: ${JSON.stringify(fit)}`)
+  }
+  if (fit.scrollH > fit.clientH + 2) {
+    throw new Error(`${size.width}×${size.height} document is taller than the viewport: ${JSON.stringify(fit)}`)
+  }
+  if (fit.overflow !== "hidden" || fit.bodyOverflow !== "hidden") {
+    throw new Error(`${size.width}×${size.height} expected overflow hidden, got ${fit.overflow}/${fit.bodyOverflow}`)
+  }
+  if (fit.overscroll !== "none") {
+    throw new Error(`${size.width}×${size.height} expected overscroll-behavior none, got ${fit.overscroll}`)
+  }
+  if (fit.touch !== "none") {
+    throw new Error(`${size.width}×${size.height} map touch-action is "${fit.touch}", expected none`)
+  }
+  if (fit.shellBottom > fit.innerH + 1) {
+    throw new Error(`${size.width}×${size.height} shell extends past the viewport: ${JSON.stringify(fit)}`)
+  }
+}
+
+/** Real touch points so a chip drag is not a mouse pan of the page. */
+async function touchDrag(page, from, to) {
+  const client = await page.context().newCDPSession(page)
+  try {
+    await client.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 })
+    const steps = 12
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: Math.round(from.x), y: Math.round(from.y), id: 1 }],
+    })
+    for (let i = 1; i <= steps; i++) {
+      const x = from.x + ((to.x - from.x) * i) / steps
+      const y = from.y + ((to.y - from.y) * i) / steps
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: Math.round(x), y: Math.round(y), id: 1 }],
+      })
+    }
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    })
+  } finally {
+    await client.send("Emulation.setTouchEmulationEnabled", { enabled: false }).catch(() => {})
+    await client.detach().catch(() => {})
+  }
 }
 
 async function projectOnMap(page, lon, lat) {
@@ -961,6 +1031,82 @@ function buildSteps(cli, targets) {
         if (zoom >= 7.4) throw new Error(`Camera stayed zoomed in at ${zoom}.`)
         if ((await page.locator("[data-testid=army-chip]").count()) !== 0) {
           throw new Error("Formation chips still visible after restoring the opening camera.")
+        }
+      },
+    },
+    {
+      id: "08c-mobile-touch-order",
+      name: "Phone viewports stay fixed; touch-drag queues an order",
+      async run({ page }) {
+        const saved = await page.evaluate(() => {
+          const map = window.__ostfrontMap
+          if (!map?.getCenter) return null
+          const center = map.getCenter()
+          return { zoom: map.getZoom(), lng: center.lng, lat: center.lat }
+        })
+        if (!saved) throw new Error("Map missing before the phone touch drag.")
+        try {
+          for (const size of [MOBILE_VIEWPORT, NARROW_VIEWPORT]) {
+            await page.setViewportSize(size)
+            await page.waitForFunction(
+              () => window.matchMedia("(min-width: 1024px)").matches === false,
+              null,
+              { timeout: 5_000 },
+            )
+            await page.waitForTimeout(250)
+            await assertPhoneFits(page, size)
+          }
+          await page.setViewportSize(MOBILE_VIEWPORT)
+          await page.waitForTimeout(200)
+          if (await page.locator("[data-testid=campaign-goal]").isVisible().catch(() => false)) {
+            throw new Error("Campaign goal is visible before the OHL tab is opened")
+          }
+          await page.locator("[data-testid=ohl-toggle]").click()
+          const goal = page.locator("[data-testid=campaign-goal]")
+          await goal.waitFor({ state: "visible", timeout: 5_000 })
+          await expectText(goal, "Lemberg")
+          const goalBox = await goal.boundingBox()
+          const mapBox = await page.locator("[data-testid=war-map]").boundingBox()
+          if (!goalBox || !mapBox) throw new Error("OHL goal or map missing on the phone")
+          if (goalBox.y < mapBox.y) {
+            throw new Error(`OHL goal is still above the map (goal.y=${goalBox.y} map.y=${mapBox.y})`)
+          }
+          await page.locator("[data-testid=tab-orders]").click()
+          await page.evaluate(() => {
+            window.__ostfrontMap.jumpTo({ center: [-0.0675, -0.508], zoom: 7.55 })
+          })
+          const chip = page.locator('[data-testid=army-chip][data-unit-id="g-kra-11"]')
+          await chip.waitFor({ state: "visible", timeout: 10_000 })
+          const box = await chip.boundingBox()
+          const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
+          if (!box || !kielce) throw new Error("Chip or Kielce projection missing for the touch drag.")
+          const scrollBefore = await page.evaluate(() => window.scrollY)
+          await touchDrag(
+            page,
+            { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+            kielce,
+          )
+          const scrollAfter = await page.evaluate(() => window.scrollY)
+          if (scrollBefore !== 0 || scrollAfter !== 0) {
+            throw new Error(`Page scrolled during army drag: ${scrollBefore} → ${scrollAfter}`)
+          }
+          await assertPhoneFits(page, MOBILE_VIEWPORT)
+          const orders = page.locator("[data-testid=queued-orders]")
+          await orders.getByText(/Attack Kielce from/).first().waitFor({ state: "visible", timeout: 10_000 })
+          await orders.locator("li").filter({ hasText: "Attack Kielce" }).getByRole("button", { name: "Remove" }).click()
+          await orders.getByText(/Attack Kielce from/).waitFor({ state: "detached", timeout: 5_000 })
+        } finally {
+          await page.mouse.up().catch(() => {})
+          await page.evaluate((view) => {
+            window.__ostfrontMap?.jumpTo({ zoom: view.zoom, center: [view.lng, view.lat] })
+          }, saved)
+          await page.setViewportSize(DESKTOP_VIEWPORT)
+          await page.waitForFunction(
+            () => window.matchMedia("(min-width: 1024px)").matches === true,
+            null,
+            { timeout: 5_000 },
+          )
+          await page.waitForTimeout(300)
         }
       },
     },

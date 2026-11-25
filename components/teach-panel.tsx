@@ -78,7 +78,7 @@ export function TeachPanel({
         <p className="mt-1 text-xs text-muted-foreground">{intro}</p>
       </div>
       <div
-        className={`min-h-0 flex-1 overflow-y-auto text-sm leading-6 ${embedded ? "px-3 py-2.5" : "px-4 py-3"}`}
+        className={`min-h-0 flex-1 overflow-y-auto overscroll-contain text-sm leading-6 ${embedded ? "px-3 py-2.5" : "px-4 py-3"}`}
       >
         <p className="font-medium" data-testid="teach-question">
           {question}

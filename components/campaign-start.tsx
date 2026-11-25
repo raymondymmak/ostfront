@@ -31,7 +31,7 @@ export function CampaignStart({
 
   return (
     <div
-      className="relative flex min-h-dvh flex-col overflow-hidden bg-background text-foreground"
+      className="relative flex h-dvh max-h-dvh flex-col overflow-hidden bg-background text-foreground"
       data-testid="scenario-picker"
     >
       <div className="pointer-events-none absolute inset-0" aria-hidden data-testid="campaign-start-backdrop">

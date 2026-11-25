@@ -118,7 +118,7 @@ export function MapLegend({
   if (embedded) {
     return (
       <div
-        className="h-full max-h-full overflow-y-auto bg-paper text-[11px] text-ink"
+        className="h-full max-h-full overflow-y-auto overscroll-contain bg-paper text-[11px] text-ink"
         data-testid="map-legend"
       >
         {body}
@@ -128,7 +128,7 @@ export function MapLegend({
 
   return (
     <div
-      className="pointer-events-auto absolute bottom-3 left-3 z-20 max-h-[calc(100%-1.5rem)] max-w-[min(18rem,calc(100%-1.5rem))] overflow-y-auto rounded-sm border border-leather/40 bg-paper/95 text-[11px] text-ink shadow-[0_6px_14px_rgba(36,28,20,0.18)]"
+      className="pointer-events-auto absolute bottom-3 left-3 z-20 max-h-[calc(100%-1.5rem)] max-w-[min(18rem,calc(100%-1.5rem))] overflow-y-auto overscroll-contain rounded-sm border border-leather/40 bg-paper/95 text-[11px] text-ink shadow-[0_6px_14px_rgba(36,28,20,0.18)]"
       data-testid="map-legend"
     >
       {body}

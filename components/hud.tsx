@@ -43,7 +43,7 @@ export function Hud({
   const fortnight = Math.min(state.turn + 1, spec.length)
 
   return (
-    <header className="table-hud px-3 py-1.5 sm:px-4" data-testid="table-hud">
+    <header className="table-hud shrink-0 px-3 py-1.5 sm:px-4" data-testid="table-hud">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 md:flex-nowrap">
         <p className="shrink-0 font-display text-[1.35rem] leading-none tracking-wide text-primary italic sm:text-[1.45rem]">
           Ostfront
