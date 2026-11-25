@@ -865,6 +865,12 @@ function buildSteps(cli, targets) {
       name: "Open Province tab and inspect Kraków",
       async run({ page }) {
         await selectKrakowOnMap(page)
+        const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
+        await province.locator("[data-testid=province-yield]").waitFor({ state: "visible", timeout: 10_000 })
+        const yieldText = ((await province.locator("[data-testid=province-yield]").textContent()) ?? "").replace(/\s+/g, " ")
+        if (!/Yield 2 MP, 2 IND/.test(yieldText)) {
+          throw new Error(`Kraków province panel yield was "${yieldText.trim()}", expected "Yield 2 MP, 2 IND".`)
+        }
       },
     },
     {

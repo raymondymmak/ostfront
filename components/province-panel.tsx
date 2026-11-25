@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { objectiveValue } from "@/lib/data/objectives"
 import { ordersLocked } from "@/lib/finale"
-import { RECRUIT, recruitmentYard } from "@/lib/engine/economy"
+import { describeProvinceIncome, provinceIncomeDetail, RECRUIT, recruitmentYard } from "@/lib/engine/economy"
 import { combinedEngagementOdds, engagementOdds, type EngagementPreview } from "@/lib/engine/turn"
 import { provinceActionState, type QueuedOrder } from "@/lib/orders"
 import { FACTION_LABEL, KIND_LABEL, TERRAIN_LABEL } from "@/lib/format"
@@ -85,6 +85,9 @@ export function ProvincePanel({
         </div>
         <Meter label="Supply" value={province.supply} tone={province.supply < 30 ? "bad" : "good"} />
         <Meter label="Unrest" value={province.unrest} tone={province.unrest > 60 ? "bad" : "warn"} />
+        <p className="text-sm" data-testid="province-yield">
+          Yield {provinceYieldText(province)}
+        </p>
         <p className="text-sm">
           Fortification {province.fort} / 3
           {province.supply < 30 && province.units.length > 0
@@ -265,6 +268,12 @@ function previewNeighbor(
     { fromId: province.id, unitIds: localIds },
     ...pending.map((order) => ({ fromId: order.from, unitIds: order.unitIds })),
   ])
+}
+
+function provinceYieldText(province: Province): string {
+  const line = describeProvinceIncome(provinceIncomeDetail(province))
+  const prefix = `${province.name}: `
+  return line.startsWith(prefix) ? line.slice(prefix.length) : line
 }
 
 function Meter({

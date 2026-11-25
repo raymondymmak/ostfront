@@ -50,6 +50,7 @@ import { campaignGoalLine } from "@/lib/ui/goal-copy"
 import {
   isNeighborOrderTarget,
   legalTargetHoverNote,
+  mapProvinceHoverNote,
   legalTargets,
   nonAdjacentArrowHint,
 } from "@/lib/ui/legal-targets"
@@ -794,7 +795,7 @@ export function GameApp() {
             targetHoverNote={
               mapTargets
                 ? (id, base) => {
-                    const extra = legalTargetHoverNote(mapTargets, id)
+                    const extra = mapProvinceHoverNote(mapTargets, id)
                     return extra ? `${base}\n${extra}` : base
                   }
                 : undefined

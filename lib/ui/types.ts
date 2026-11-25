@@ -15,6 +15,11 @@ export type LegalTargets = {
   reach: { move: string[]; attack: string[] }
   /** Central-held province with supply, formations, and permission to queue arrows. */
   canOrder: boolean
+  /**
+   * Refusal that is about the order's origin (low supply, no formation).
+   * The map shows this only while the pointer is on `from`, never on a neighbor.
+   */
+  originNote: string | null
   blocked: LegalTargetBlock[]
   /** Legal targets that would empty a depot garrison without Ctrl+commit-all. */
   depotWarn: LegalTargetBlock[]
