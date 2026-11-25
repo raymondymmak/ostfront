@@ -868,8 +868,8 @@ function buildSteps(cli, targets) {
         const province = page.locator("[data-testid=province-window]").or(page.locator("aside")).first()
         await province.locator("[data-testid=province-yield]").waitFor({ state: "visible", timeout: 10_000 })
         const yieldText = ((await province.locator("[data-testid=province-yield]").textContent()) ?? "").replace(/\s+/g, " ")
-        if (!/Yield 2 MP, 2 IND/.test(yieldText)) {
-          throw new Error(`Kraków province panel yield was "${yieldText.trim()}", expected "Yield 2 MP, 2 IND".`)
+        if (yieldText.trim() !== "2 MP, 2 IND") {
+          throw new Error(`Kraków province panel yield was "${yieldText.trim()}", expected "2 MP, 2 IND".`)
         }
       },
     },

@@ -86,7 +86,7 @@ export function ProvincePanel({
         <Meter label="Supply" value={province.supply} tone={province.supply < 30 ? "bad" : "good"} />
         <Meter label="Unrest" value={province.unrest} tone={province.unrest > 60 ? "bad" : "warn"} />
         <p className="text-sm" data-testid="province-yield">
-          Yield {provinceYieldText(province)}
+          {provinceYieldText(province)}
         </p>
         <p className="text-sm">
           Fortification {province.fort} / 3

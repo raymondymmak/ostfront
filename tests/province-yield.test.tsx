@@ -36,14 +36,14 @@ describe("province panel yield", () => {
     await act(async () => {
       render("krakow")
     })
-    expect(host.querySelector("[data-testid=province-yield]")?.textContent).toBe("Yield 2 MP, 2 IND")
+    expect(host.querySelector("[data-testid=province-yield]")?.textContent).toBe("2 MP, 2 IND")
     expect(host.textContent).toContain(krakow.name)
 
     await act(async () => {
       render("podkarpatska_rus")
     })
     expect(host.querySelector("[data-testid=province-yield]")?.textContent).toBe(
-      "Yield 0 (supply 27 < 30)",
+      "0 (supply 27 < 30)",
     )
     expect(host.textContent).toContain(ruthenia.name)
 
