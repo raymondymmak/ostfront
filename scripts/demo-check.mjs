@@ -199,6 +199,14 @@ async function assertPhoneFits(page, size) {
       bodyOverflow: getComputedStyle(body).overflowY,
       overscroll: getComputedStyle(doc).overscrollBehaviorY,
       touch: map instanceof HTMLElement ? getComputedStyle(map).touchAction : "",
+      frameOverflow: (() => {
+        const frame = document.querySelector("[data-testid=app-frame]")
+        return frame instanceof HTMLElement ? getComputedStyle(frame).overflowY : ""
+      })(),
+      panelTouch: (() => {
+        const panel = document.querySelector("[data-slot=scroll-area-viewport]")
+        return panel instanceof HTMLElement ? getComputedStyle(panel).touchAction : ""
+      })(),
       shellBottom: shellBox ? shellBox.bottom : -1,
     }
   })
@@ -208,8 +216,14 @@ async function assertPhoneFits(page, size) {
   if (fit.scrollH > fit.clientH + 2) {
     throw new Error(`${size.width}×${size.height} document is taller than the viewport: ${JSON.stringify(fit)}`)
   }
-  if (fit.overflow !== "hidden" || fit.bodyOverflow !== "hidden") {
-    throw new Error(`${size.width}×${size.height} expected overflow hidden, got ${fit.overflow}/${fit.bodyOverflow}`)
+  if (fit.overflow === "hidden" || fit.bodyOverflow === "hidden") {
+    throw new Error(`${size.width}×${size.height} html/body overflow hidden blocks panel wheel: ${fit.overflow}/${fit.bodyOverflow}`)
+  }
+  if (fit.frameOverflow !== "hidden") {
+    throw new Error(`${size.width}×${size.height} app frame overflow is "${fit.frameOverflow}", expected hidden`)
+  }
+  if (fit.panelTouch === "none") {
+    throw new Error(`${size.width}×${size.height} panel touch-action is none`)
   }
   if (fit.overscroll !== "none") {
     throw new Error(`${size.width}×${size.height} expected overscroll-behavior none, got ${fit.overscroll}`)
@@ -965,6 +979,80 @@ function buildSteps(cli, targets) {
         await expectAttr(page.locator("[data-testid=tab-orders]"), "data-stowed", "true")
         await restoreTrayTab(page, "tab-orders")
         await orders.waitFor({ state: "visible", timeout: 5_000 })
+      },
+    },
+    {
+      id: "07c-desktop-panel-wheel",
+      name: "Wheel scrolls Orders from inside the paper",
+      async run({ page }) {
+        await page.setViewportSize(DESKTOP_VIEWPORT)
+        const orders = page.locator("[data-testid=orders-window]")
+        if (!(await orders.isVisible().catch(() => false))) {
+          await restoreTrayTab(page, "tab-orders")
+        }
+        await orders.waitFor({ state: "visible", timeout: 5_000 })
+        const before = await orders.evaluate((el) => {
+          const scroller = [...el.querySelectorAll("*")].find(
+            (node) => node instanceof HTMLElement && node.scrollHeight > node.clientHeight + 24,
+          )
+          if (!(scroller instanceof HTMLElement)) return null
+          const box = el.getBoundingClientRect()
+          return {
+            x: box.left + Math.min(140, box.width * 0.4),
+            y: box.top + 130,
+            top: scroller.scrollTop,
+          }
+        })
+        if (!before) throw new Error("Orders paper has nothing to wheel-scroll")
+        const mapBefore = await page.evaluate(() => {
+          const map = window.__ostfrontMap
+          if (!map?.getCenter) return null
+          const center = map.getCenter()
+          return { lng: center.lng, lat: center.lat, zoom: map.getZoom() }
+        })
+        await page.mouse.move(before.x, before.y)
+        await page.mouse.wheel(0, 240)
+        await page.waitForTimeout(200)
+        const after = await page.evaluate(() => {
+          const el = document.querySelector("[data-testid=orders-window]")
+          const scroller = el
+            ? [...el.querySelectorAll("*")].find(
+                (node) => node instanceof HTMLElement && node.scrollHeight > node.clientHeight + 24,
+              )
+            : null
+          const map = window.__ostfrontMap
+          const center = map?.getCenter?.()
+          return {
+            top: scroller instanceof HTMLElement ? scroller.scrollTop : -1,
+            pageY: window.scrollY,
+            docOverflow: getComputedStyle(document.documentElement).overflowY,
+            bodyOverflow: getComputedStyle(document.body).overflowY,
+            panelTouch: (() => {
+              const panel = el?.querySelector("[data-slot=scroll-area-viewport]")
+              return panel instanceof HTMLElement ? getComputedStyle(panel).touchAction : ""
+            })(),
+            zoom: map?.getZoom?.() ?? null,
+            lng: center?.lng ?? null,
+            lat: center?.lat ?? null,
+          }
+        })
+        if (after.top < before.top + 40) {
+          throw new Error(`Wheel did not scroll Orders (before ${before.top}, after ${after.top})`)
+        }
+        if (after.pageY !== 0) throw new Error("Wheel over Orders scrolled the page")
+        if (after.docOverflow === "hidden" || after.bodyOverflow === "hidden") {
+          throw new Error("html/body overflow is hidden, so a trackpad cannot scroll the paper")
+        }
+        if (after.panelTouch === "none") throw new Error("Orders panel has touch-action none")
+        if (
+          mapBefore &&
+          after.zoom != null &&
+          (Math.abs(after.zoom - mapBefore.zoom) > 0.01 ||
+            Math.abs(after.lng - mapBefore.lng) > 0.0001 ||
+            Math.abs(after.lat - mapBefore.lat) > 0.0001)
+        ) {
+          throw new Error("Wheel over Orders moved the map")
+        }
       },
     },
     {

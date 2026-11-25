@@ -41,9 +41,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`dark ${sourceSans.variable} ${fraunces.variable} h-dvh overflow-hidden antialiased`}
+      className={`dark ${sourceSans.variable} ${fraunces.variable} h-dvh antialiased`}
     >
-      <body className="h-dvh overflow-hidden overscroll-none bg-background text-foreground">
+      <body className="h-dvh overscroll-none bg-background text-foreground">
         {children}
       </body>
     </html>

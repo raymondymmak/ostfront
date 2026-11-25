@@ -159,7 +159,8 @@
   body {
     height: 100dvh;
     max-height: 100dvh;
-    overflow: hidden;
+    /* Leave the document's overflow alone. Hiding it makes a Mac wheel
+       miss the paper, so only the scrollbar thumb moves. The app frame clips the page. */
     overscroll-behavior: none;
   }
   body {

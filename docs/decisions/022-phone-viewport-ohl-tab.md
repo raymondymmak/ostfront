@@ -9,7 +9,7 @@ On a phone the campaign document was taller than the screen: the map kept a tall
 
 ## Decision
 
-`html` and `body` are `100dvh` with `overflow: hidden` and `overscroll-behavior: none`, and the campaign and teach shells pad for the safe area. The map and the army-chip layer use `touch-action: none`. Map pan and pinch stay enabled; they are suspended only while an arrow or a chip drag is in progress. Tab panels scroll inside themselves (`overflow-y: auto`, `overscroll-behavior: contain`).
+`html` and `body` are `100dvh` with `overscroll-behavior: none`, and they do not use `overflow: hidden`. That lock lives on the app frame, so a Mac wheel or trackpad still scrolls a paper from anywhere inside it. The map and the army-chip layer alone use `touch-action: none`. Map pan and pinch stay enabled; they are suspended only while an arrow or a chip drag is in progress. Tab panels scroll inside themselves (`overflow-y: auto`, `overscroll-behavior: contain`). The scroll-area viewport does not set `overscroll-behavior`, so it does not swallow the wheel before the paper moves.
 
 Orders from OHL leaves the header strip. Below `lg` it is a phone-tray tab (`ohl-toggle`) with the same goal line. At `lg+` it stays the dismissible floating paper, opened from the same tray tab.
 

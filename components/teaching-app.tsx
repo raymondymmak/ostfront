@@ -582,8 +582,8 @@ export function TeachingApp() {
 
   return (
     <div
-      className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)]"
       data-testid="teach-app"
+      className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)]"
       data-teach-shell={desktopShell ? "desktop" : "stacked"}
     >
       <Hud
