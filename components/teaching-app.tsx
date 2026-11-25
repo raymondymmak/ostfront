@@ -517,8 +517,6 @@ export function TeachingApp() {
   const orderPanel = (
     <OrderPanel
       state={state}
-      directive=""
-      onDirective={() => {}}
       queue={queue}
       onQueue={setQueue}
       orderMode={orderMode && !feedback}

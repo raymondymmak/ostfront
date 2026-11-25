@@ -99,7 +99,6 @@ export function GameApp() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [overlay, setOverlay] = useState<PaintOverlayMode>("none")
   const [orderMode, setOrderMode] = useState(false)
-  const [directive, setDirective] = useState("")
   const [queue, setQueue] = useState<QueuedOrder[]>([])
   const [error, setError] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
@@ -449,7 +448,6 @@ export function GameApp() {
         log: payload.log ?? [],
       })
       setQueue([])
-      setDirective("")
       setFlash([])
       setLogIndex(null)
       setSelectedId(null)
@@ -487,7 +485,6 @@ export function GameApp() {
     dispatchShell({ type: "TURN_PENDING" })
     setError(null)
     const orders: PlayerOrder[] = queuedToPlayerOrders(queue)
-    if (directive.trim()) orders.push({ type: "text", text: directive.trim() })
 
     if (!game.gameId) {
       setError("Start a new campaign before you close a fortnight.")
@@ -539,7 +536,6 @@ export function GameApp() {
       if (events.length) setWindowOpen("log", false)
       setNewsQueue(events)
       setQueue([])
-      setDirective("")
       setFlash(record.controlChanges.map((change) => change.provinceId))
       setLogIndex(null)
       setOrderMode(false)
@@ -547,7 +543,7 @@ export function GameApp() {
       setError(caught instanceof Error ? caught.message : "The turn failed.")
       dispatchShell({ type: "TURN_FAILURE" })
     }
-  }, [busy, directive, game.gameId, game.state, queue])
+  }, [busy, game.gameId, game.state, queue])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -570,7 +566,6 @@ export function GameApp() {
     clearGame()
     dispatchShell({ type: "ENTER_SETUP" })
     setQueue([])
-    setDirective("")
     setFlash([])
     setError(null)
     setLogIndex(null)
@@ -605,8 +600,6 @@ export function GameApp() {
   const orderPanel = (
     <OrderPanel
       state={game.state}
-      directive={directive}
-      onDirective={setDirective}
       queue={queue}
       onQueue={setQueue}
       orderMode={orderMode && !finished}
