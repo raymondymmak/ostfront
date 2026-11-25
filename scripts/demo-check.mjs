@@ -874,6 +874,97 @@ function buildSteps(cli, targets) {
       },
     },
     {
+      id: "08b-drag-army-chip",
+      name: "Drag a formation chip onto a neighbour, then remove it",
+      async run({ page }) {
+        await stowPapersForMapClick(page)
+        const saved = await page.evaluate(() => {
+          const map = window.__ostfrontMap
+          if (!map?.getZoom) return null
+          const center = map.getCenter()
+          return { zoom: map.getZoom(), lng: center.lng, lat: center.lat }
+        })
+        if (!saved) throw new Error("Map missing before army-chip drag.")
+        if (saved.zoom >= 7.4) throw new Error(`Opening camera is already zoomed in (${saved.zoom}).`)
+        try {
+          await page.evaluate(() => {
+            window.__ostfrontMap.jumpTo({ center: [-0.0675, -0.508], zoom: 7.55 })
+          })
+          const chip = page.locator('[data-testid=army-chip][data-unit-id="g-kra-11"]')
+          await chip.waitFor({ state: "visible", timeout: 10_000 })
+          await page.waitForFunction(() => {
+            const el = document.querySelector('[data-testid=army-chip][data-unit-id="g-kra-11"]')
+            const frame = document.querySelector("[data-testid=war-map]")
+            if (!el || !frame) return false
+            const r = el.getBoundingClientRect()
+            const m = frame.getBoundingClientRect()
+            return r.width > 4 && r.left > m.left && r.right < m.right && r.top > m.top && r.bottom < m.bottom
+          })
+          const russian = page.locator('[data-testid=army-chip][data-unit-id="g-kie-inf"]')
+          if (await russian.count()) {
+            if ((await russian.first().getAttribute("data-chip-draggable")) !== "false") {
+              throw new Error("A Russian formation chip is draggable.")
+            }
+          }
+          const box = await chip.boundingBox()
+          if (!box) throw new Error("Kraków formation chip has no box.")
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+          await page.mouse.down()
+          const origin = await projectOnMap(page, KRAKOW_LON_LAT[0], KRAKOW_LON_LAT[1])
+          if (!origin) throw new Error("Kraków projection missing during chip drag.")
+          await page.mouse.move(origin.x, origin.y, { steps: 8 })
+          await page.waitForFunction(
+            () => document.querySelector("[data-testid=war-map]")?.getAttribute("data-drag-order") === "invalid",
+            null,
+            { timeout: 5_000 },
+          )
+          const canvas = await page.evaluate(() => {
+            const rect = window.__ostfrontMap.getCanvas().getBoundingClientRect()
+            return { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+          })
+          await page.mouse.move(canvas.x + 10, canvas.y + canvas.height / 2, { steps: 8 })
+          await page.waitForFunction(
+            () => (document.querySelector("[data-testid=war-map]")?.getAttribute("data-drag-pan") ?? "").split(",").includes("left"),
+            null,
+            { timeout: 5_000 },
+          )
+          await page.evaluate(() => {
+            window.__ostfrontMap.jumpTo({ center: [-0.0675, -0.508], zoom: 7.55 })
+          })
+          const kielce = await projectOnMap(page, KIELCE_LON_LAT[0], KIELCE_LON_LAT[1])
+          if (!kielce) throw new Error("Kielce projection missing during chip drag.")
+          await page.mouse.move(kielce.x, kielce.y, { steps: 14 })
+          await page.waitForFunction(
+            () => document.querySelector("[data-testid=war-map]")?.getAttribute("data-drag-order") === "valid",
+            null,
+            { timeout: 5_000 },
+          )
+          await page.mouse.up()
+          await page.waitForTimeout(250)
+          const stuck = await page.locator("[data-testid=war-map]").getAttribute("data-drag-order")
+          if (stuck) throw new Error(`Drag flag stuck after drop: ${stuck}`)
+          await restoreTrayTab(page, "tab-orders")
+          const orders = page.locator("[data-testid=queued-orders]")
+          await orders.getByText(/Attack Kielce from/).first().waitFor({ state: "visible", timeout: 10_000 })
+          await orders.locator("li").filter({ hasText: "Attack Kielce" }).getByRole("button", { name: "Remove" }).click()
+          await orders.getByText(/Attack Kielce from/).waitFor({ state: "detached", timeout: 5_000 })
+          if ((await orders.locator("li").count()) !== 0) {
+            throw new Error("Chip drag left an order in the queue.")
+          }
+        } finally {
+          await page.mouse.up().catch(() => {})
+          await page.evaluate((view) => {
+            window.__ostfrontMap?.jumpTo({ zoom: view.zoom, center: [view.lng, view.lat] })
+          }, saved)
+        }
+        const zoom = await page.evaluate(() => window.__ostfrontMap?.getZoom?.() ?? 99)
+        if (zoom >= 7.4) throw new Error(`Camera stayed zoomed in at ${zoom}.`)
+        if ((await page.locator("[data-testid=army-chip]").count()) !== 0) {
+          throw new Error("Formation chips still visible after restoring the opening camera.")
+        }
+      },
+    },
+    {
       id: "09-fortify",
       name: "Queue fortify province action",
       async run({ page }) {
@@ -883,18 +974,24 @@ function buildSteps(cli, targets) {
         await fortify.waitFor({ state: "visible", timeout: 10_000 })
         if (await fortify.isDisabled()) {
           const label = ((await fortify.textContent()) ?? "").trim()
-          if (/Fortify queued/i.test(label)) {
-            await assertQueuedFortifyKrakow(page)
-            return
+          if (!/Fortify queued/i.test(label)) {
+            const reason =
+              (await province.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
+              "Fortify button disabled on Kraków province panel."
+            throw new Error(reason)
           }
-          const reason =
-            (await province.locator("[data-testid=fortify-reason]").textContent())?.trim() ||
-            "Fortify button disabled on Kraków province panel."
-          throw new Error(reason)
+        } else {
+          await fortify.scrollIntoViewIfNeeded()
+          await fortify.click()
         }
-        await fortify.scrollIntoViewIfNeeded()
-        await fortify.click()
         await assertQueuedFortifyKrakow(page)
+        // A queued dig-in binds the garrison, so later neighbour marches would be refused.
+        await page
+          .locator("[data-testid=queued-orders] li")
+          .filter({ hasText: /Fortify/i })
+          .filter({ hasText: /Kraków/i })
+          .getByRole("button", { name: "Remove" })
+          .click()
       },
     },
     {

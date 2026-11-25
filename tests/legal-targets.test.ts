@@ -46,8 +46,8 @@ describe("legalTargets", () => {
     expect(targets.attack).toEqual([])
     expect(targets.reach.move.length).toBeGreaterThan(0)
     expect(targets.blocked.length).toBeGreaterThan(0)
-    expect(targets.blocked[0]?.reason).toMatch(/supply 30/)
-    expect(mapProvinceHoverNote(targets, "krakow")).toMatch(/Kraków is below supply 30/)
+    expect(targets.blocked[0]?.reason).toBe("Supply 20 < 30")
+    expect(mapProvinceHoverNote(targets, "krakow")).toBe("Supply 20 < 30")
     expect(mapProvinceHoverNote(targets, "kielce")).toBeNull()
     expect(mapProvinceHoverNote(targets, "katowice")).toBeNull()
   })
@@ -59,19 +59,18 @@ describe("legalTargets", () => {
       province.supply = 27
       const targets = legalTargets(game.state, province.id, [])
       const self = mapProvinceHoverNote(targets, province.id) ?? ""
-      expect(self).toContain(province.name)
+      if (self.startsWith("Supply ")) expect(self).toBe(`Supply ${province.supply} < 30`)
+      else expect(self).toContain(province.name)
       for (const neighborId of province.neighbors) {
         const note = mapProvinceHoverNote(targets, neighborId) ?? ""
         expect(note).not.toContain(province.name)
-        expect(note).not.toMatch(/supply 30/)
+        expect(note).not.toMatch(/Supply \d+ < 30/)
       }
     }
     const ruthenia = legalTargets(game.state, "podkarpatska_rus", [])
     expect(mapProvinceHoverNote(ruthenia, "stanislawow")).toBeNull()
     expect(mapProvinceHoverNote(ruthenia, "bucovina")).toBeNull()
-    expect(mapProvinceHoverNote(ruthenia, "podkarpatska_rus")).toMatch(
-      /Carpathian Ruthenia is below supply 30/,
-    )
+    expect(mapProvinceHoverNote(ruthenia, "podkarpatska_rus")).toBe("Supply 27 < 30")
   })
 
   it("shows reach from Russian-held provinces without order permission", () => {

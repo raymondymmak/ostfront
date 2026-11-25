@@ -58,7 +58,14 @@ type ValidAttack = {
   faction: Faction
 }
 
-type Prepared = ValidMove | ValidAttack | { ok: false; key: string; resolution: Resolution }
+type Prepared =
+  | ValidMove
+  | ValidAttack
+  | { ok: false; key: string; resolution: Resolution; hover: string }
+
+export type ManeuverPreview =
+  | { ok: true }
+  | { ok: false; summary: string; hover: string }
 
 /**
  * Movement and attacks, resolved from one snapshot.
@@ -91,18 +98,9 @@ export function resolveManeuvers(
       continue
     }
     const ids = item.party.map((unit) => unit.id)
-    const busy =
-      item.party.find((unit) => claimed.has(unit.id)) ??
-      item.party.find((unit) => reservedUnits.has(unit.id))
+    const busy = marchBusy(item.party, claimed, reservedUnits)
     if (busy) {
-      resolutions.push(
-        reject(
-          item.proposal,
-          reservedUnits.has(busy.id)
-            ? `${busy.name} is digging in and cannot march this fortnight.`
-            : `${busy.name} already has orders this fortnight.`,
-        ),
-      )
+      resolutions.push(reject(item.proposal, busy.summary))
       continue
     }
     for (const id of ids) claimed.add(id)
@@ -572,39 +570,45 @@ function validate(state: { provinces: Province[] }, proposal: MoveProposal | Att
   return validateAttack(state, proposal)
 }
 
+function deny(
+  proposal: MoveProposal | AttackProposal,
+  key: string,
+  summary: string,
+  hover: string,
+): Prepared {
+  return { ok: false, key, resolution: reject(proposal, summary), hover }
+}
+
 function validateMove(state: { provinces: Province[] }, proposal: MoveProposal): Prepared {
   const key = `move|${proposal.to}|${proposal.unit}`
   const located = findUnit(state, proposal.unit)
-  if (!located) return { ok: false, key, resolution: reject(proposal, "Unknown formation.") }
+  if (!located) return deny(proposal, key, "Unknown formation.", "Unknown formation.")
   const { unit, province } = located
   const destination = findProvince(state, proposal.to)
-  if (!destination) return { ok: false, key, resolution: reject(proposal, "Unknown destination.") }
+  if (!destination) return deny(proposal, key, "Unknown destination.", "Unknown destination.")
   if (!province.neighbors.includes(destination.id)) {
-    return {
-      ok: false,
+    return deny(
+      proposal,
       key,
-      resolution: reject(proposal, `${province.name} and ${destination.name} do not share a border.`),
-    }
+      `${province.name} and ${destination.name} do not share a border.`,
+      "No shared border",
+    )
   }
   if (destination.controller !== unit.faction) {
-    return {
-      ok: false,
+    return deny(
+      proposal,
       key,
-      resolution: reject(
-        proposal,
-        `${unit.name} cannot enter ${destination.name}; it is held by ${FACTION_LABEL[destination.controller]}. Attack instead.`,
-      ),
-    }
+      `${unit.name} cannot enter ${destination.name}; it is held by ${FACTION_LABEL[destination.controller]}. Attack instead.`,
+      "Attack instead",
+    )
   }
   if (province.supply < 30) {
-    return {
-      ok: false,
+    return deny(
+      proposal,
       key,
-      resolution: reject(
-        proposal,
-        `${unit.name} cannot advance from ${province.name}: supply is ${province.supply} (need 30).`,
-      ),
-    }
+      `${unit.name} cannot advance from ${province.name}: supply is ${province.supply} (need 30).`,
+      `Supply ${province.supply} < 30`,
+    )
   }
   const party = partyOf(province.units, [unit.id])
   return { ok: true, kind: "move", key, proposal, unit, party, from: province, to: destination, faction: unit.faction }
@@ -614,51 +618,68 @@ function validateAttack(state: { provinces: Province[] }, proposal: AttackPropos
   const key = `attack|${proposal.target}|${proposal.from}|${[...proposal.units].sort().join(",")}`
   const from = findProvince(state, proposal.from)
   const target = findProvince(state, proposal.target)
-  if (!from || !target) return { ok: false, key, resolution: reject(proposal, "Unknown province in the attack.") }
-  if (!proposal.units.length) return { ok: false, key, resolution: reject(proposal, "Attack needs at least one formation.") }
+  if (!from || !target) return deny(proposal, key, "Unknown province in the attack.", "Unknown province.")
+  if (!proposal.units.length) return deny(proposal, key, "Attack needs at least one formation.", "No formation")
   if (!from.neighbors.includes(target.id)) {
-    return {
-      ok: false,
-      key,
-      resolution: reject(proposal, `${from.name} and ${target.name} do not share a border.`),
-    }
+    return deny(proposal, key, `${from.name} and ${target.name} do not share a border.`, "No shared border")
   }
   const named: Unit[] = []
   for (const id of proposal.units) {
     const unit = from.units.find((item) => item.id === id)
     if (!unit) {
       const elsewhere = findUnit(state, id)
-      return {
-        ok: false,
-        key,
-        resolution: reject(
-          proposal,
-          elsewhere ? `${elsewhere.unit.name} is not in ${from.name}.` : "Unknown formation in the attack.",
-        ),
-      }
+      const summary = elsewhere
+        ? `${elsewhere.unit.name} is not in ${from.name}.`
+        : "Unknown formation in the attack."
+      return deny(proposal, key, summary, summary)
     }
     named.push(unit)
   }
   const party = partyOf(from.units, named.map((unit) => unit.id))
   const faction = named[0].faction
   if (party.some((unit) => unit.faction !== faction)) {
-    return { ok: false, key, resolution: reject(proposal, "Those formations are not all of one side.") }
+    return deny(proposal, key, "Those formations are not all of one side.", "Mixed sides")
   }
   if (target.controller === faction) {
-    return {
-      ok: false,
+    return deny(
+      proposal,
       key,
-      resolution: reject(proposal, `${target.name} is already held by your side. Move instead.`),
-    }
+      `${target.name} is already held by your side. Move instead.`,
+      "Move instead",
+    )
   }
   if (from.supply < 30) {
-    return {
-      ok: false,
+    return deny(
+      proposal,
       key,
-      resolution: reject(proposal, `The attack from ${from.name} cannot march: supply is ${from.supply} (need 30).`),
-    }
+      `The attack from ${from.name} cannot march: supply is ${from.supply} (need 30).`,
+      `Supply ${from.supply} < 30`,
+    )
   }
   return { ok: true, kind: "attack", key, proposal, party, from, target, faction }
+}
+
+/**
+ * The same accept/reject pass `resolveManeuvers` uses, without applying the move.
+ * `summary` is the resolution line. `hover` is the one-line drag reason.
+ * Battle outcomes (meetings, retreats, dice) are not decided here.
+ */
+export function assessManeuvers(
+  state: { provinces: Province[] },
+  proposals: (MoveProposal | AttackProposal)[],
+  reservedUnits: ReadonlySet<string> = new Set(),
+  alreadyClaimed: ReadonlySet<string> = new Set(),
+): ManeuverPreview {
+  const prepared = proposals.map((proposal) => validate(state, proposal))
+  const claimed = new Set(alreadyClaimed)
+  const ordered = [...prepared].sort((a, b) => a.key.localeCompare(b.key))
+  for (const item of ordered) {
+    if (!item.ok) return { ok: false, summary: item.resolution.summary, hover: item.hover }
+    const busy = marchBusy(item.party, claimed, reservedUnits)
+    if (busy) return { ok: false, summary: busy.summary, hover: busy.hover }
+    for (const id of item.party.map((unit) => unit.id)) claimed.add(id)
+  }
+  return { ok: true }
 }
 
 function attackBodies(attack: ValidAttack): Unit[] {
@@ -916,6 +937,27 @@ function list(names: string[]): string {
 
 function reject(proposal: Proposal, summary: string): Resolution {
   return { proposal, status: "rejected", summary }
+}
+
+/** Same busy line the maneuver pass writes when a formation is already committed. */
+function marchBusy(
+  party: readonly Unit[],
+  claimed: ReadonlySet<string>,
+  reserved: ReadonlySet<string>,
+): { summary: string; hover: string } | null {
+  const busy =
+    party.find((unit) => claimed.has(unit.id)) ?? party.find((unit) => reserved.has(unit.id))
+  if (!busy) return null
+  if (reserved.has(busy.id)) {
+    return {
+      summary: `${busy.name} is digging in and cannot march this fortnight.`,
+      hover: "Digging in",
+    }
+  }
+  return {
+    summary: `${busy.name} already has orders this fortnight.`,
+    hover: "Already ordered",
+  }
 }
 
 function findProvince(state: { provinces: Province[] }, id: string): Province | undefined {

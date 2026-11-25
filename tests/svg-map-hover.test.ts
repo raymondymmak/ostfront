@@ -26,12 +26,12 @@ describe("svg map province hover", () => {
     expect(cursorHoverText(kielce, hoverNote)).toBeNull()
 
     const selfTip = provinceHoverNote(krakow, hoverNote)
-    expect(selfTip).toContain("supply 30")
+    expect(selfTip).toContain("Supply 20 < 30")
     expect(selfTip).toContain("Kraków")
     const selfCursor = cursorHoverText(krakow, hoverNote)
-    expect(selfCursor).toMatch(/supply 30/)
+    expect(selfCursor).toBe("Supply 20 < 30")
     expect(selfCursor).not.toContain("Total unit strength")
-    expect(legalTargetHoverNote(targets, "kielce")).toMatch(/supply 30/)
+    expect(legalTargetHoverNote(targets, "kielce")).toBe("Supply 20 < 30")
   })
 
   it("keeps a no-formation refusal on the origin, not on a neighbor", () => {
@@ -57,8 +57,7 @@ describe("svg map province hover", () => {
     expect(provinceHoverNote(kielce, hoverNote)).not.toMatch(/no unassigned formation/)
     expect(cursorHoverText(kielce, hoverNote)).toBeNull()
     const self = cursorHoverText(krakow, hoverNote)
-    expect(self).toMatch(/no unassigned formation/)
-    expect(self).toContain("Kraków")
+    expect(self).toBe("Already ordered")
     expect(self).not.toContain("Total unit strength")
   })
 

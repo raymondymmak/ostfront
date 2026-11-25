@@ -30,7 +30,14 @@ export function provinceFillColor(): maplibregl.ExpressionSpecification {
 }
 
 export function provinceFillOpacity(): maplibregl.ExpressionSpecification {
-  return ["case", ["boolean", ["feature-state", "hover"], false], 0.96, 0.9]
+  return [
+    "case",
+    ["boolean", ["feature-state", "blocked"], false],
+    0.45,
+    ["boolean", ["feature-state", "hover"], false],
+    0.96,
+    0.9,
+  ]
 }
 
 /** Neighbour lift colours; opacity is pulsed via `pulseTargetHighlight` (paint transition). */
@@ -209,15 +216,20 @@ export function installWarMapLayers(map: maplibregl.Map, backdropOwnerColors: Re
     source: "provinces",
     paint: {
       "line-color": [
-        "match",
-        ["get", "controller"],
-        "central",
-        "#1c3348",
-        "russia",
-        "#5c261c",
-        "#2a2118",
+        "case",
+        ["boolean", ["feature-state", "blocked"], false],
+        "#8a3a32",
+        [
+          "match",
+          ["get", "controller"],
+          "central",
+          "#1c3348",
+          "russia",
+          "#5c261c",
+          "#2a2118",
+        ],
       ],
-      "line-width": 1.3,
+      "line-width": ["case", ["boolean", ["feature-state", "blocked"], false], 2.6, 1.3],
     },
   })
   map.addLayer({

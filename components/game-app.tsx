@@ -33,7 +33,6 @@ import { CampaignStart } from "@/components/campaign-start"
 import { EndgameModal } from "@/components/endgame-modal"
 import { NewsCardQueue } from "@/components/news-card"
 import { objectiveValue } from "@/lib/data/objectives"
-import { independentFormations } from "@/lib/engine/echelon"
 import { RECRUIT, spendable } from "@/lib/engine/economy"
 import type { PaintOverlayMode } from "@/lib/map/province-paint"
 import {
@@ -45,15 +44,10 @@ import {
 import type { CoachHighlight } from "@/lib/gm/campaign-coach"
 import { CLIENT_TURN_TIMEOUT_MS } from "@/lib/gm/timeouts"
 import { formatTurnFailure } from "@/lib/turn-failure"
-import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import type { ChipDrop } from "@/lib/ui/drag-order"
 import { campaignGoalLine } from "@/lib/ui/goal-copy"
-import {
-  isNeighborOrderTarget,
-  legalTargetHoverNote,
-  mapProvinceHoverNote,
-  legalTargets,
-  nonAdjacentArrowHint,
-} from "@/lib/ui/legal-targets"
+import { legalTargets, mapProvinceHoverNote, previewMarch } from "@/lib/ui/legal-targets"
 import { toggleSelection } from "@/lib/ui/selection"
 import {
   createDefaultTableWindows,
@@ -366,48 +360,32 @@ export function GameApp() {
     })
   }
 
+  function onChipDrop(drop: ChipDrop) {
+    if (finished) return
+    setQueue(drop.queue)
+    setHint(drop.reason)
+  }
+
   function addArrow(fromId: string, toId: string, commitAll = false) {
     if (ordersLocked(Boolean(game.state.result))) return
     const from = game.state.provinces.find((province) => province.id === fromId)
     const to = game.state.provinces.find((province) => province.id === toId)
     if (!from || !to || fromId === toId) return
     setSelectedId(fromId)
-    if (from.controller !== "central") {
-      setHint("Stavka does not take your arrows. Start in a Central Powers province.")
+    const verdict = previewMarch(game.state, queue, fromId, toId, { commitAll })
+    if (!verdict.ok) {
+      setHint(verdict.hover)
       return
     }
-    const targets = legalTargets(game.state, fromId, queue)
-    // UI guard: only neighbouring provinces (legalTargets neighbor set) accept a drop.
-    if (!isNeighborOrderTarget(targets, toId)) {
-      setHint(nonAdjacentArrowHint(from.name, to.name))
-      return
-    }
-    const claimed = new Set(
-      queue.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)),
-    )
-    const available = independentFormations(
-      from.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
-    )
-    if (!available.length) {
-      setHint(`${from.name} has no unassigned formation.`)
-      return
-    }
-    const kind = to.controller === "central" ? "move" : "attack"
-    const chosen = leaveDepotGarrison(available, from.depot === "central", commitAll)
-    setHint(legalTargetHoverNote(targets, toId))
+    setHint(verdict.warning)
+    const { kind, unitIds } = verdict
     setQueue((current) => {
       if (current.some((order) => order.kind === kind && order.from === fromId && order.to === toId)) {
         return current
       }
       return [
         ...current,
-        {
-          id: crypto.randomUUID(),
-          kind,
-          from: fromId,
-          to: toId,
-          unitIds: chosen.map((unit) => unit.id),
-        },
+        { id: crypto.randomUUID(), kind, from: fromId, to: toId, unitIds },
       ]
     })
   }
@@ -771,6 +749,7 @@ export function GameApp() {
         >
           <WarMap
             provinces={provinces}
+            treasury={game.state.treasury}
             selectedId={selectedId}
             overlay={overlay}
             orders={queue}
@@ -802,6 +781,7 @@ export function GameApp() {
             }
             onSelect={selectProvince}
             onDraw={addArrow}
+            onChipDrop={finished ? undefined : onChipDrop}
             onOverlay={setOverlay}
           />
           <ChronicleDrawer

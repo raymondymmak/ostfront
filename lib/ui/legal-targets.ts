@@ -1,13 +1,103 @@
 import { independentFormations, partyOf } from "@/lib/engine/echelon"
-import { findProvince } from "@/lib/engine/turn"
+import { assessManeuvers } from "@/lib/engine/simultaneous"
+import { findProvince, maneuverReservations } from "@/lib/engine/turn"
 import { leaveDepotGarrison, type QueuedOrder } from "@/lib/orders"
-import type { GameState, Province } from "@/lib/types"
+import type { AttackProposal, GameState, MoveProposal, Province } from "@/lib/types"
 import type { LegalTargets } from "@/lib/ui/types"
 
+export type MarchPreview =
+  | { ok: true; kind: "move" | "attack"; unitIds: string[]; warning: string | null }
+  | { ok: false; hover: string }
+
+type MarchState = Pick<GameState, "provinces" | "treasury">
+
 /**
- * UI-side march / attack legality for map highlights and order hints.
- * Mirrors validateMove / validateAttack in lib/engine/simultaneous.ts without
- * duplicating combat math.
+ * Legality for a drag that has not been released.
+ * The yes/no comes from `assessManeuvers` (the resolver's own check).
+ * A refusal is the short hover line, and the caller must not draw or queue the arrow.
+ */
+export function previewMarch(
+  state: MarchState,
+  queue: QueuedOrder[],
+  fromId: string,
+  toId: string,
+  options?: { unitId?: string; commitAll?: boolean; reserved?: ReadonlySet<string> },
+): MarchPreview {
+  const from = state.provinces.find((province) => province.id === fromId)
+  const to = state.provinces.find((province) => province.id === toId)
+  if (!from || !to) return { ok: false, hover: "Unknown province." }
+  if (from.controller !== "central") {
+    return { ok: false, hover: "Stavka does not take your arrows. Start in a Central Powers province." }
+  }
+  if (fromId === toId) {
+    const unit = options?.unitId ? from.units.find((item) => item.id === options.unitId) : undefined
+    return { ok: false, hover: `${unit?.name ?? from.name} is already in ${from.name}.` }
+  }
+
+  const reserved = options?.reserved ?? maneuverReservations(state, fortifyProposals(queue))
+  const claimed = claimedUnits(queue)
+  if (options?.unitId) claimed.delete(options.unitId)
+
+  if (options?.unitId) {
+    const unit = from.units.find((item) => item.id === options.unitId)
+    if (!unit) return { ok: false, hover: "Unknown formation." }
+    if (!independentFormations(from.units).some((item) => item.id === unit.id)) {
+      return { ok: false, hover: "That formation is under another command." }
+    }
+    if (unit.faction !== "central") {
+      return { ok: false, hover: "Only Central Powers formations take your orders." }
+    }
+    const proposal = marchProposal(fromId, toId, [unit.id], to.controller === unit.faction)
+    const verdict = assessManeuvers(state, [proposal], reserved, claimed)
+    if (!verdict.ok) return { ok: false, hover: verdict.hover }
+    return {
+      ok: true,
+      kind: proposal.type,
+      unitIds: [unit.id],
+      warning: depotWarning(from, [unit.id], claimed, "order"),
+    }
+  }
+
+  const available = independentFormations(
+    from.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id) && !reserved.has(unit.id)),
+  )
+  if (!available.length) {
+    const any = independentFormations(from.units.filter((unit) => unit.faction === "central"))
+    if (!any.length) return { ok: false, hover: `${from.name} has no unassigned formation.` }
+    const sample = any[0]
+    const proposal = marchProposal(fromId, toId, [sample.id], to.controller === sample.faction)
+    const verdict = assessManeuvers(state, [proposal], reserved, claimed)
+    return { ok: false, hover: verdict.ok ? `${from.name} has no unassigned formation.` : verdict.hover }
+  }
+
+  const chosen = leaveDepotGarrison(available, from.depot === "central", options?.commitAll ?? false)
+  const ids = chosen.map((unit) => unit.id)
+  const friendly = to.controller === "central"
+  const proposals = friendly
+    ? ids.map((id) => marchProposal(fromId, toId, [id], true))
+    : [marchProposal(fromId, toId, ids, false)]
+  const verdict = assessManeuvers(state, proposals, reserved, claimed)
+  if (!verdict.ok) return { ok: false, hover: verdict.hover }
+  return {
+    ok: true,
+    kind: to.controller === "central" ? "move" : "attack",
+    unitIds: ids,
+    warning: depotWarning(from, ids, claimed, "arrow"),
+  }
+}
+
+/** No arrow geometry when the engine would refuse the drop. */
+export function marchPreviewLine(
+  origin: [number, number],
+  pointer: [number, number],
+  verdict: MarchPreview,
+): [[number, number], [number, number]] | null {
+  if (!verdict.ok) return null
+  return [origin, pointer]
+}
+
+/**
+ * Neighbor highlights. Each neighbor is classified by `previewMarch`, not a second copy of the rules.
  */
 export function legalTargets(state: GameState, provinceId: string, queue: QueuedOrder[]): LegalTargets {
   const empty: LegalTargets = {
@@ -30,64 +120,38 @@ export function legalTargets(state: GameState, provinceId: string, queue: Queued
     return base
   }
 
-  const claimed = new Set(queue.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)))
-  const available = independentFormations(
-    from.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
-  )
-  if (!available.length) {
-    const originNote = `${from.name} has no unassigned formation.`
-    return {
-      ...base,
-      originNote,
-      blocked: from.neighbors.map((id) => ({ id, reason: originNote })),
-    }
-  }
-
-  if (from.supply < 30) {
-    const originNote = `${from.name} is below supply 30. The engine will refuse the advance.`
-    return {
-      ...base,
-      originNote,
-      blocked: from.neighbors.map((id) => ({ id, reason: originNote })),
-    }
-  }
-
-  const canOrder = true
+  const reserved = maneuverReservations(state, fortifyProposals(queue))
   const move: string[] = []
   const attack: string[] = []
   const blocked: LegalTargets["blocked"] = []
   const depotWarn: LegalTargets["depotWarn"] = []
 
   for (const toId of from.neighbors) {
-    const to = findProvince(state, toId)
-    if (!to) continue
-    if (!from.neighbors.includes(toId)) {
-      blocked.push({
-        id: toId,
-        reason: `${from.name} and ${to.name} do not share a border. The engine will reject the order so you can see why.`,
-      })
+    const verdict = previewMarch(state, queue, from.id, toId, { reserved })
+    if (!verdict.ok) {
+      blocked.push({ id: toId, reason: verdict.hover })
       continue
     }
-    if (to.controller === "central") {
-      move.push(toId)
-    } else {
-      attack.push(toId)
-    }
-
-    const chosen = leaveDepotGarrison(available, from.depot === "central", false)
-    const departing = new Set(partyOf(from.units, chosen.map((unit) => unit.id)).map((unit) => unit.id))
-    const remaining = independentFormations(
-      from.units.filter((unit) => unit.faction === "central" && !departing.has(unit.id) && !claimed.has(unit.id)),
-    )
-    if (from.depot === "central" && remaining.length === 0 && (move.includes(toId) || attack.includes(toId))) {
-      depotWarn.push({
-        id: toId,
-        reason: `This arrow empties the ${from.name} depot. Leave a garrison unless you mean to abandon it.`,
-      })
-    }
+    if (verdict.kind === "move") move.push(toId)
+    else attack.push(toId)
+    if (verdict.warning) depotWarn.push({ id: toId, reason: verdict.warning })
   }
 
-  return { from: provinceId, move, attack, reach, canOrder, blocked, depotWarn, originNote: null }
+  const shared =
+    blocked.length > 0 &&
+    move.length === 0 &&
+    attack.length === 0 &&
+    blocked.every((item) => item.reason === blocked[0]?.reason)
+  return {
+    from: provinceId,
+    move,
+    attack,
+    reach,
+    canOrder: move.length + attack.length > 0,
+    blocked,
+    depotWarn,
+    originNote: shared ? (blocked[0]?.reason ?? null) : null,
+  }
 }
 
 /** Drop-hint text, including an origin refusal repeated onto a neighbor arrow. */
@@ -132,6 +196,45 @@ export function isNeighborOrderTarget(targets: LegalTargets, provinceId: string)
 /** Hint when a drag drops off a shared border (UI guard; engine still rejects). */
 export function nonAdjacentArrowHint(fromName: string, toName: string): string {
   return `${fromName} and ${toName} do not share a border. The arrow was cancelled.`
+}
+
+function fortifyProposals(queue: QueuedOrder[]) {
+  return queue
+    .filter((order) => order.kind === "fortify")
+    .map((order) => ({ type: "fortify" as const, province: order.from }))
+}
+
+function claimedUnits(queue: QueuedOrder[]): Set<string> {
+  return new Set(
+    queue.flatMap((order) =>
+      order.kind === "fortify" || order.kind === "recruit" || order.kind === "cancelRecruit" ? [] : order.unitIds,
+    ),
+  )
+}
+
+function marchProposal(
+  fromId: string,
+  toId: string,
+  unitIds: string[],
+  friendly: boolean,
+): MoveProposal | AttackProposal {
+  if (friendly) return { type: "move", unit: unitIds[0] ?? "", to: toId }
+  return { type: "attack", from: fromId, target: toId, units: unitIds }
+}
+
+function depotWarning(
+  from: Province,
+  departingIds: string[],
+  claimed: Set<string>,
+  voice: "order" | "arrow",
+): string | null {
+  const departing = new Set(partyOf(from.units, departingIds).map((unit) => unit.id))
+  const remaining = independentFormations(
+    from.units.filter((unit) => unit.faction === "central" && !departing.has(unit.id) && !claimed.has(unit.id)),
+  )
+  if (from.depot !== "central" || remaining.length > 0) return null
+  const noun = voice === "order" ? "order" : "arrow"
+  return `This ${noun} empties the ${from.name} depot. Leave a garrison unless you mean to abandon it.`
 }
 
 function neighborReach(state: GameState, from: Province): { move: string[]; attack: string[] } {
