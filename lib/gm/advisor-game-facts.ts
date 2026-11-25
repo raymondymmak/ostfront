@@ -10,10 +10,61 @@ import {
   provinceIdsWithThinDepotGarrison,
 } from "@/lib/ui/order-warnings"
 import { formatQueuedOrderLine, playerOrdersToQueued, type QueuedOrder } from "@/lib/orders"
+import { FACTION_LABEL } from "@/lib/format"
 import { provinceLabel } from "@/lib/news/battle"
 import type { GameState, PlayerOrder } from "@/lib/types"
 
-/** Compact engine facts (up to 10 lines) injected before each advisor reply — no full-board dump. */
+/** UI selection — always present in GAME_FACTS (engine id + panel fields). */
+export function renderSelectedProvinceGameFacts(
+  map: GameState,
+  selectedProvinceId: string | null | undefined,
+  queue: QueuedOrder[],
+): string {
+  if (!selectedProvinceId) {
+    return "Selected province (UI): none — click a province on the map or open the Province tab."
+  }
+  const province = findProvince(map, selectedProvinceId)
+  if (!province) {
+    return `Selected province (UI): id ${selectedProvinceId} not found on the board.`
+  }
+  const targets = legalTargets(map, selectedProvinceId, queue)
+  const centralStrength = province.units
+    .filter((unit) => unit.faction === "central")
+    .reduce((sum, unit) => sum + unit.strength, 0)
+  const neighbors = province.neighbors.map((id) => provinceLabel(id)).join(", ")
+  const orderAtk = targets.attack.map((id) => provinceLabel(id)).join(", ") || "none"
+  const orderMove = targets.move.map((id) => provinceLabel(id)).join(", ") || "none"
+  const owner =
+    province.controller === province.owner
+      ? `${FACTION_LABEL[province.controller]} (legal owner)`
+      : `${FACTION_LABEL[province.controller]}-held; owner ${FACTION_LABEL[province.owner]}`
+  const depot = province.depot === province.controller ? "depot here" : "not a depot"
+  return [
+    `Selected province (UI): ${province.name} (${province.id}).`,
+    `Controller: ${owner}; supply ${province.supply}; fort level ${province.fort}; ${depot}; central strength ${centralStrength}.`,
+    `Neighbors: ${neighbors || "none"}.`,
+    `Orderable from selection: attack → ${orderAtk}; move → ${orderMove}.`,
+  ].join(" ")
+}
+
+/** Expand deictic follow-ups ("this one", "here") to the selected province name. */
+export function resolveDeicticUserMessage(
+  content: string,
+  map: GameState,
+  selectedProvinceId?: string | null,
+): string {
+  if (!selectedProvinceId) return content
+  const province = findProvince(map, selectedProvinceId)
+  if (!province) return content
+  const name = province.name
+  return content
+    .replace(/\bthis one\b/gi, name)
+    .replace(/\bthis province\b/gi, name)
+    .replace(/\bthe selected province\b/gi, name)
+    .replace(/\bhere\b/gi, name)
+}
+
+/** Compact engine facts (up to 12 lines) injected before each advisor reply — no full-board dump. */
 export function renderAdvisorGameFacts(
   map: GameState,
   queued: PlayerOrder[],
@@ -24,20 +75,22 @@ export function renderAdvisorGameFacts(
   const remaining = Math.max(0, spec.length - (map.turn + 1))
   const endDate = formatDate(spec.length - 1)
   const board = standing(map)
+  const queue = playerOrdersToQueued(queued)
   const lines: string[] = [
     `Fortnight ${fortnight} of ${spec.length}; ${remaining} fortnight(s) remain; campaign ends ${endDate} (${spec.kicker}).`,
     `Dispatch date: ${map.date}.`,
     `Eastern victory points held: ${board.captured} of ${board.available}.`,
+    renderSelectedProvinceGameFacts(map, selectedProvinceId, queue),
   ]
-
-  const queue = playerOrdersToQueued(queued)
   const queuedLine = renderQueuedArrowsLine(map, queue)
   if (queuedLine) lines.push(queuedLine)
 
   const oddsLine = renderQueuedUiOddsLine(map, queued, selectedProvinceId)
   if (oddsLine) lines.push(oddsLine)
 
-  const focusIds = focusProvinceIds(map, queued, selectedProvinceId)
+  const focusIds = focusProvinceIds(map, queued, selectedProvinceId).filter(
+    (id) => id !== selectedProvinceId,
+  )
   for (const fromId of focusIds.slice(0, 2)) {
     const slice = legalMoveFactLine(map, fromId, queue)
     if (slice) lines.push(slice)
@@ -71,7 +124,7 @@ export function renderAdvisorGameFacts(
     lines.push("Campaign is over; do not suggest orders.")
   }
 
-  return lines.slice(0, 10)
+  return lines.slice(0, 12)
 }
 
 function renderQueuedArrowsLine(map: GameState, queue: QueuedOrder[]): string | null {

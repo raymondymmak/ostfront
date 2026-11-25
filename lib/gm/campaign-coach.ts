@@ -1,7 +1,11 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { scenarioSpec } from "@/lib/data/objectives"
 import { formatDate } from "@/lib/format"
-import { renderAdvisorGameFacts } from "@/lib/gm/advisor-game-facts"
+import {
+  renderAdvisorGameFacts,
+  renderSelectedProvinceGameFacts,
+  resolveDeicticUserMessage,
+} from "@/lib/gm/advisor-game-facts"
 import {
   COACH_HARNESS_SYSTEM,
   finalizeHarnessReply,
@@ -141,7 +145,16 @@ export async function coachCampaign(input: {
   )
   const ordersClosed = situation.over
 
-  const conversation = trimAdvisorConversation(input.messages)
+  const conversation = trimAdvisorConversation(
+    input.messages.map((message) =>
+      message.role === "user"
+        ? {
+            ...message,
+            content: resolveDeicticUserMessage(message.content, map, input.selectedProvinceId),
+          }
+        : message,
+    ),
+  )
   const gameFacts = renderAdvisorGameFacts(map, queued, input.selectedProvinceId)
   const queueConflicts = detectQueuedOrderConflicts(map, queued)
   const allowedOdds = coachAllowedOddsTrimmed(map, queued)
@@ -1689,6 +1702,40 @@ export function intentQuestionForTarget(targetName: string): string {
   return options[hash]!
 }
 
+function rulesExplainSelectedProvince(
+  map: GameState,
+  queue: ReturnType<typeof playerOrdersToQueued>,
+  selectedProvinceId: string,
+  deictic: boolean,
+): { reply: string; followUp: string | null; highlights: CoachHighlight[] } {
+  const province = findProvince(map, selectedProvinceId)
+  if (!province) {
+    return {
+      reply: "That selection is not on the current board.",
+      followUp: null,
+      highlights: [],
+    }
+  }
+  const targets = legalTargets(map, selectedProvinceId, queue)
+  const strength = province.units
+    .filter((unit) => unit.faction === "central")
+    .reduce((sum, unit) => sum + unit.strength, 0)
+  const neighbors = province.neighbors.map((id) => provinceLabel(id)).join(", ")
+  const atk = targets.attack.map((id) => provinceLabel(id)).join(", ") || "none"
+  const move = targets.move.map((id) => provinceLabel(id)).join(", ") || "none"
+  const body = [
+    `${province.name} is ${province.controller}-held with supply ${province.supply}, ${fortLevelPhrase(province.fort)}, central strength ${strength}.`,
+    `Neighbors: ${neighbors}.`,
+    `Orderable this fortnight: attack → ${atk}; move → ${move}.`,
+  ].join(" ")
+  const opener = deictic ? `Understood — ${province.name}.` : `${province.name}:`
+  return {
+    reply: `${opener} ${body}`,
+    followUp: null,
+    highlights: [{ provinceId: selectedProvinceId }],
+  }
+}
+
 function rulesCoach(
   map: GameState,
   situation: Situation,
@@ -1700,6 +1747,25 @@ function rulesCoach(
 ): { reply: string; followUp: string | null; highlights: CoachHighlight[] } {
   const latest = [...messages].reverse().find((message) => message.role === "user")?.content ?? ""
   const lower = latest.toLowerCase()
+  const queue = playerOrdersToQueued(queued)
+
+  if (/explain the selected province/i.test(lower) && selectedProvinceId) {
+    return rulesExplainSelectedProvince(map, queue, selectedProvinceId, false)
+  }
+  if (
+    selectedProvinceId &&
+    /^(?:this one|here|this province|the selected province)\.?$/i.test(latest.trim())
+  ) {
+    return rulesExplainSelectedProvince(map, queue, selectedProvinceId, true)
+  }
+  if (/explain the selected province/i.test(lower) && !selectedProvinceId) {
+    return {
+      reply: "No province is selected on the map — open the Province tab and click a province first.",
+      followUp: null,
+      highlights: [{ uiId: "tab-province" }],
+    }
+  }
+
   if (/which fortnight|when does the campaign|campaign end|11 july/i.test(lower)) {
     const spec = scenarioSpec(map.scenario)
     const endDate = formatDate(spec.length - 1)
@@ -1892,7 +1958,6 @@ function rulesCoach(
     }
   }
 
-  const queue = playerOrdersToQueued(queued)
   const selectedId = inputSelectedFrom(selected)
   const probeFrom =
     selectedId ??

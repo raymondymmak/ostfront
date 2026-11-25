@@ -667,6 +667,26 @@ function queuedWarsawFactsGrounding(): CoachEvalFixture {
   }
 }
 
+function explainSelectedKrakow(): CoachEvalFixture {
+  const state = createInitialState()
+  const map = staffMap(state)
+  const factsBlob = renderAdvisorGameFacts(map, [], "krakow").join("\n").toLowerCase()
+  if (!factsBlob.includes("selected province")) throw new Error("missing selected province facts")
+  return {
+    state,
+    log: [],
+    messages: [{ role: "user", content: "Explain the selected province." }],
+    queuedOrders: [],
+    selectedProvinceId: "krakow",
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: ["krak", "supply", "neighbor"],
+      mustNotContain: ["which province have you selected", "click a province"],
+    },
+  }
+}
+
 function clerkCancelOrder(): CoachEvalFixture {
   const state = createInitialState("normal")
   const map = staffMap(state)
@@ -807,6 +827,13 @@ export const COACH_EVAL_SCENARIOS: CoachEvalScenario[] = [
     blindSpot:
       "Coach must not claim Kraków is reach-only when GAME_FACTS list orderable attack/move neighbors.",
     build: krakowNeighborLegality,
+  },
+  {
+    id: "explain-selected-krakow",
+    title: "Explain selected province chip",
+    blindSpot:
+      "With Kraków selected, coach must read GAME_FACTS and explain the province — not ask which province is selected.",
+    build: explainSelectedKrakow,
   },
   {
     id: "queued-warsaw-facts",

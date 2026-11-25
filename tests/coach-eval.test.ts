@@ -15,7 +15,7 @@ import { createInitialState } from "@/lib/data/scenario"
 
 describe("coach eval harness", () => {
   it("ships 14 engine-grounded scenarios", () => {
-    expect(COACH_EVAL_SCENARIOS).toHaveLength(17)
+    expect(COACH_EVAL_SCENARIOS).toHaveLength(18)
     const ids = COACH_EVAL_SCENARIOS.map((scenario) => scenario.id)
     expect(ids).toEqual([
       "under-supply-trap",
@@ -34,13 +34,14 @@ describe("coach eval harness", () => {
       "clerk-cancel-order",
       "fortnight-five-of-six",
       "krakow-neighbor-legality",
+      "explain-selected-krakow",
       "queued-warsaw-facts",
     ])
   })
 
   it("builds fixtures that match live engine facts", () => {
     const built = buildAllCoachEvalFixtures()
-    expect(built).toHaveLength(17)
+    expect(built).toHaveLength(18)
 
     const under = built.find((item) => item.id === "under-supply-trap")!.fixture
     const underMap = staffMap(under.state)
@@ -155,7 +156,7 @@ describe("coach eval harness", () => {
     delete process.env.OSTFRONT_ADVISOR_FIXTURE
     const report = await runCoachEval({ offline: true, gradePedagogy: false })
     expect(report.mode).toBe("offline")
-    expect(report.scenarios).toHaveLength(17)
+    expect(report.scenarios).toHaveLength(18)
     expect(report.pedagogyPassCount).toBeNull()
     for (const scenario of report.scenarios) {
       expect(scenario.reply.length).toBeGreaterThan(10)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { createInitialState } from "@/lib/data/scenario"
 import { formatDate } from "@/lib/format"
-import { renderAdvisorGameFacts } from "@/lib/gm/advisor-game-facts"
+import { renderAdvisorGameFacts, resolveDeicticUserMessage } from "@/lib/gm/advisor-game-facts"
 import { staffMap } from "@/lib/gm/advisor"
 import { centralEncirclementRiskIds } from "@/lib/ui/encirclement-risk"
 import { legalTargets } from "@/lib/ui/legal-targets"
@@ -24,22 +24,39 @@ describe("advisor game facts", () => {
     const map = staffMap(state)
     const lines = renderAdvisorGameFacts(map, [], "krakow")
     expect(lines.length).toBeGreaterThanOrEqual(5)
-    expect(lines.length).toBeLessThanOrEqual(10)
+    expect(lines.length).toBeLessThanOrEqual(12)
     const blob = lines.join("\n").toLowerCase()
     expect(blob).toContain("fortnight 5 of 6")
     expect(blob).toContain("11 july")
     expect(blob).toContain("krak")
   })
 
+  it("always includes selected province UI facts when selection is set", () => {
+    const map = staffMap(createInitialState())
+    const lines = renderAdvisorGameFacts(map, [], "krakow")
+    const blob = lines.join("\n")
+    expect(blob).toContain("Selected province (UI)")
+      expect(blob.toLowerCase()).toContain("krak")
+    expect(blob).toContain("Neighbors:")
+    expect(blob).toContain("Orderable from selection")
+  })
+
+  it("resolves deictic this one to the selected province name", () => {
+    const map = staffMap(createInitialState())
+    const resolved = resolveDeicticUserMessage("Tell me about this one.", map, "krakow")
+    expect(resolved.toLowerCase()).toContain("krak")
+    expect(resolved).not.toMatch(/this one/i)
+  })
+
   it("lists orderable attack neighbors from Kraków and never reach-only", () => {
     const map = staffMap(createInitialState())
     const targets = legalTargets(map, "krakow", [])
     const lines = renderAdvisorGameFacts(map, [], "krakow")
-    const legalLine = lines.find((line) => line.toLowerCase().includes("from krak"))
-    expect(legalLine).toBeTruthy()
-    expect(lines.join("\n").toLowerCase()).not.toContain("reach-only")
+    const blob = lines.join("\n").toLowerCase()
+    expect(blob).not.toContain("reach-only")
     if (targets.attack.length) {
-      expect(legalLine!.toLowerCase()).toContain("orderable attack")
+      expect(blob).toContain("orderable from selection")
+      expect(blob).toContain("attack")
     }
   })
 

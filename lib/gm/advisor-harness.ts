@@ -34,6 +34,7 @@ Style rules:
 - Direct staff-college prose is fine — questions and short yes/no answers are both allowed.
 - Never hedge with robotic phrases like "the available facts do not establish", "it is unclear whether", or "cannot confirm".
 - Never use "reach-only" — GAME_FACTS list queued arrows and orderable neighbors only.
+- The "Selected province (UI)" line is the player's map selection; answer "explain the selected province" and "this one" / "here" from it.
 - When a queued or selected attack is in play, cite at most one odds figure exactly as in GAME_FACTS (e.g. Unlikely, 0.68 — the Orders panel label and ratio).
 
 When stance is warn, set highlightProvinceId to the province the warning is about (engine id, or null).

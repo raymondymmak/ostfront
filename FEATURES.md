@@ -57,7 +57,7 @@ Harness JSON is `{ stance, reply, highlightProvinceId? }`; soft length is via `m
 
 **Order warnings (UI):** Drag/queue hints may mention low supply or an emptying depot (`[data-testid=order-hint]`). Queued rows may show `[data-testid=depot-warning]` or `[data-testid=supply-warning]` (including thin depot garrisons, not only full empties). `[data-testid=war-map]` exposes `data-encirclement-risk` (comma-separated province ids with thin friendly exits).
 
-**Advisor GAME_FACTS:** Lists queued arrows, Orders-panel odds wording for the active queued attack (no odds on owned provinces), engine `legalTargets` lines without reach-only, supply &lt; 30, depot drain, and encirclement risk.
+**Advisor GAME_FACTS:** Always includes **Selected province (UI)** when the Province tab/map selection is set (name, controller, supply, fort, strength, neighbors, orderable targets). Lists queued arrows, Orders-panel odds, `legalTargets` without reach-only, supply &lt; 30, depot drain, and encirclement. The explain chip is disabled until a province is selected.
 
 **Scenario eval:** `npm run eval:coach` — sixteen fixtures including playtest calendar (fortnight 5 of 6) and Kraków legality; Layer 1 is safety-only. CI: `tests/coach-eval.test.ts`, `tests/advisor-game-facts.test.ts`, demo-check steps **15–16b** (stance + encirclement attribute).
 

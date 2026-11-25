@@ -36,11 +36,8 @@ function readHistory(): ChatTurn[] {
   }
 }
 
-const STARTERS = [
-  { id: "plan", label: "What do you make of my queued plan?" },
-  { id: "explain", label: "Explain the selected province." },
-  { id: "review", label: "Review the last battle from the chronicle." },
-] as const
+const STARTER_PLAN = { id: "plan", label: "What do you make of my queued plan?" } as const
+const STARTER_REVIEW = { id: "review", label: "Review the last battle from the chronicle." } as const
 
 type ChatTurn = AdvisorChatMessage & {
   followUp?: string | null
@@ -241,6 +238,21 @@ export function AdvisorPanel({
 
   if (!open) return null
 
+  const selectedName = selectedProvinceId
+    ? (state.provinces.find((province) => province.id === selectedProvinceId)?.name ?? null)
+    : null
+  const starters = [
+    STARTER_PLAN,
+    {
+      id: "explain" as const,
+      label: selectedName
+        ? `Explain ${selectedName}.`
+        : "Select a province on the map first.",
+      disabled: !selectedProvinceId,
+    },
+    STARTER_REVIEW,
+  ]
+
   const shellClass = embedded
     ? "flex h-full max-h-full w-full flex-col overflow-hidden bg-transparent text-ink"
     : "pointer-events-auto absolute right-3 bottom-3 z-30 flex max-h-[min(32rem,calc(100%-1.5rem))] w-[min(24rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-sm border border-leather/50 bg-paper/95 text-ink shadow-[0_12px_28px_rgba(36,28,20,0.28)]"
@@ -298,14 +310,22 @@ export function AdvisorPanel({
         )}
         {messages.length === 0 && (
           <div className="flex flex-col gap-2">
-            {STARTERS.map((starter) => (
+            {starters.map((starter) => (
               <button
                 key={starter.id}
                 type="button"
-                disabled={busy}
+                disabled={busy || ("disabled" in starter && starter.disabled)}
                 data-testid={`advisor-starter-${starter.id}`}
+                data-province-selected={starter.id === "explain" && selectedProvinceId ? "true" : undefined}
                 className="rounded-md border border-leather/40 bg-paper px-2.5 py-2 text-left text-sm hover:bg-brass/15 disabled:opacity-50"
-                onClick={() => void ask(starter.label)}
+                onClick={() => {
+                  if ("disabled" in starter && starter.disabled) return
+                  void ask(
+                    starter.id === "explain" && selectedName
+                      ? "Explain the selected province."
+                      : starter.label,
+                  )
+                }}
               >
                 {starter.label}
               </button>
