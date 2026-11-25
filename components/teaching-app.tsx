@@ -28,19 +28,16 @@ import {
 import { WarMap, type MapProvince } from "@/components/war-map"
 import { toggleSelection } from "@/lib/ui/selection"
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
-import { independentFormations, partyOf } from "@/lib/engine/echelon"
 import { spendable } from "@/lib/engine/economy"
 import type { PaintOverlayMode } from "@/lib/map/province-paint"
 import type { TeachFeedback } from "@/lib/teach/feedback"
 import type { CoachHint } from "@/lib/teach/coach"
 import type { LessonMeta, TeachLessonId, TeachVariant } from "@/lib/teach/lessons"
-import { leaveDepotGarrison, queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
+import { queuedToPlayerOrders, type QueuedOrder } from "@/lib/orders"
 import type { ChipDrop } from "@/lib/ui/drag-order"
-import {
-  isNeighborOrderTarget,
-  legalTargets,
-  nonAdjacentArrowHint,
-} from "@/lib/ui/legal-targets"
+import { previewMarch } from "@/lib/ui/legal-targets"
+
+const EMPTY_TREASURY = { central: { mp: 0, ip: 0 }, russia: { mp: 0, ip: 0 } }
 import { teachSelectedProvinceIds } from "@/lib/teach/selected-provinces"
 import {
   createDefaultTeachWindows,
@@ -332,52 +329,18 @@ export function TeachingApp() {
     const to = state.provinces.find((province) => province.id === toId)
     if (!from || !to || fromId === toId) return
     setSelectedId(fromId)
-    if (from.controller !== "central") {
-      setHint("Start in a Central Powers province you control.")
+    const verdict = previewMarch(state, queue, fromId, toId, { commitAll })
+    if (!verdict.ok) {
+      setHint(verdict.hover)
       return
     }
-    const targets = legalTargets(state, fromId, queue)
-    if (!isNeighborOrderTarget(targets, toId)) {
-      setHint(nonAdjacentArrowHint(from.name, to.name))
-      return
-    }
-    const claimed = new Set(queue.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)))
-    const available = independentFormations(
-      from.units.filter((unit) => unit.faction === "central" && !claimed.has(unit.id)),
-    )
-    if (!available.length) {
-      setHint(`${from.name} has no unassigned formation.`)
-      return
-    }
-    const kind = to.controller === "central" ? "move" : "attack"
-    const chosen = leaveDepotGarrison(available, from.depot === "central", commitAll)
-    const departing = new Set(partyOf(from.units, chosen.map((unit) => unit.id)).map((unit) => unit.id))
-    const remaining = independentFormations(
-      from.units.filter(
-        (unit) => unit.faction === "central" && !departing.has(unit.id) && !claimed.has(unit.id),
-      ),
-    )
-    if (from.supply < 30) {
-      setHint(`${from.name} is below supply 30.`)
-    } else if (from.depot === "central" && remaining.length === 0) {
-      setHint(`This arrow empties the ${from.name} depot.`)
-    } else {
-      setHint(null)
-    }
+    setHint(verdict.warning)
+    const { kind, unitIds } = verdict
     setQueue((current) => {
       if (current.some((order) => order.kind === kind && order.from === fromId && order.to === toId)) {
         return current
       }
-      return [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          kind,
-          from: fromId,
-          to: toId,
-          unitIds: chosen.map((unit) => unit.id),
-        },
-      ]
+      return [...current, { id: crypto.randomUUID(), kind, from: fromId, to: toId, unitIds }]
     })
   }
 
@@ -667,6 +630,7 @@ export function TeachingApp() {
         >
           <WarMap
             provinces={provinces}
+            treasury={state?.treasury ?? EMPTY_TREASURY}
             selectedId={selectedId}
             overlay={overlay}
             orders={queue}

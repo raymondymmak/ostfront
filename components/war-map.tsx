@@ -44,10 +44,11 @@ import {
 } from "@/lib/map/target-highlight"
 import { installWarMapLayers } from "@/lib/map/war-map-layers"
 import { cursorTipPosition, hoverBeyondBase } from "@/lib/ui/map-hover"
+import { marchPreviewLine, previewMarch } from "@/lib/ui/legal-targets"
 import { railFeatureCollection, type RailEnd } from "@/lib/map/rail-lines"
 import type { ChipDrop } from "@/lib/ui/drag-order"
 import type { QueuedOrder } from "@/lib/orders"
-import type { Province } from "@/lib/types"
+import type { GameState, Province } from "@/lib/types"
 
 export type MapProvince = Province & {
   polygon: ProvinceGeometry
@@ -60,6 +61,7 @@ type Overlay = PaintOverlayMode
 
 type MapInput = {
   provinces: MapProvince[]
+  treasury: GameState["treasury"]
   selectedId: string | null
   overlay: Overlay
   orders: QueuedOrder[]
@@ -93,6 +95,7 @@ type Snapshot = MapInput & {
 
 export function WarMap({
   provinces,
+  treasury,
   selectedId,
   overlay,
   orders,
@@ -115,7 +118,7 @@ export function WarMap({
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [hoverTip, setHoverTip] = useState<{ text: string; x: number; y: number } | null>(null)
-  /** While drawing an order arrow: valid neighbor vs non-adjacent hover. */
+  /** While drawing an order arrow: engine-legal target vs a blocked province. */
   const [arrowDrag, setArrowDrag] = useState<"valid" | "invalid" | null>(null)
   const [showRailsLocal, setShowRailsLocal] = useState(true)
   const showRails = showRailsProp ?? showRailsLocal
@@ -134,6 +137,7 @@ export function WarMap({
   const highlightKeyRef = useRef<string>("")
   const propsRef = useRef<Snapshot>({
     provinces,
+    treasury,
     selectedId,
     overlay,
     orders,
@@ -216,6 +220,7 @@ export function WarMap({
       installWarMapLayers(map, BACKDROP_OWNER_COLOR)
       let hovered: string | number | null = null
       let startId: string | null = null
+      let blockedId: string | null = null
       map.on("mousemove", "provinces", (event: maplibregl.MapLayerMouseEvent) => {
         // While dragging an arrow, paintPreview owns the cursor (valid / not-allowed).
         if (!startId) {
@@ -238,10 +243,10 @@ export function WarMap({
           const note = propsRef.current.targetHoverNote?.(idStr, base) ?? base
           const extra = hoverBeyondBase(note, base)
           const frame = frameRef.current
-          if (extra && frame) {
+          if (!startId && extra && frame) {
             const pos = cursorTipPosition(event.point.x, event.point.y, frame.clientWidth, frame.clientHeight)
             setHoverTip({ text: extra, x: pos.x, y: pos.y })
-          } else {
+          } else if (!startId) {
             setHoverTip(null)
           }
         }
@@ -263,40 +268,80 @@ export function WarMap({
       })
 
       const preview = () => map.getSource("preview") as maplibregl.GeoJSONSource
+      const markBlocked = (id: string | null) => {
+        if (blockedId && blockedId !== id) {
+          map.setFeatureState({ source: "provinces", id: blockedId }, { blocked: false })
+        }
+        if (id) map.setFeatureState({ source: "provinces", id }, { blocked: true })
+        else if (blockedId) map.setFeatureState({ source: "provinces", id: blockedId }, { blocked: false })
+        blockedId = id
+      }
+      const writeBlock = (id: string | null, reason: string | null) => {
+        const frame = frameRef.current
+        if (!frame) return
+        if (id && reason) {
+          frame.setAttribute("data-drag-block", id)
+          frame.setAttribute("data-drag-reason", reason)
+        } else {
+          frame.removeAttribute("data-drag-block")
+          frame.removeAttribute("data-drag-reason")
+        }
+      }
       const clearPreview = () => {
         preview()?.setData(emptyCollection())
         setArrowDrag(null)
+        markBlocked(null)
+        writeBlock(null, null)
+        setHoverTip(null)
       }
       const idAt = (point: maplibregl.PointLike) => {
         const feature = map.queryRenderedFeatures(point, { layers: ["provinces"] })[0]
         const id = feature?.properties?.id
         return typeof id === "string" ? id : null
       }
-      const neighborDrop = (fromId: string, toId: string | null) => {
-        if (!toId || toId === fromId) return false
-        const from = propsRef.current.provinces.find((province) => province.id === fromId)
-        return Boolean(from?.neighbors.includes(toId))
-      }
       const paintPreview = (
         fromId: string,
         lngLat: { lng: number; lat: number },
         hoverId: string | null,
+        point: { x: number; y: number },
       ) => {
         const from = propsRef.current.provinces.find((province) => province.id === fromId)
         if (!from) return
-        const valid = neighborDrop(fromId, hoverId)
+        const board = { provinces: propsRef.current.provinces, treasury: propsRef.current.treasury }
+        const verdict = hoverId
+          ? previewMarch(board, propsRef.current.orders, fromId, hoverId)
+          : null
+        const line =
+          verdict && hoverId
+            ? marchPreviewLine(from.centroid, [lngLat.lng, lngLat.lat], verdict)
+            : null
+        const valid = Boolean(line)
         setArrowDrag(valid ? "valid" : "invalid")
         map.getCanvas().style.cursor = valid ? "crosshair" : "not-allowed"
+        if (!line || !verdict?.ok) {
+          preview()?.setData(emptyCollection())
+          const reason = verdict && !verdict.ok ? verdict.hover : null
+          markBlocked(reason && hoverId ? hoverId : null)
+          writeBlock(reason && hoverId ? hoverId : null, reason)
+          const frame = frameRef.current
+          if (reason && frame) {
+            const pos = cursorTipPosition(point.x, point.y, frame.clientWidth, frame.clientHeight)
+            setHoverTip({ text: reason, x: pos.x, y: pos.y })
+          } else setHoverTip(null)
+          return
+        }
+        markBlocked(null)
+        writeBlock(null, null)
+        setHoverTip(null)
         preview()?.setData({
           type: "FeatureCollection",
           features: [
             {
               type: "Feature",
-              properties: { valid: valid ? 1 : 0 },
+              properties: { valid: 1 },
               geometry: {
                 type: "LineString",
-                // Follow the pointer — never snap to a non-neighbor centroid.
-                coordinates: [from.centroid, [lngLat.lng, lngLat.lat]],
+                coordinates: line,
               },
             },
           ],
@@ -323,11 +368,11 @@ export function WarMap({
       })
       map.on("mousemove", (event: maplibregl.MapMouseEvent) => {
         if (!startId) return
-        paintPreview(startId, event.lngLat, idAt(event.point))
+        paintPreview(startId, event.lngLat, idAt(event.point), event.point)
       })
       map.on("touchmove", (event: maplibregl.MapTouchEvent) => {
         if (!startId || event.points.length !== 1) return
-        paintPreview(startId, event.lngLat, idAt(event.point))
+        paintPreview(startId, event.lngLat, idAt(event.point), event.point)
       })
       const finish = (point?: maplibregl.PointLike, commitAll = false) => {
         if (!startId) return
@@ -338,7 +383,7 @@ export function WarMap({
         if (!point) return
         const target = idAt(point)
         if (target && target !== origin) {
-          // Always hand off — addArrow cancels non-neighbors (hint, no queue).
+          // addArrow runs the same engine check and refuses the queue when illegal.
           propsRef.current.onDraw(origin, target, commitAll)
         } else if (target) propsRef.current.onSelect(target)
       }
@@ -447,6 +492,7 @@ export function WarMap({
   useEffect(() => {
     propsRef.current = {
       provinces,
+      treasury,
       selectedId,
       overlay,
       orders,
@@ -461,7 +507,7 @@ export function WarMap({
     syncMap(map, propsRef.current, fittedRef, targetIds, provinceDataKeyRef, highlightKeyRef)
     if (orderMode) map.dragPan.disable()
     else map.dragPan.enable()
-  }, [provinces, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote, targetIds])
+  }, [provinces, treasury, orders, selectedId, overlay, orderMode, showRails, onSelect, onDraw, targetHoverNote, targetIds])
 
   useEffect(() => {
     const map = mapRef.current
@@ -536,6 +582,7 @@ export function WarMap({
       {failed ? (
         <SvgMap
           provinces={provinces}
+          treasury={treasury}
           selectedId={selectedId}
           overlay={overlay}
           orders={orders}

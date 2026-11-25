@@ -388,6 +388,21 @@ function retreatDestination(
   return options[0] ?? null
 }
 
+/** Units a queued fortify will have marked busy before maneuvers run. */
+export function maneuverReservations(
+  state: Pick<GameState, "provinces" | "treasury">,
+  proposals: Proposal[],
+): Set<string> {
+  const copy = structuredClone(state) as GameState
+  const used = new Set<string>()
+  const fortified = new Set<string>()
+  const digging = proposals
+    .filter((proposal): proposal is FortifyProposal => proposal.type === "fortify")
+    .sort((a, b) => a.province.localeCompare(b.province))
+  for (const proposal of digging) applyFortify(copy, proposal, fortified, used)
+  return used
+}
+
 export function applyFortify(
   state: GameState,
   proposal: FortifyProposal,

@@ -123,7 +123,8 @@ describe("reduceChipDrag", () => {
     expect(far.moved.pan).toEqual([])
     expect(far.dropped.queued).toBe(false)
     expect(far.dropped.queue).toBe(queue)
-    expect(far.dropped.reason).toMatch(/do not share a border/)
+    expect(far.moved.reason).toBe("No shared border")
+    expect(far.dropped.reason).toBe("No shared border")
 
     const same = drop(state, queue, "g-kra-11", "krakow", "krakow")
     expect(same.dropped.queue).toBe(queue)
@@ -136,7 +137,8 @@ describe("reduceChipDrag", () => {
     })
     expect(blocked.dropped.queued).toBe(false)
     expect(blocked.dropped.queue).toEqual([])
-    expect(blocked.dropped.reason).toMatch(/supply 30/i)
+    expect(blocked.moved.reason).toBe("Supply 29 < 30")
+    expect(blocked.dropped.reason).toBe("Supply 29 < 30")
 
     const russian = drop(state, queue, "g-kie-inf", "kielce", "krakow", () => {
       throw new Error("illegal drop must not allocate an id")
@@ -208,6 +210,9 @@ describe("reduceChipDrag", () => {
     expect(chips).toContain("pointerIdRef")
     expect(chips).toContain('data-testid="army-chip"')
     expect(chips).toContain("panBy")
+    const map = readFileSync("components/war-map.tsx", "utf8")
+    expect(map).toContain("marchPreviewLine")
+    expect(map).toContain("previewMarch")
     const game = readFileSync("components/game-app.tsx", "utf8")
     const teach = readFileSync("components/teaching-app.tsx", "utf8")
     expect(game).toContain("onChipDrop")

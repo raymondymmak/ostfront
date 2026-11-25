@@ -1,14 +1,15 @@
 import { formationStrength, independentFormations } from "@/lib/engine/echelon"
-import { legalTargetHoverNote, legalTargets, nonAdjacentArrowHint } from "@/lib/ui/legal-targets"
+import { previewMarch } from "@/lib/ui/legal-targets"
 import type { QueuedOrder } from "@/lib/orders"
 import type { Faction, GameState, Province } from "@/lib/types"
 
 /**
  * Drag one formation chip onto a province.
  *
- * The reducer decides the queue. `legalTargets` is the same UI mirror map
- * arrows use (neighbor, supply under 30, Central Powers only). The engine
- * still accepts or rejects the order when the fortnight resolves.
+ * The reducer decides the queue. A drop is legal only when `previewMarch`
+ * says the resolver would accept it. An illegal drop returns the same queue
+ * and a one-line reason. Battles, retreats, and supply changes during the
+ * fortnight stay on the resolution record.
  *
  * Chips appear only once the camera is past the opening frame (zoom 6.83).
  */
@@ -177,56 +178,12 @@ function classify(
   fromId: string,
   hoverId: string | null,
 ): { valid: boolean; kind: "move" | "attack" | null; reason: string | null } {
-  const from = state.provinces.find((province) => province.id === fromId)
-  const unit = from?.units.find((item) => item.id === unitId)
-  if (!from || !unit) {
-    return { valid: false, kind: null, reason: "That formation is not in this province." }
-  }
-  const independent = independentFormations(from.units).some((item) => item.id === unit.id)
-  if (!independent) {
-    return { valid: false, kind: null, reason: "That formation is under another command." }
-  }
-  if (unit.faction !== "central") {
-    return { valid: false, kind: null, reason: "Only Central Powers formations take your orders." }
-  }
-  if (from.controller !== "central") {
-    return { valid: false, kind: null, reason: "Stavka does not take your arrows. Start in a Central Powers province." }
-  }
   if (!hoverId) {
     return { valid: false, kind: null, reason: "Release on a neighbouring province." }
   }
-  if (hoverId === from.id) {
-    return { valid: false, kind: null, reason: `${unit.name} is already in ${from.name}.` }
-  }
-  const to = state.provinces.find((province) => province.id === hoverId)
-  if (!to || !from.neighbors.includes(hoverId)) {
-    return {
-      valid: false,
-      kind: null,
-      reason: nonAdjacentArrowHint(from.name, to?.name ?? "that province"),
-    }
-  }
-
-  const open = stripUnit(queue, unitId)
-  const targets = legalTargets(state, from.id, open)
-  if (targets.move.includes(hoverId) || targets.attack.includes(hoverId)) {
-    const kind = targets.attack.includes(hoverId) ? "attack" : "move"
-    const claimed = new Set(open.flatMap((order) => (order.kind === "fortify" ? [] : order.unitIds)))
-    const remaining = independentFormations(from.units).filter(
-      (item) => item.faction === "central" && item.id !== unitId && !claimed.has(item.id),
-    )
-    const reason =
-      from.depot === "central" && remaining.length === 0
-        ? `This order empties the ${from.name} depot. Leave a garrison unless you mean to abandon it.`
-        : legalTargetHoverNote(targets, hoverId)
-    return { valid: true, kind, reason }
-  }
-  const blocked = targets.blocked.find((item) => item.id === hoverId)
-  return {
-    valid: false,
-    kind: null,
-    reason: blocked?.reason ?? `${from.name} has no unassigned formation.`,
-  }
+  const verdict = previewMarch(state, stripUnit(queue, unitId), fromId, hoverId, { unitId })
+  if (!verdict.ok) return { valid: false, kind: null, reason: verdict.hover }
+  return { valid: true, kind: verdict.kind, reason: verdict.warning }
 }
 
 function paint(queue: QueuedOrder[], drag: ChipPointer | null, classified: ReturnType<typeof classify>): ChipDragView {

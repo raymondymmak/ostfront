@@ -20,12 +20,15 @@ import { listedStrength } from "@/lib/engine/echelon"
 import { shortProvinceName, strengthLabelOffset } from "@/lib/map/labels"
 import { RAIL_STYLE, railLines, type RailEnd } from "@/lib/map/rail-lines"
 import { cursorHoverText, cursorTipPosition } from "@/lib/ui/map-hover"
+import { previewMarch } from "@/lib/ui/legal-targets"
 import { provincePaintProperties, resolvedFill, roleFor, type PaintOverlayMode } from "@/lib/map/province-paint"
 import { TARGET_HIGHLIGHT_FADE_MS } from "@/lib/map/target-highlight"
 import { TARGET_OUTLINE } from "@/lib/map/target-outline-style"
+import type { GameState } from "@/lib/types"
 
 type SvgMapProps = {
   provinces: MapProvince[]
+  treasury: GameState["treasury"]
   selectedId: string | null
   overlay: PaintOverlayMode
   orders: QueuedOrder[]
@@ -40,6 +43,7 @@ type SvgMapProps = {
 
 export function SvgMap({
   provinces,
+  treasury,
   selectedId,
   overlay,
   orders,
@@ -88,8 +92,12 @@ export function SvgMap({
   const paintTargets = targetIds
     ? { move: targetIds.move, attack: targetIds.attack, canOrder: targetIds.canOrder }
     : undefined
-  const previewValid =
-    Boolean(originId && hoverTargetId && hoverTargetId !== originId && origin?.neighbors.includes(hoverTargetId))
+  const march =
+    originId && hoverTargetId
+      ? previewMarch({ provinces, treasury }, orders, originId, hoverTargetId)
+      : null
+  const previewValid = Boolean(march?.ok)
+  const blockedReason = march && !march.ok ? march.hover : null
   const arrowDrag: "valid" | "invalid" | null = originId ? (previewValid ? "valid" : "invalid") : null
 
   function point(event: ReactPointerEvent<Element>) {
@@ -140,6 +148,19 @@ export function SvgMap({
     setPreview(point(event))
     const under = provinceIdAt(event.clientX, event.clientY)
     setHoverTargetId(under)
+    if (!under) {
+      setHoverTip(null)
+      return
+    }
+    const verdict = previewMarch({ provinces, treasury }, orders, originIdRef.current, under)
+    if (verdict.ok) {
+      setHoverTip(null)
+      return
+    }
+    const box = svgRef.current?.getBoundingClientRect()
+    if (!box) return
+    const pos = cursorTipPosition(event.clientX - box.left, event.clientY - box.top, box.width, box.height)
+    setHoverTip({ text: verdict.hover, x: pos.x, y: pos.y })
   }
 
   function onArrowPointerUp(event: ReactPointerEvent<Element>) {
@@ -157,6 +178,8 @@ export function SvgMap({
         className="absolute inset-0 h-full w-full overflow-hidden bg-[#4f7f9d]"
         data-testid="svg-map"
         data-arrow-drag={arrowDrag ?? undefined}
+        data-drag-block={blockedReason && hoverTargetId ? hoverTargetId : undefined}
+        data-drag-reason={blockedReason ?? undefined}
         style={{ touchAction: orderMode ? "none" : undefined }}
         onPointerMove={onArrowPointerMove}
         onPointerUp={onArrowPointerUp}
@@ -247,7 +270,13 @@ export function SvgMap({
           strokeWidth = view.label * 0.14
           fillOpacity = 0.72
         }
-        const tip = cursorHoverText(province, targetHoverNote)
+        const blocking = Boolean(blockedReason && hoverTargetId === province.id)
+        if (blocking) {
+          stroke = "#8a3a32"
+          strokeWidth = view.label * 0.24
+          fillOpacity = 0.4
+        }
+        const tip = blocking ? blockedReason : cursorHoverText(province, targetHoverNote)
         const pathD = geometryPath(province.polygon)
         return (
           <g key={province.id}>
@@ -262,7 +291,7 @@ export function SvgMap({
               className={flashing ? "animate-pulse" : undefined}
               style={{
                 cursor: orderMode
-                  ? originId && province.id !== originId && !origin?.neighbors.includes(province.id)
+                  ? originId && (blocking || (province.id !== originId && !origin?.neighbors.includes(province.id)))
                     ? "not-allowed"
                     : "crosshair"
                   : "pointer",
@@ -374,7 +403,7 @@ export function SvgMap({
           />
         )
       })}
-      {preview && origin && (
+      {preview && origin && previewValid && (
         <line
           data-testid="svg-arrow-preview"
           data-arrow-valid={previewValid ? "true" : "false"}

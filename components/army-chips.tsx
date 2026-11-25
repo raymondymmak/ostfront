@@ -56,6 +56,7 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
   const dropRef = useRef(onChipDrop)
   const frameRef = useRef(frame)
   const mapRef = useRef(map)
+  const blockedRef = useRef<string | null>(null)
 
   useLayoutEffect(() => {
     provincesRef.current = provinces
@@ -122,17 +123,42 @@ export function ArmyChips({ map, provinces, orders, enabled, frame, onChipDrop }
     return typeof id === "string" ? id : null
   }
 
+  function markBlocked(id: string | null) {
+    const current = mapRef.current
+    const previous = blockedRef.current
+    if (current?.getSource("provinces")) {
+      if (previous && previous !== id) {
+        current.setFeatureState({ source: "provinces", id: previous }, { blocked: false })
+      }
+      if (id) current.setFeatureState({ source: "provinces", id }, { blocked: true })
+      else if (previous) current.setFeatureState({ source: "provinces", id: previous }, { blocked: false })
+    }
+    blockedRef.current = id
+  }
+
   function writeAttrs(view: ChipDragView) {
     const el = frameRef.current.current
     if (!el) return
     if (!view.drag) {
       el.removeAttribute("data-drag-order")
       el.removeAttribute("data-drag-pan")
+      el.removeAttribute("data-drag-reason")
+      el.removeAttribute("data-drag-block")
+      markBlocked(null)
       return
     }
     el.setAttribute("data-drag-order", view.valid ? "valid" : "invalid")
     if (view.pan.length) el.setAttribute("data-drag-pan", view.pan.join(","))
     else el.removeAttribute("data-drag-pan")
+    const block = !view.valid && view.drag.hoverId && view.reason ? view.drag.hoverId : null
+    if (block && view.reason) {
+      el.setAttribute("data-drag-block", block)
+      el.setAttribute("data-drag-reason", view.reason)
+    } else {
+      el.removeAttribute("data-drag-block")
+      el.removeAttribute("data-drag-reason")
+    }
+    markBlocked(block)
   }
 
   function showView(view: ChipDragView, clientX: number, clientY: number) {

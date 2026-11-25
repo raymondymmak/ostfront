@@ -7,6 +7,7 @@ import {
   staffMap,
   type Situation,
 } from "@/lib/gm/advisor"
+import { assessManeuvers } from "@/lib/engine/simultaneous"
 import {
   combinedEngagementOdds,
   engagementOdds,
@@ -962,41 +963,14 @@ export function coachAttackOrderCheck(
   map: GameState,
   order: Extract<PlayerOrder, { type: "attack" }>,
 ): CoachAttackCheck {
-  const from = findProvince(map, order.from)
-  const target = findProvince(map, order.target)
-  if (!from || !target) return { ok: false, reason: "Unknown province in the attack." }
-  if (!order.unitIds.length) return { ok: false, reason: "Attack needs at least one formation." }
-  if (!from.neighbors.includes(target.id)) {
-    return {
-      ok: false,
-      reason: `${from.name} and ${target.name} do not share a border. The engine will reject the order.`,
-    }
-  }
+  const verdict = assessManeuvers(map, [
+    { type: "attack", from: order.from, target: order.target, units: order.unitIds },
+  ])
+  if (!verdict.ok) return { ok: false, reason: verdict.summary }
   for (const id of order.unitIds) {
-    const unit = from.units.find((item) => item.id === id)
-    if (!unit) {
-      const elsewhere = findUnit(map, id)
-      return {
-        ok: false,
-        reason: elsewhere
-          ? `${elsewhere.unit.name} is not in ${from.name}.`
-          : "Unknown formation in the attack.",
-      }
-    }
-    if (unit.faction !== "central") {
+    const located = findUnit(map, id)
+    if (located && located.unit.faction !== "central") {
       return { ok: false, reason: "Those formations are not Central Powers columns." }
-    }
-  }
-  if (target.controller === "central") {
-    return {
-      ok: false,
-      reason: `${target.name} is already held by your side — march there, do not attack it again.`,
-    }
-  }
-  if (from.supply < 30) {
-    return {
-      ok: false,
-      reason: `The attack from ${from.name} cannot march: supply is ${from.supply} (need 30).`,
     }
   }
   const preview = engagementOdds(map, order.from, order.target, order.unitIds)
