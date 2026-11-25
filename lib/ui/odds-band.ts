@@ -52,3 +52,14 @@ export function oddsBand(preview: EngagementPreview | null): OddsBand {
 
   return { tone, ratio, label, detail }
 }
+
+/** Orders-panel wording — label plus ratio so advisor facts match the UI bar. */
+export function formatUiOddsForAdvisor(preview: EngagementPreview): string {
+  const band = oddsBand(preview)
+  if (preview.empty && preview.origins < 2) return band.label
+  if (preview.empty || !Number.isFinite(preview.ratio)) {
+    return band.label
+  }
+  const ratio = preview.ratio.toFixed(2)
+  return `${band.label}, ${ratio}`
+}

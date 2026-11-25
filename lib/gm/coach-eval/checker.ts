@@ -10,6 +10,9 @@ const PRESCRIBE_ORDER =
 const ODDS_FIGURE =
   /\b(?:odds\s+(?:about\s+)?)?(?:\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+\d+(?:\.\d+)?\s*:\s*1\b/gi
 
+const HEDGE_PHRASE =
+  /\b(?:the )?available facts do not establish\b|\bit is unclear whether\b|\breach-only\b/i
+
 function trimRatio(raw: string): string {
   const n = Number(raw)
   if (!Number.isFinite(n)) return raw
@@ -94,6 +97,13 @@ export function checkHardRules(reply: string, facts: CoachEvalFacts): HardRuleRe
       detail: hits.length === 0 ? "Forbidden phrases absent" : `Forbidden: ${hits.join(", ")}`,
     })
   }
+
+  const hedge = HEDGE_PHRASE.test(reply)
+  results.push({
+    id: "no_hedge_or_reach_only",
+    pass: !hedge,
+    detail: hedge ? "Reply uses hedge or reach-only phrasing" : "No hedge or reach-only phrasing",
+  })
 
   if (facts.battleFortnight != null) {
     const needle = `fortnight ${facts.battleFortnight}`

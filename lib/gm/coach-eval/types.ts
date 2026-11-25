@@ -45,6 +45,7 @@ export type HardRuleId =
   | "battle_fortnight"
   | "must_contain"
   | "must_not_contain"
+  | "no_hedge_or_reach_only"
 
 export type HardRuleResult = {
   id: HardRuleId

@@ -62,10 +62,13 @@ type AdvisorPanelProps = {
   embedded?: boolean
 }
 
+const ADVISOR_FAIL_BANNER =
+  "The chief of staff didn't answer, try again."
+
 function advisorErrorMessage(error: unknown, timedOut: boolean): string {
-  if (timedOut) return "The staff wire timed out. Try again."
+  if (timedOut) return ADVISOR_FAIL_BANNER
   if (error instanceof Error && error.message.trim()) return error.message
-  return "I could not reach the staff wire."
+  return ADVISOR_FAIL_BANNER
 }
 
 export function AdvisorPanel({
@@ -84,6 +87,8 @@ export function AdvisorPanel({
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [offline, setOffline] = useState(false)
+  const [requestError, setRequestError] = useState<string | null>(null)
+  const [retryQuestion, setRetryQuestion] = useState<string | null>(null)
   const thread = useRef<HTMLDivElement>(null)
   const seenEpoch = useRef<number | null>(null)
   const askSerial = useRef(0)
@@ -102,6 +107,8 @@ export function AdvisorPanel({
     setMessages([])
     setDraft("")
     setOffline(false)
+    setRequestError(null)
+    setRetryQuestion(null)
     onHighlights([])
     try {
       window.sessionStorage.removeItem(STORAGE_KEY)
@@ -160,6 +167,8 @@ export function AdvisorPanel({
     const history = [...prior, userTurn].slice(-HISTORY_SEND)
     setMessages((current) => [...current, userTurn].slice(-HISTORY_KEEP))
     setDraft("")
+    setRequestError(null)
+    setRetryQuestion(null)
 
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -202,6 +211,8 @@ export function AdvisorPanel({
       const highlights = Array.isArray(payload.highlights) ? payload.highlights : []
       onHighlights(highlights)
       setOffline(Boolean(payload.unavailable))
+      setRequestError(null)
+      setRetryQuestion(null)
       setMessages((current) =>
         [
           ...current,
@@ -219,15 +230,9 @@ export function AdvisorPanel({
       const timedOut = controller.signal.aborted
       setOffline(true)
       onHighlights([])
-      setMessages((current) =>
-        [
-          ...current,
-          {
-            role: "advisor" as const,
-            content: advisorErrorMessage(error, timedOut),
-          },
-        ].slice(-HISTORY_KEEP),
-      )
+      const failureText = advisorErrorMessage(error, timedOut)
+      setRequestError(failureText)
+      setRetryQuestion(question)
     } finally {
       window.clearTimeout(timeoutId)
       if (serial === askSerial.current) setBusy(false)
@@ -308,6 +313,27 @@ export function AdvisorPanel({
           </div>
         )}
       </div>
+      {requestError ? (
+        <div
+          className="mx-3 mb-1 flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2"
+          role="alert"
+          data-testid="advisor-request-error"
+        >
+          <p className="text-sm text-destructive">{requestError}</p>
+          {retryQuestion ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              data-testid="advisor-retry"
+              onClick={() => void ask(retryQuestion)}
+            >
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <form
         className="flex flex-col gap-2 border-t border-leather/30 p-3"
         onSubmit={(event) => {

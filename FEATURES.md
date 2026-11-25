@@ -55,7 +55,9 @@ Before each model call the server injects **5–8 GAME_FACTS lines** (`lib/gm/ad
 
 Harness JSON is `{ stance, reply, highlightProvinceId? }`; soft length is via `max_tokens` only (no sentence-count retries). Hard safety scrub: no filed/noted/queued claims, no concrete order prescription, no invented odds (misfires log as `ostfront.coach.harness_misfire`).
 
-**Order warnings (UI):** Drag/queue hints may mention low supply or an emptying depot (`[data-testid=order-hint]`). Queued rows may show `[data-testid=depot-warning]` or `[data-testid=supply-warning]`. `[data-testid=war-map]` exposes `data-encirclement-risk` (comma-separated province ids with thin friendly exits).
+**Order warnings (UI):** Drag/queue hints may mention low supply or an emptying depot (`[data-testid=order-hint]`). Queued rows may show `[data-testid=depot-warning]` or `[data-testid=supply-warning]` (including thin depot garrisons, not only full empties). `[data-testid=war-map]` exposes `data-encirclement-risk` (comma-separated province ids with thin friendly exits).
+
+**Advisor GAME_FACTS:** Lists queued arrows, Orders-panel odds wording for the active queued attack (no odds on owned provinces), engine `legalTargets` lines without reach-only, supply &lt; 30, depot drain, and encirclement risk.
 
 **Scenario eval:** `npm run eval:coach` — sixteen fixtures including playtest calendar (fortnight 5 of 6) and Kraków legality; Layer 1 is safety-only. CI: `tests/coach-eval.test.ts`, `tests/advisor-game-facts.test.ts`, demo-check steps **15–16b** (stance + encirclement attribute).
 

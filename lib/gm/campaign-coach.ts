@@ -22,6 +22,7 @@ import {
 } from "@/lib/engine/turn"
 import { playerOrdersToQueued } from "@/lib/orders"
 import { legalTargets } from "@/lib/ui/legal-targets"
+import { formatUiOddsForAdvisor } from "@/lib/ui/odds-band"
 import type { AdvisorChatMessage } from "@/lib/gm/advisor-types"
 import { llmChatChain, llmConfigured } from "@/lib/gm/llm"
 import { CAMPAIGN_COACH_JSON_SCHEMA } from "@/lib/gm/providers"
@@ -30,9 +31,11 @@ import { provinceLabel } from "@/lib/news/battle"
 import { routineLog } from "@/lib/news/routine-copy"
 import type { BattleFacts, GameState, PlayerOrder, TurnRecord } from "@/lib/types"
 
-const COACH_TIMEOUT_MS = 20_000
-/** Browser abort for `/api/advisor` — longer than the coach LLM call, shorter than a hung UI. */
-export const CLIENT_ADVISOR_TIMEOUT_MS = 25_000
+const COACH_TIMEOUT_MS = 22_000
+/** Browser abort for `/api/advisor` — slightly above server coach budget. */
+export const CLIENT_ADVISOR_TIMEOUT_MS = 32_000
+const COACH_CONVERSATION_LIMIT = 8
+const COACH_MESSAGE_MAX_CHARS = 480
 /** Keep headroom for reasoning models that spend tokens before writing content. */
 const COACH_MAX_TOKENS = 2_048
 const COACH_MAX_SENTENCES = 3
@@ -131,12 +134,14 @@ export async function coachCampaign(input: {
     map,
     situation,
     renderSelected(map, input.selectedProvinceId),
+    input.selectedProvinceId ?? null,
     input.log,
     input.messages,
     queued,
   )
   const ordersClosed = situation.over
 
+  const conversation = trimAdvisorConversation(input.messages)
   const gameFacts = renderAdvisorGameFacts(map, queued, input.selectedProvinceId)
   const queueConflicts = detectQueuedOrderConflicts(map, queued)
   const allowedOdds = coachAllowedOddsTrimmed(map, queued)
@@ -165,7 +170,7 @@ export async function coachCampaign(input: {
     chronicle,
     "",
     "CONVERSATION",
-    renderConversation(input.messages),
+    renderConversation(conversation),
     "",
     "Answer the latest player message using GAME_FACTS and CHRONICLE only. Do not invent odds or file orders.",
   ].join("\n")
@@ -188,6 +193,7 @@ export async function coachCampaign(input: {
       gameTurn: map.turn,
       gameDate: map.date,
       kind: "advisor",
+      allowFailover: false,
       jsonSchema: { name: "campaign_coach", schema: CAMPAIGN_COACH_JSON_SCHEMA },
       accept: (content) => {
         const judged = parseCoachHarnessJson(content)
@@ -234,6 +240,16 @@ export async function coachCampaign(input: {
         error: judged.error,
         fellBack: judged.outcome !== "ok",
       })
+    } else if (chat.kind === "timeout") {
+      console.log(
+        JSON.stringify({
+          tag: "ostfront.coach.timeout",
+          provider: chat.provider,
+          latencyMs: chat.latencyMs,
+          promptChars: prompt.length,
+          messageCount: conversation.length,
+        }),
+      )
     }
   }
 
@@ -1003,20 +1019,10 @@ export function renderCoachLegalTargets(
     const fromName = provinceLabel(fromId)
     const attack = targets.attack.map((id) => provinceLabel(id)).join(", ")
     const move = targets.move.map((id) => provinceLabel(id)).join(", ")
-    const reachAtk = targets.reach.attack
-      .filter((id) => !targets.attack.includes(id))
-      .map((id) => provinceLabel(id))
-      .join(", ")
-    const reachMove = targets.reach.move
-      .filter((id) => !targets.move.includes(id))
-      .map((id) => provinceLabel(id))
-      .join(", ")
     const blocked = targets.blocked.map((item) => `${provinceLabel(item.id)}: ${item.reason}`).join("; ")
     const bits = [
       attack ? `orderable attack: ${attack}` : null,
       move ? `orderable move: ${move}` : null,
-      reachAtk ? `reach-only attack (neighbor, not orderable this fortnight): ${reachAtk}` : null,
-      reachMove ? `reach-only move: ${reachMove}` : null,
       blocked ? `blocked neighbors: ${blocked}` : null,
     ].filter(Boolean)
     lines.push(bits.length ? `${fromName}: ${bits.join("; ")}` : `${fromName}: no legal arrows this fortnight.`)
@@ -1644,8 +1650,21 @@ function coachReachabilityReply(
       highlights: [{ provinceId: targetId }],
     }
   }
+  const queuedAttack = queued.find(
+    (order): order is Extract<PlayerOrder, { type: "attack" }> =>
+      order.type === "attack" && order.from === fromId && order.target === targetId,
+  )
+  if (queuedAttack) {
+    const preview = engagementOdds(map, queuedAttack.from, queuedAttack.target, queuedAttack.unitIds)
+    const odds = preview ? formatUiOddsForAdvisor(preview) : null
+    return {
+      reply: `${targetName} is already queued from ${fromName}${odds ? ` — Orders panel reads ${odds}` : ""}. No second arrow from ${fromName} is legal until you change the queue.`,
+      followUp: null,
+      highlights: [{ provinceId: targetId }],
+    }
+  }
   return {
-    reply: `What are you weighing at ${fromName}? ${targetName} borders ${fromName} but is not orderable this fortnight — check supply and unassigned formations on the Province paper.`,
+    reply: `${targetName} borders ${fromName} but no legal attack arrow remains this fortnight — check supply and which formations are still unassigned.`,
     followUp: null,
     highlights: [{ provinceId: fromId }],
   }
@@ -1674,6 +1693,7 @@ function rulesCoach(
   map: GameState,
   situation: Situation,
   selected: string,
+  selectedProvinceId: string | null,
   log: TurnRecord[],
   messages: AdvisorChatMessage[],
   queued: PlayerOrder[],
@@ -1689,20 +1709,17 @@ function rulesCoach(
       highlights: [],
     }
   }
-  if (/reach-only|order anything from krak|legal.*krak/i.test(lower)) {
+  if (/order anything from krak|legal.*krak/i.test(lower)) {
     const queue = playerOrdersToQueued(queued)
     const targets = legalTargets(map, "krakow", queue)
     const atk = targets.attack.map((id) => provinceLabel(id)).join(", ")
-    const reachOnly = targets.reach.attack
-      .filter((id) => !targets.attack.includes(id))
-      .map((id) => provinceLabel(id))
-      .join(", ")
+    const move = targets.move.map((id) => provinceLabel(id)).join(", ")
     const bits = [
       atk ? `orderable attack: ${atk}` : null,
-      reachOnly ? `reach-only attack neighbors: ${reachOnly}` : null,
+      move ? `orderable move: ${move}` : null,
     ].filter(Boolean)
     return {
-      reply: `From Kraków the engine lists ${bits.join("; ") || "no legal arrows this fortnight"}.`,
+      reply: `What axis from Kraków matters most this fortnight? The engine lists ${bits.join("; ") || "no legal arrows this fortnight"}.`,
       followUp: null,
       highlights: [{ provinceId: "krakow" }],
     }
@@ -1752,7 +1769,7 @@ function rulesCoach(
     }
   }
 
-  const reachability = coachReachabilityReply(map, queued, inputSelectedFrom(selected), lower)
+  const reachability = coachReachabilityReply(map, queued, selectedProvinceId, lower)
   if (reachability) return reachability
 
   if (conflicts.length) {
@@ -1900,10 +1917,19 @@ function rulesCoach(
   }
 }
 
+function trimAdvisorConversation(messages: AdvisorChatMessage[]): AdvisorChatMessage[] {
+  return messages.slice(-COACH_CONVERSATION_LIMIT).map((message) => ({
+    ...message,
+    content:
+      message.content.length > COACH_MESSAGE_MAX_CHARS
+        ? `${message.content.slice(0, COACH_MESSAGE_MAX_CHARS)}…`
+        : message.content,
+  }))
+}
+
 function renderConversation(messages: AdvisorChatMessage[]): string {
   if (!messages.length) return "None."
   return messages
-    .slice(-10)
     .map((message) => `${message.role === "user" ? "Player" : "Falkenhayn"}: ${message.content}`)
     .join("\n")
 }

@@ -808,6 +808,8 @@ export async function llmChatChain(options: {
   gameDate?: string | null
   kind?: LlmLogKind
   jsonSchema?: JsonSchemaSpec
+  /** When false, stop after the first provider (avoids multi-minute advisor chains). */
+  allowFailover?: boolean
   accept: (content: string) => LlmJsonVerdict
 }): Promise<LlmChatResult> {
   const providers = resolveProviderChain()
@@ -826,9 +828,10 @@ export async function llmChatChain(options: {
   const started = Date.now()
   const deadline = started + Math.max(1, options.timeoutMs)
   let last: LlmChatResult | null = null
+  const allowFailover = options.allowFailover !== false
   for (let index = 0; index < providers.length; index += 1) {
     const provider = providers[index]!
-    const another = index < providers.length - 1
+    const another = allowFailover && index < providers.length - 1
     const remaining = Math.max(1, deadline - Date.now())
     const timeoutMs = providerAttemptTimeout(remaining, another, options.timeoutMs)
     const chat = await llmChat({

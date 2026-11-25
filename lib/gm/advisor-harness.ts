@@ -25,17 +25,23 @@ Return one JSON object (no markdown):
 {"stance":"probe"|"warn"|"confirm"|"brief","reply":"...","highlightProvinceId":null}
 
 stance:
-- probe — ask what the player is trying to do
-- warn — name one concrete risk (supply, depot, encirclement, queue conflict, illegal axis)
-- confirm — validate a sound read when facts support it
-- brief — short map read without a challenge
+- probe — clarify intent or flag one concrete risk (supply, depot, Unlikely queued attack, encirclement)
+- warn — name one concrete risk on the board
+- confirm — short direct verdict when facts support it
+- brief — compact map read
+
+Style rules:
+- Direct staff-college prose is fine — questions and short yes/no answers are both allowed.
+- Never hedge with robotic phrases like "the available facts do not establish", "it is unclear whether", or "cannot confirm".
+- Never use "reach-only" — GAME_FACTS list queued arrows and orderable neighbors only.
+- When a queued or selected attack is in play, cite at most one odds figure exactly as in GAME_FACTS (e.g. Unlikely, 0.68 — the Orders panel label and ratio).
 
 When stance is warn, set highlightProvinceId to the province the warning is about (engine id, or null).
 
-Examples on the opening board (style only; use live GAME_FACTS for truth):
-{"stance":"probe","reply":"What axis are you weighing from Kraków this fortnight?","highlightProvinceId":null}
-{"stance":"warn","reply":"Kraków can order an attack on Kielce, but not Lemberg in one bound — check the legal targets line before you stretch the queue.","highlightProvinceId":"krakow"}
-{"stance":"confirm","reply":"Two columns on one Russian province this fortnight fight as one battle — your queued Kraków and Katowice prongs match that rule.","highlightProvinceId":null}
+Examples (style only; live GAME_FACTS are authoritative):
+{"stance":"warn","reply":"Warsaw is already queued from Lublin — the Orders panel reads Unlikely, 0.39; that is a thin assault if the column fails.","highlightProvinceId":"lublin"}
+{"stance":"brief","reply":"Yes — Kraków still has orderable attack neighbors on this fortnight; see the From Kraków line in GAME_FACTS.","highlightProvinceId":null}
+{"stance":"confirm","reply":"No — Łódź is not a legal arrow from Upper Silesia this fortnight; your queued attack list is the engine truth.","highlightProvinceId":null}
 
 Keep reply concise (soft cap ~120 words). Do not include suggestions, orders, or followUp keys.`
 
@@ -47,6 +53,11 @@ const FILED_CLAIM =
 
 const PRESCRIBE_ORDER =
   /\b(?:cancel|remove)\s+(?:the\s+)?(?:fortify|attack|move)\b|\b(?:you should|i would)\s+(?:attack|fortify|move|cancel)\b/i
+
+const HEDGE_PHRASE =
+  /\b(?:the )?available facts do not establish\b|\bit is unclear whether\b|\bcannot confirm whether\b|\bthe facts do not (?:show|establish)\b/i
+
+const REACH_ONLY = /\breach-only\b/i
 
 function extractCoachOddsRatio(text: string): number | null {
   const match = text.match(/\b(?:odds\s+(?:about\s+)?)?(\d+(?:\.\d+)?)\s*:\s*1\b|\babout\s+(\d+(?:\.\d+)?)\s*:\s*1\b/i)
@@ -102,6 +113,24 @@ export function harnessHighlights(parsed: CoachHarnessJson): HarnessHighlight[] 
  * Safety pass only — no sentence-count or question-first gates.
  * Logs misfires instead of triggering LLM retries.
  */
+export function reshapeHarnessReplyForPlayer(reply: string): string {
+  let text = reply.replace(/\s+/g, " ").trim()
+  if (HEDGE_PHRASE.test(text)) {
+    text = text
+      .replace(HEDGE_PHRASE, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/^[,;:\s]+/, "")
+      .trim()
+    if (text.length < 12) {
+      text = "The dispatch lists your queued arrows and legal neighbors — use that engine read."
+    }
+  }
+  if (REACH_ONLY.test(text)) {
+    text = text.replace(REACH_ONLY, "neighbor").replace(/\s+/g, " ").trim()
+  }
+  return text.trim()
+}
+
 export function finalizeHarnessReply(
   map: GameState,
   stance: CoachHarnessStance,
@@ -109,7 +138,10 @@ export function finalizeHarnessReply(
   allowedOdds: string[] = [],
 ): { stance: CoachHarnessStance; reply: string; misfires: HarnessMisfire[] } {
   const misfires: HarnessMisfire[] = []
-  let text = reply.replace(/\s+/g, " ").trim()
+  let text = reshapeHarnessReplyForPlayer(reply).replace(/\s+/g, " ").trim()
+  if (HEDGE_PHRASE.test(reply)) {
+    misfires.push({ code: "empty_reply", detail: "hedge phrase scrubbed" })
+  }
   if (!text) {
     misfires.push({ code: "empty_reply", detail: "empty harness reply" })
     text = "I cannot read that dispatch clearly. What are you trying to do this fortnight?"

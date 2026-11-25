@@ -339,6 +339,7 @@ function reachableWarsawFromLublin(): CoachEvalFixture {
   }
   lublin.controller = "central"
   lublin.supply = 100
+  lublin.supplyModifier = 40
   lublin.units = krakow.units.filter((unit) => unit.faction === "central").map((unit) => ({
     ...unit,
     province: "lublin",
@@ -351,7 +352,7 @@ function reachableWarsawFromLublin(): CoachEvalFixture {
     throw new Error(`expected orderable Warszawa from Lublin, got attack=${legal.attack.join(",")}`)
   }
   return {
-    state: map,
+    state,
     log: [],
     messages: [
       {
@@ -613,7 +614,7 @@ function krakowNeighborLegality(): CoachEvalFixture {
     messages: [
       {
         role: "user",
-        content: "Can I order anything from Kraków this fortnight, or is it reach-only?",
+        content: "Can I order anything from Kraków this fortnight?",
       },
     ],
     selectedProvinceId: "krakow",
@@ -621,8 +622,47 @@ function krakowNeighborLegality(): CoachEvalFixture {
     facts: {
       allowedProvinceNames: catalogNames(map),
       allowedOddsTrimmed: mapContactOdds(map),
-      mustContain: hasOrderable ? ["orderable"] : ["reach"],
-      mustNotContain: hasOrderable ? ["cannot be ordered", "reach-only and cannot"] : [],
+      mustContain: hasOrderable ? ["orderable"] : ["no legal arrows"],
+      mustNotContain: ["reach-only", "cannot be ordered now"],
+    },
+  }
+}
+
+function queuedWarsawFactsGrounding(): CoachEvalFixture {
+  const state = cloneState(createInitialState("normal"))
+  const lublin = state.provinces.find((province) => province.id === "lublin")!
+  const krakow = state.provinces.find((province) => province.id === "krakow")!
+  lublin.controller = "central"
+  lublin.supply = 80
+  lublin.supplyModifier = 40
+  lublin.units = krakow.units.filter((unit) => unit.faction === "central").map((unit) => ({
+    ...unit,
+    province: "lublin",
+  }))
+  krakow.units = krakow.units.filter((unit) => unit.faction !== "central")
+  const map = staffMap(state)
+  const unitIds = centralUnitIds(map, "lublin")
+  const queued = [attackOrder("lublin", "warszawa", unitIds)]
+  const factsText = renderAdvisorGameFacts(map, queued, "lublin").join("\n").toLowerCase()
+  if (!factsText.includes("warsaw") || !factsText.includes("queued arrows")) {
+    throw new Error("fixture missing queued Warsaw facts")
+  }
+  return {
+    state,
+    log: [],
+    messages: [
+      {
+        role: "user",
+        content: "Is Warsaw reachable from Lublin or cannot be ordered now?",
+      },
+    ],
+    selectedProvinceId: "lublin",
+    queuedOrders: queued,
+    facts: {
+      allowedProvinceNames: catalogNames(map),
+      allowedOddsTrimmed: mapContactOdds(map),
+      mustContain: ["queued", "warsaw"],
+      mustNotContain: ["cannot be ordered now", "reach-only"],
     },
   }
 }
@@ -767,6 +807,13 @@ export const COACH_EVAL_SCENARIOS: CoachEvalScenario[] = [
     blindSpot:
       "Coach must not claim Kraków is reach-only when GAME_FACTS list orderable attack/move neighbors.",
     build: krakowNeighborLegality,
+  },
+  {
+    id: "queued-warsaw-facts",
+    title: "Queued Warsaw must not read as unreachable",
+    blindSpot:
+      "GAME_FACTS list a queued Lublin→Warsaw arrow; coach must not deny Warsaw while it is already queued.",
+    build: queuedWarsawFactsGrounding,
   },
 ]
 
