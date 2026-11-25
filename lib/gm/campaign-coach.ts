@@ -1,11 +1,7 @@
 import { CATALOG_BY_ID } from "@/lib/data/catalog"
 import { scenarioSpec } from "@/lib/data/objectives"
 import { formatDate } from "@/lib/format"
-import {
-  renderAdvisorGameFacts,
-  renderSelectedProvinceGameFacts,
-  resolveDeicticUserMessage,
-} from "@/lib/gm/advisor-game-facts"
+import { renderAdvisorGameFacts, resolveDeicticUserMessage } from "@/lib/gm/advisor-game-facts"
 import {
   COACH_HARNESS_SYSTEM,
   finalizeHarnessReply,
