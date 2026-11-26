@@ -44,6 +44,8 @@ Browser updates map, optional Log drawer chronicle, clears order queue
 
 Stack: Next.js App Router, React client components for the game shell, server routes for adjudication. Map rendering uses MapLibre (`components/war-map.tsx`, worker in `public/maplibre-gl-worker.mjs`).
 
+**Site chrome:** Ostfront compass mark (`assets/branding/ostfront-logo-1024.png`) drives `app/favicon.ico` (16/32/48), `app/icon.png`, `app/apple-icon.png` (metadata file conventions), PWA PNGs under `public/icons/`, and `public/manifest.webmanifest` (`theme_color` / `background_color` `#0d1e3d`). HUD title pairs the mark with the wordmark (`components/hud.tsx`).
+
 ### Map rendering (`components/war-map.tsx`)
 
 | Piece | Role |
