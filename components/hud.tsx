@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { EconomyReadout } from "@/components/economy-readout"
 import { HudOptionsMenu } from "@/components/hud-options-menu"
 import { listedStrength } from "@/lib/engine/echelon"
@@ -45,7 +46,15 @@ export function Hud({
   return (
     <header className="table-hud shrink-0 px-3 py-1.5 sm:px-4" data-testid="table-hud">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 md:flex-nowrap">
-        <p className="shrink-0 font-display text-[1.35rem] leading-none tracking-wide text-primary italic sm:text-[1.45rem]">
+        <p className="flex shrink-0 items-center gap-2 font-display text-[1.35rem] leading-none tracking-wide text-primary italic sm:text-[1.45rem]">
+          <Image
+            src="/icons/icon-192.png"
+            alt=""
+            width={28}
+            height={28}
+            className="size-7 rounded-sm"
+            priority
+          />
           Ostfront
         </p>
         <div

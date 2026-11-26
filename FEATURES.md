@@ -1,5 +1,9 @@
 # Ostfront features
 
+## Browser chrome
+
+The tab favicon and add-to-home-screen icons use the Ostfront compass mark (navy field, cream ring, brass arrow). **`public/manifest.webmanifest`** names the app **Ostfront** with navy theme/background colors. On the campaign and teach HUD, a small mark sits beside the **Ostfront** title (`[data-testid=table-hud]`).
+
 ## Teaching drill (Sprint 1–2 / Phase 2A–2B / Phase 2D Part 6)
 
 Route **`/teach`**. Entry link on the scenario picker: `[data-testid=begin-teach]`. Campaign at **`/`** is unchanged.

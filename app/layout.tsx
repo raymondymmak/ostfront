@@ -6,6 +6,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#0d1e3d",
 }
 
 const sourceSans = localFont({
@@ -35,6 +36,13 @@ export const metadata: Metadata = {
   title: "Ostfront 1915",
   description:
     "Gorlice–Tarnów, 2 May 1915. A map-first World War I operational game. The map is the rules; the staff only narrates.",
+  applicationName: "Ostfront",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Ostfront",
+    statusBarStyle: "black-translucent",
+  },
 }
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
